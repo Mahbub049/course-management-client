@@ -1,12 +1,13 @@
-import axios from 'axios';
+import axios from "axios";
 
 const api = axios.create({
-  baseURL: `${import.meta.env.VITE_API_BASE_URL}`
+  baseURL: import.meta.env.VITE_API_BASE_URL, // no template string needed
+  // withCredentials: true, // only enable if you use cookies (you use JWT, so keep it OFF)
 });
 
 // Add token automatically if stored
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('marksPortalToken');
+  const token = localStorage.getItem("marksPortalToken");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
