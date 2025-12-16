@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchTeacherCourses, deleteCourseRequest } from "../services/courseService";
+import Swal from 'sweetalert2'
 
 export default function TeacherCoursesPage() {
   const navigate = useNavigate();
@@ -47,7 +48,24 @@ export default function TeacherCoursesPage() {
     try {
       setDeletingId(course.id);
       await deleteCourseRequest(course.id);
-      setCourses((prev) => prev.filter((c) => c.id !== course.id));
+      Swal.fire({
+        title: "Are you sure?",
+        text: "You won't be able to revert this!",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonColor: "#3085d6",
+        cancelButtonColor: "#d33",
+        confirmButtonText: "Yes, delete it!"
+      }).then((result) => {
+        if (result.isConfirmed) {
+          Swal.fire({
+            title: "Deleted!",
+            text: "Your file has been deleted.",
+            icon: "success"
+          });
+          setCourses((prev) => prev.filter((c) => c.id !== course.id));
+        }
+      });
     } catch (err) {
       console.error(err);
       alert(err?.response?.data?.message || "Failed to delete course.");
@@ -236,8 +254,8 @@ export default function TeacherCoursesPage() {
                     type === "lab"
                       ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                       : type === "hybrid"
-                      ? "bg-purple-50 text-purple-700 border border-purple-200"
-                      : "bg-sky-50 text-sky-700 border border-sky-200";
+                        ? "bg-purple-50 text-purple-700 border border-purple-200"
+                        : "bg-sky-50 text-sky-700 border border-sky-200";
 
                   const label = type === "lab" ? "Lab" : type === "hybrid" ? "Hybrid" : "Theory";
 
