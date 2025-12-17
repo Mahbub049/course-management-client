@@ -37,42 +37,62 @@ export default function TeacherCoursesPage() {
     navigate(`/teacher/courses/${course.id}`);
   };
 
+  // import Swal from "sweetalert2";
+
   const handleDelete = async (course) => {
     if (!course?.id) return;
 
-    const confirmed = window.confirm(
-      `Delete course ${course.code} – ${course.title}?\n\nThis will permanently delete all students, assessments, marks, and complaints under this course.`
-    );
-    if (!confirmed) return;
+    const result = await Swal.fire({
+      title: "Delete course?",
+      html: `
+      <p><strong>${course.code} – ${course.title}</strong></p>
+      <p class="text-sm mt-2">
+        This will permanently delete:
+        <br/>• Students
+        <br/>• Assessments
+        <br/>• Marks
+        <br/>• Complaints
+      </p>
+    `,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#6b7280",
+      confirmButtonText: "Yes, delete",
+      cancelButtonText: "Cancel",
+      reverseButtons: true,
+    });
+
+    if (!result.isConfirmed) return;
 
     try {
       setDeletingId(course.id);
+
       await deleteCourseRequest(course.id);
-      Swal.fire({
-        title: "Are you sure?",
-        text: "You won't be able to revert this!",
-        icon: "warning",
-        showCancelButton: true,
-        confirmButtonColor: "#3085d6",
-        cancelButtonColor: "#d33",
-        confirmButtonText: "Yes, delete it!"
-      }).then((result) => {
-        if (result.isConfirmed) {
-          Swal.fire({
-            title: "Deleted!",
-            text: "Your file has been deleted.",
-            icon: "success"
-          });
-          setCourses((prev) => prev.filter((c) => c.id !== course.id));
-        }
+
+      setCourses((prev) => prev.filter((c) => c.id !== course.id));
+
+      await Swal.fire({
+        title: "Deleted!",
+        text: "The course and all related data have been removed.",
+        icon: "success",
+        timer: 2000,
+        showConfirmButton: false,
       });
     } catch (err) {
       console.error(err);
-      alert(err?.response?.data?.message || "Failed to delete course.");
+      Swal.fire({
+        title: "Error",
+        text:
+          err?.response?.data?.message ||
+          "Failed to delete course. Please try again.",
+        icon: "error",
+      });
     } finally {
       setDeletingId(null);
     }
   };
+
 
   const counts = useMemo(() => {
     const c = { all: courses.length, theory: 0, lab: 0, hybrid: 0 };
