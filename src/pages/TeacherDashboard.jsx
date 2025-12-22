@@ -1,8 +1,18 @@
-import { useMemo } from "react";
+// client/src/pages/TeacherDashboard.jsx
+
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { fetchTeacherCourses } from "../services/courseService";
+import { fetchTeacherComplaints } from "../services/complaintService";
 
 export default function TeacherDashboard() {
   const navigate = useNavigate();
+
+  // optional: guard
+  useEffect(() => {
+    const role = localStorage.getItem("marksPortalRole");
+    if (role !== "teacher") navigate("/login", { replace: true });
+  }, [navigate]);
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
@@ -12,6 +22,49 @@ export default function TeacherDashboard() {
   }, []);
 
   const teacherName = localStorage.getItem("marksPortalName") || "Teacher";
+
+  // ✅ dashboard stats
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [coursesCount, setCoursesCount] = useState(0);
+  const [pendingComplaintsCount, setPendingComplaintsCount] = useState(0);
+
+  useEffect(() => {
+    const role = localStorage.getItem("marksPortalRole");
+    if (role !== "teacher") return;
+
+    const loadStats = async () => {
+      setStatsLoading(true);
+      try {
+        const [courses, complaints] = await Promise.all([
+          fetchTeacherCourses(),
+          fetchTeacherComplaints(),
+        ]);
+
+        setCoursesCount(Array.isArray(courses) ? courses.length : 0);
+
+        const list = Array.isArray(complaints) ? complaints : [];
+        const pending = list.filter(
+          (c) => c.status === "open" || c.status === "in_review"
+        ).length;
+        setPendingComplaintsCount(pending);
+      } catch (err) {
+        console.error("Dashboard stats error:", err);
+        // fallback: show 0 instead of blank
+        setCoursesCount(0);
+        setPendingComplaintsCount(0);
+      } finally {
+        setStatsLoading(false);
+      }
+    };
+
+    loadStats();
+  }, []);
+
+  const StatValue = ({ children }) => (
+    <span className={statsLoading ? "text-slate-400" : "text-slate-900"}>
+      {children}
+    </span>
+  );
 
   return (
     <div className="space-y-6">
@@ -27,11 +80,12 @@ export default function TeacherDashboard() {
           </h1>
 
           <p className="mt-1 text-sm text-slate-500 max-w-2xl">
-            Manage courses, review complaints, and update account settings — all from one place.
+            Manage courses, attendance, marks and complaints — all from one place.
           </p>
         </div>
 
-        <div className="flex gap-2">
+        {/* Quick buttons */}
+        <div className="grid lg:grid-cols-4 grid-cols-2 gap-2">
           <button
             onClick={() => navigate("/teacher/create-course")}
             className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700"
@@ -46,6 +100,22 @@ export default function TeacherDashboard() {
           >
             <GridIcon />
             View Courses
+          </button>
+
+          <button
+            onClick={() => navigate("/teacher/attendance")}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            <CheckIcon />
+            Take Attendance
+          </button>
+
+          <button
+            onClick={() => navigate("/teacher/attendance-sheet")}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            <SheetIcon />
+            Attendance Sheet
           </button>
         </div>
       </div>
@@ -68,17 +138,33 @@ export default function TeacherDashboard() {
               </h2>
 
               <p className="mt-1 text-sm text-slate-500 max-w-xl">
-                Start by creating a course, then add students and assessments. Marks and complaints are managed per course.
+                Create courses, manage students & assessments, take attendance daily,
+                and generate date-wise attendance sheets.
               </p>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => navigate("/teacher/courses")}
                 className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
               >
                 Open Courses
               </button>
+
+              <button
+                onClick={() => navigate("/teacher/attendance")}
+                className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Open Attendance
+              </button>
+
+              <button
+                onClick={() => navigate("/teacher/attendance-sheet")}
+                className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Attendance Sheet
+              </button>
+
               <button
                 onClick={() => navigate("/teacher/complaints")}
                 className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
@@ -90,30 +176,38 @@ export default function TeacherDashboard() {
         </div>
       </div>
 
-      {/* Stats row (UI-only for now) */}
+      {/* ✅ Stats row (now real) */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <StatCard
           title="Courses"
-          value="—"
+          value={
+            <StatValue>{statsLoading ? "…" : String(coursesCount)}</StatValue>
+          }
           hint="Total courses you created"
           icon={<BookIcon />}
         />
+
         <StatCard
           title="Pending Complaints"
-          value="—"
-          hint="Complaints marked as open/in review"
+          value={
+            <StatValue>
+              {statsLoading ? "…" : String(pendingComplaintsCount)}
+            </StatValue>
+          }
+          hint="Open + In-review complaints"
           icon={<AlertIcon />}
         />
+
         <StatCard
-          title="Last Activity"
-          value="—"
-          hint="Most recent update in your portal"
-          icon={<ClockIcon />}
+          title="Attendance"
+          value={<StatValue>{statsLoading ? "…" : "Ready"}</StatValue>}
+          hint="Daily attendance & sheet generation"
+          icon={<CheckIcon />}
         />
       </div>
 
       {/* Action cards */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
         <ActionCard
           title="Courses"
           desc="Create courses, open marks tabs, manage students."
@@ -122,6 +216,16 @@ export default function TeacherDashboard() {
           icon={<BookIcon />}
           accent="from-sky-500/10 to-purple-500/10"
         />
+
+        <ActionCard
+          title="Attendance"
+          desc="Take daily attendance, update previous records, generate sheet."
+          buttonText="Open Attendance"
+          onClick={() => navigate("/teacher/attendance")}
+          icon={<CheckIcon />}
+          accent="from-indigo-500/10 to-sky-500/10"
+        />
+
         <ActionCard
           title="Complaints"
           desc="Reply, mark in-review, and resolve complaints."
@@ -130,6 +234,7 @@ export default function TeacherDashboard() {
           icon={<AlertIcon />}
           accent="from-amber-500/10 to-rose-500/10"
         />
+
         <ActionCard
           title="Account Settings"
           desc="Change password, update your profile details."
@@ -139,27 +244,6 @@ export default function TeacherDashboard() {
           accent="from-emerald-500/10 to-sky-500/10"
         />
       </div>
-
-      {/* Recent activity placeholder */}
-      {/* <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-900">
-            Recent Activity
-          </h3>
-          <span className="text-xs text-slate-500">Coming soon</span>
-        </div>
-
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <SkeletonLine />
-          <SkeletonLine />
-          <SkeletonLine />
-          <SkeletonLine />
-        </div>
-
-        <p className="mt-3 text-xs text-slate-500">
-          Tip: You can add real data later (courses count, pending complaints) once APIs are available.
-        </p>
-      </div> */}
     </div>
   );
 }
@@ -197,9 +281,7 @@ function ActionCard({ title, desc, buttonText, onClick, icon, accent }) {
           </span>
         </div>
 
-        <h3 className="mt-3 text-base font-semibold text-slate-900">
-          {title}
-        </h3>
+        <h3 className="mt-3 text-base font-semibold text-slate-900">{title}</h3>
         <p className="mt-1 text-sm text-slate-600">{desc}</p>
 
         <button
@@ -216,16 +298,7 @@ function ActionCard({ title, desc, buttonText, onClick, icon, accent }) {
   );
 }
 
-function SkeletonLine() {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-      <div className="h-3 w-24 rounded bg-slate-200" />
-      <div className="mt-2 h-3 w-56 rounded bg-slate-200" />
-    </div>
-  );
-}
-
-/* ---------- Icons (inline SVG, no library) ---------- */
+/* ---------- Icons ---------- */
 
 function PlusIcon() {
   return (
@@ -278,20 +351,29 @@ function AlertIcon() {
   );
 }
 
-function ClockIcon() {
-  return (
-    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M12 8v5l3 2" />
-      <path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
-    </svg>
-  );
-}
-
 function UserIcon() {
   return (
     <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M20 21a8 8 0 0 0-16 0" />
       <path d="M12 11a4 4 0 1 0-4-4 4 4 0 0 0 4 4z" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M20 6L9 17l-5-5" />
+    </svg>
+  );
+}
+
+function SheetIcon() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6" />
+      <path d="M8 13h8M8 17h8M8 9h4" />
     </svg>
   );
 }

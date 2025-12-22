@@ -10,6 +10,9 @@ function AppLayout() {
   const [role, setRole] = useState(null);
   const [userName, setUserName] = useState("");
 
+  // ✅ NEW: mobile drawer state
+  const [mobileOpen, setMobileOpen] = useState(false);
+
   useEffect(() => {
     const r = localStorage.getItem("marksPortalRole");
     const n = localStorage.getItem("marksPortalName") || "";
@@ -20,6 +23,20 @@ function AppLayout() {
       navigate("/login", { replace: true });
     }
   }, [navigate]);
+
+  // ✅ Close drawer on route change (nice UX)
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname]);
+
+  // ✅ ESC to close drawer
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") setMobileOpen(false);
+    };
+    if (mobileOpen) window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [mobileOpen]);
 
   const handleLogout = () => {
     localStorage.removeItem("marksPortalToken");
@@ -32,8 +49,7 @@ function AppLayout() {
     { to: "/teacher/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
     { to: "/teacher/courses", label: "Courses", icon: <BookIcon /> },
     { to: "/teacher/create-course", label: "Create Course", icon: <PlusIcon /> },
-    
-    // ✅ UPDATED: Attendance + Attendance Sheet
+
     { to: "/teacher/attendance", label: "Attendance", icon: <CalendarIcon /> },
     {
       to: "/teacher/attendance-sheet",
@@ -46,7 +62,8 @@ function AppLayout() {
   ];
 
   const studentLinks = [
-    { to: "/student/dashboard", label: "My Courses", icon: <BookIcon /> },
+    { to: "/student/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
+    { to: "/student/courses", label: "My Courses", icon: <BookIcon /> },
     { to: "/student/complaints", label: "Complaints", icon: <AlertIcon /> },
     { to: "/student/attendance", label: "Attendance", icon: <CalendarIcon /> },
     { to: "/change-password", label: "Account", icon: <UserIcon /> },
@@ -57,145 +74,206 @@ function AppLayout() {
     return role === "teacher" ? teacherLinks : studentLinks;
   }, [role]);
 
-  // Optional: topbar page title (simple)
   const pageTitle = useMemo(() => {
     const found = links.find((l) => location.pathname.startsWith(l.to));
     return found?.label || "BUBT Marks Portal";
   }, [location.pathname, links]);
 
+  // ✅ Extracted sidebar so we can reuse for desktop + mobile drawer
+  const SidebarContent = ({ isMobile = false }) => (
+    <div className="flex h-full flex-col">
+      {/* Decorative gradient */}
+      <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-r from-primary-50 via-purple-50 to-sky-50" />
+
+      {/* Brand */}
+      <div className="relative px-6 pt-6 pb-4 border-b border-slate-200">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm">
+            <CapIcon />
+          </div>
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-slate-900 leading-tight truncate">
+              Course Management
+            </div>
+            <div className="text-xs text-slate-500 truncate">BUBT Marks Portal</div>
+          </div>
+
+          {/* ✅ Close button only in mobile drawer */}
+          {isMobile && (
+            <button
+              onClick={() => setMobileOpen(false)}
+              className="ml-auto inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              aria-label="Close menu"
+              type="button"
+            >
+              <XIcon />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Nav */}
+      <nav className="relative flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+        {links.map((link) => (
+          <NavLink
+            key={link.to}
+            to={link.to}
+            className={({ isActive }) =>
+              [
+                "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
+                isActive
+                  ? "bg-primary-50 text-primary-700"
+                  : "text-slate-700 hover:bg-slate-100",
+              ].join(" ")
+            }
+          >
+            {({ isActive }) => (
+              <>
+                {/* Left indicator */}
+                <span
+                  className={[
+                    "absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r-full transition",
+                    isActive ? "bg-primary-600" : "bg-transparent",
+                  ].join(" ")}
+                />
+                <span
+                  className={[
+                    "h-9 w-9 rounded-lg border flex items-center justify-center transition",
+                    isActive
+                      ? "border-primary-200 bg-white text-primary-700"
+                      : "border-slate-200 bg-slate-50 text-slate-700 group-hover:bg-white",
+                  ].join(" ")}
+                >
+                  {link.icon}
+                </span>
+
+                <span className="flex-1">{link.label}</span>
+
+                <span
+                  className={[
+                    "text-slate-400 transition",
+                    isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                  ].join(" ")}
+                >
+                  <ArrowIcon />
+                </span>
+              </>
+            )}
+          </NavLink>
+        ))}
+      </nav>
+
+      {/* Profile / Footer */}
+      <div className="relative p-4 border-t border-slate-200">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center border border-slate-200">
+              <UserCircleIcon />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-slate-900 truncate">
+                {userName || "User"}
+              </div>
+              <div className="text-xs text-slate-500">
+                {role === "teacher" ? "Teacher Account" : "Student Account"}
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={handleLogout}
+            className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+            type="button"
+          >
+            <LogoutIcon />
+            Logout
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="flex min-h-screen">
-        {/* Sidebar */}
+        {/* ✅ Desktop Sidebar */}
         <aside className="hidden md:flex md:w-72 flex-col border-r border-slate-200 bg-white relative">
-          {/* Decorative gradient */}
-          <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-r from-primary-50 via-purple-50 to-sky-50" />
-
-          {/* Brand */}
-          <div className="relative px-6 pt-6 pb-4 border-b border-slate-200">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm">
-                <CapIcon />
-              </div>
-              <div>
-                <div className="text-sm font-semibold text-slate-900 leading-tight">
-                  Course Management
-                </div>
-                <div className="text-xs text-slate-500">BUBT Marks Portal</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Nav */}
-          <nav className="flex-1 px-3 py-4 space-y-1">
-            {links.map((link) => (
-              <NavLink
-                key={link.to}
-                to={link.to}
-                className={({ isActive }) =>
-                  [
-                    "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
-                    isActive
-                      ? "bg-primary-50 text-primary-700"
-                      : "text-slate-700 hover:bg-slate-100",
-                  ].join(" ")
-                }
-              >
-                {({ isActive }) => (
-                  <>
-                    {/* Left indicator */}
-                    <span
-                      className={[
-                        "absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r-full transition",
-                        isActive ? "bg-primary-600" : "bg-transparent",
-                      ].join(" ")}
-                    />
-                    <span
-                      className={[
-                        "h-9 w-9 rounded-lg border flex items-center justify-center transition",
-                        isActive
-                          ? "border-primary-200 bg-white text-primary-700"
-                          : "border-slate-200 bg-slate-50 text-slate-700 group-hover:bg-white",
-                      ].join(" ")}
-                    >
-                      {link.icon}
-                    </span>
-
-                    <span className="flex-1">{link.label}</span>
-
-                    {/* subtle arrow */}
-                    <span
-                      className={[
-                        "text-slate-400 transition",
-                        isActive
-                          ? "opacity-100"
-                          : "opacity-0 group-hover:opacity-100",
-                      ].join(" ")}
-                    >
-                      <ArrowIcon />
-                    </span>
-                  </>
-                )}
-              </NavLink>
-            ))}
-          </nav>
-
-          {/* Profile / Footer */}
-          <div className="p-4 border-t border-slate-200">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center border border-slate-200">
-                  <UserCircleIcon />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold text-slate-900 truncate">
-                    {userName || "User"}
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    {role === "teacher" ? "Teacher Account" : "Student Account"}
-                  </div>
-                </div>
-              </div>
-
-              <button
-                onClick={handleLogout}
-                className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-              >
-                <LogoutIcon />
-                Logout
-              </button>
-            </div>
-          </div>
+          <SidebarContent />
         </aside>
 
+        {/* ✅ Mobile Drawer */}
+        {/* ✅ Mobile Drawer (smooth) */}
+        <div
+          className={[
+            "fixed inset-0 z-50 md:hidden transition",
+            mobileOpen ? "pointer-events-auto" : "pointer-events-none",
+          ].join(" ")}
+          aria-hidden={!mobileOpen}
+        >
+          {/* overlay */}
+          <button
+            className={[
+              "absolute inset-0 bg-slate-900/40 transition-opacity duration-300",
+              mobileOpen ? "opacity-100" : "opacity-0",
+            ].join(" ")}
+            onClick={() => setMobileOpen(false)}
+            aria-label="Close overlay"
+            type="button"
+          />
+
+          {/* panel */}
+          <div
+            className={[
+              "absolute left-0 top-0 h-full w-[85%] max-w-xs bg-white shadow-xl border-r border-slate-200 relative",
+              "transition-transform duration-300 ease-out",
+              mobileOpen ? "translate-x-0" : "-translate-x-full",
+            ].join(" ")}
+          >
+            <SidebarContent isMobile />
+          </div>
+        </div>
+
+
         {/* Main area */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col min-w-0">
           {/* Top bar */}
-          <header className="h-16 flex items-center justify-between px-4 md:px-8 border-b border-slate-200 bg-white">
-            <div className="flex items-center gap-3">
+          <header className="h-16 flex items-center justify-between px-4 sm:px-6 md:px-8 border-b border-slate-200 bg-white">
+            <div className="flex items-center gap-3 min-w-0">
+              {/* ✅ Mobile menu button */}
+              <button
+                type="button"
+                onClick={() => setMobileOpen(true)}
+                className="md:hidden inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                aria-label="Open menu"
+              >
+                <MenuIcon />
+              </button>
+
               {/* Mobile brand */}
-              <div className="md:hidden flex items-center gap-2">
-                <div className="h-9 w-9 rounded-xl bg-slate-900 text-white flex items-center justify-center">
+              <div className="md:hidden flex items-center gap-2 min-w-0">
+                <div className="h-9 w-9 rounded-xl bg-slate-900 text-white flex items-center justify-center shrink-0">
                   <CapIcon />
                 </div>
-                <div className="leading-tight">
-                  <div className="text-sm font-semibold text-slate-900">
+                <div className="leading-tight min-w-0">
+                  <div className="text-sm font-semibold text-slate-900 truncate">
                     BUBT Marks Portal
                   </div>
-                  <div className="text-[11px] text-slate-500">{pageTitle}</div>
+                  <div className="text-[11px] text-slate-500 truncate">
+                    {pageTitle}
+                  </div>
                 </div>
               </div>
 
               {/* Desktop title */}
-              <div className="hidden md:block">
+              <div className="hidden md:block min-w-0">
                 <div className="text-xs text-slate-500">Current page</div>
-                <div className="text-sm font-semibold text-slate-900">
+                <div className="text-sm font-semibold text-slate-900 truncate">
                   {pageTitle}
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
               {userName && (
                 <span className="hidden sm:inline text-sm text-slate-600">
                   Signed in as{" "}
@@ -204,24 +282,24 @@ function AppLayout() {
               )}
 
               {role && (
-                <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 border border-slate-200">
+                <span className="hidden xs:inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 border border-slate-200">
                   {role === "teacher" ? "Teacher" : "Student"}
                 </span>
               )}
 
-              {/* Topbar logout */}
               <button
                 onClick={handleLogout}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                type="button"
               >
                 <LogoutIcon />
-                Logout
+                <span className="hidden sm:inline">Logout</span>
               </button>
             </div>
           </header>
 
           {/* Page content */}
-          <main className="flex-1 px-4 md:px-8 py-6">
+          <main className="flex-1 px-4 sm:px-6 md:px-8 py-5 sm:py-6 min-w-0">
             <Outlet />
           </main>
         </div>
@@ -244,6 +322,34 @@ function ArrowIcon() {
       strokeWidth="2"
     >
       <path d="M9 18l6-6-6-6" />
+    </svg>
+  );
+}
+
+function MenuIcon() {
+  return (
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+  );
+}
+
+function XIcon() {
+  return (
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M18 6L6 18M6 6l12 12" />
     </svg>
   );
 }
@@ -322,7 +428,6 @@ function AlertIcon() {
   );
 }
 
-// ✅ NEW: Attendance icon
 function CalendarIcon() {
   return (
     <svg
@@ -340,7 +445,6 @@ function CalendarIcon() {
   );
 }
 
-// ✅ NEW: Attendance sheet icon
 function TableIcon() {
   return (
     <svg

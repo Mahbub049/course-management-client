@@ -4,38 +4,23 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchStudentCourses } from "../services/studentService";
 
-function isLabLike(c) {
-  const ct = (c?.courseType || "").toLowerCase();
-  if (ct === "lab") return true;
-  const code = (c?.code || "").toLowerCase();
-  const title = (c?.title || "").toLowerCase();
-  return code.includes("lab") || title.includes("lab");
-}
-
-function getCourseTypeLabel(c) {
-  const t = (c?.courseType || "").toLowerCase();
-  if (t === "lab") return "Lab";
-  if (t === "hybrid") return "Hybrid";
-  if (t === "theory") return "Theory";
-  return isLabLike(c) ? "Lab" : "Theory";
-}
-
-function getTypeBadgeClass(label) {
-  if (label === "Lab")
-    return "bg-emerald-50 text-emerald-700 border-emerald-200";
-  if (label === "Hybrid")
-    return "bg-purple-50 text-purple-700 border-purple-200";
-  return "bg-sky-50 text-sky-700 border-sky-200";
-}
-
 function StudentDashboard() {
   const navigate = useNavigate();
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const studentName = localStorage.getItem("marksPortalName") || "Student";
+
+  const greeting = useMemo(() => {
+    const h = new Date().getHours();
+    if (h < 12) return "Good morning";
+    if (h < 18) return "Good afternoon";
+    return "Good evening";
+  }, []);
+
   useEffect(() => {
-    const loadCourses = async () => {
+    const load = async () => {
       setLoading(true);
       setError("");
       try {
@@ -43,186 +28,229 @@ function StudentDashboard() {
         setCourses(data || []);
       } catch (err) {
         console.error(err);
-        setError(err?.response?.data?.message || "Failed to load courses");
+        setError(err?.response?.data?.message || "Failed to load dashboard data");
       } finally {
         setLoading(false);
       }
     };
-
-    loadCourses();
+    load();
   }, []);
-
-  const openCourse = (course) => {
-    const id = course?._id || course?.id;
-    if (!id) return;
-    navigate(`/student/courses/${id}`);
-  };
 
   const stats = useMemo(() => {
     const total = courses.length;
-
-    let theory = 0,
-      lab = 0,
-      hybrid = 0;
+    let published = 0,
+      inProgress = 0,
+      notPublished = 0;
 
     courses.forEach((c) => {
-      const label = getCourseTypeLabel(c);
-      if (label === "Lab") lab += 1;
-      else if (label === "Hybrid") hybrid += 1;
-      else theory += 1;
+      if (c?.summaryStatus === "published") published += 1;
+      else if (c?.summaryStatus === "in_progress") inProgress += 1;
+      else notPublished += 1;
     });
 
-    return { total, theory, lab, hybrid };
+    return { total, published, inProgress, notPublished };
   }, [courses]);
 
+  const recent = useMemo(() => (courses || []).slice(0, 3), [courses]);
+
   return (
-    <div className="mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-            <CapIcon />
-            Student Portal
-          </div>
+    <div className="min-h-[calc(100vh-64px)] bg-slate-50/70">
+      <div className="mx-auto w-full space-y-6 px-4 pb-10 pt-5 sm:px-6 lg:px-8">
+        {/* Header card */}
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                <CapIcon />
+                Student Dashboard
+              </div>
 
-          <h1 className="mt-2 text-2xl md:text-3xl font-bold tracking-tight text-slate-900">
-            My Courses
-          </h1>
-          <p className="mt-1 text-sm text-slate-500 max-w-2xl">
-            Open any course to view your marks, running total, grade, and raise
-            complaints if needed.
-          </p>
-        </div>
+              <p className="mt-3 text-xs font-medium text-slate-500">
+                {greeting}, <span className="text-slate-700">{studentName}</span>
+              </p>
 
-        {/* Quick stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full md:w-auto">
-          <StatCard label="Total" value={stats.total} icon={<GridIcon />} />
-          <StatCard label="Theory" value={stats.theory} icon={<BookIcon />} />
-          <StatCard label="Lab" value={stats.lab} icon={<FlaskIcon />} />
-          <StatCard label="Hybrid" value={stats.hybrid} icon={<MergeIcon />} />
-        </div>
-      </div>
+              <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
+                Overview
+              </h1>
 
-      {/* Error */}
-      {error && (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
-          <div className="font-semibold">Could not load courses</div>
-          <div className="opacity-90">{error}</div>
-        </div>
-      )}
+              <p className="mt-1 text-sm text-slate-500">
+                See your progress, published results, and quick actions.
+              </p>
+            </div>
 
-      {/* Body */}
-      {loading ? (
-        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-6 text-sm text-slate-500 shadow-sm">
-          Loading courses…
-        </div>
-      ) : courses.length === 0 ? (
-        <div className="rounded-2xl border border-slate-200 bg-white px-6 py-10 text-center shadow-sm">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-50 border border-slate-200">
-            <EmptyIcon />
-          </div>
-          <div className="text-sm font-semibold text-slate-900">
-            No courses found
-          </div>
-          <div className="mt-1 text-sm text-slate-500">
-            You are not enrolled in any courses yet.
-          </div>
-        </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {courses.map((c, idx) => {
-            const key = c?._id || c?.id || idx;
-
-            const typeLabel = getCourseTypeLabel(c);
-            const badge = getTypeBadgeClass(typeLabel);
-
-            const total = c?.summary?.total ?? null;
-            const grade = c?.summary?.grade ?? null;
-
-            return (
+            <div className="flex flex-wrap gap-2">
               <button
-                key={key}
-                onClick={() => openCourse(c)}
-                className="group rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:shadow-md hover:border-indigo-200"
+                onClick={() => navigate("/student/courses")}
+                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
               >
-                {/* top row */}
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center gap-2 rounded-full bg-slate-50 border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700">
+                <GridIcon /> My Courses
+              </button>
+
+              <button
+                onClick={() => navigate("/student/complaints")}
+                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+              >
+                <ChatIcon /> My Complaints
+              </button>
+
+              <button
+                onClick={() => navigate("/change-password")}
+                className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
+              >
+                <LockIcon /> Change Password
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Error */}
+        {error && (
+          <div className="rounded-3xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700 shadow-sm sm:px-5">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5">
+                <AlertIcon />
+              </div>
+              <div>
+                <div className="font-semibold">Could not load dashboard</div>
+                <div className="opacity-90">{error}</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Stats */}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard label="Total Courses" value={stats.total} icon={<GridIcon />} />
+          <StatCard label="Published" value={stats.published} icon={<CheckIcon />} />
+          <StatCard label="In Progress" value={stats.inProgress} icon={<ClockIcon />} />
+          <StatCard label="Not Published" value={stats.notPublished} icon={<MinusIcon />} />
+        </div>
+
+        {/* Recent courses */}
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-base font-extrabold text-slate-900">
+                Recent Courses
+              </div>
+              <div className="mt-0.5 text-sm text-slate-500">
+                Quick access to your courses
+              </div>
+            </div>
+
+            <button
+              onClick={() => navigate("/student/courses")}
+              className="text-sm font-semibold text-indigo-700 hover:text-indigo-800"
+            >
+              View all →
+            </button>
+          </div>
+
+          {loading ? (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="h-28 animate-pulse rounded-3xl border border-slate-200 bg-slate-50"
+                />
+              ))}
+            </div>
+          ) : recent.length === 0 ? (
+            <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5">
+                  <InfoIcon />
+                </div>
+                <div>
+                  <div className="font-semibold text-slate-900">
+                    No courses found
+                  </div>
+                  <div className="mt-1 text-slate-500">
+                    You are not enrolled in any courses yet.
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {recent.map((c, idx) => (
+                <button
+                  key={c?._id || c?.id || idx}
+                  onClick={() =>
+                    navigate(`/student/courses/${c?._id || c?.id}`)
+                  }
+                  className="group rounded-3xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-indigo-200 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
                         <HashIcon />
                         {c?.code || "—"}
-                      </span>
+                      </div>
 
-                      <span
-                        className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${badge}`}
-                      >
-                        {typeLabel}
-                      </span>
-                    </div>
+                      <div className="mt-2 line-clamp-2 text-sm font-extrabold text-slate-900 group-hover:text-indigo-700">
+                        {c?.title || "Untitled Course"}
+                      </div>
 
-                    <div className="mt-2 truncate text-base font-bold text-slate-900 group-hover:text-indigo-700">
-                      {c?.title || "Untitled Course"}
-                    </div>
-
-                    <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
-                      <span className="inline-flex items-center gap-1">
-                        <TagIcon /> Section{" "}
-                        <span className="font-semibold text-slate-700">
-                          {c?.section || "—"}
+                      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+                        <span className="inline-flex items-center gap-1">
+                          <CalendarIcon />
+                          {c?.semester || "—"} {c?.year || ""}
                         </span>
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <CalendarIcon /> {c?.semester || "—"}{" "}
-                        {c?.year || ""}
-                      </span>
+                        <span className="inline-flex items-center gap-1">
+                          <TagIcon />
+                          Section{" "}
+                          <span className="font-semibold text-slate-700">
+                            {c?.section || "—"}
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-700 transition group-hover:border-indigo-200 group-hover:bg-indigo-50 group-hover:text-indigo-700">
+                      <ChevronIcon />
                     </div>
                   </div>
 
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-700 group-hover:bg-indigo-50 group-hover:border-indigo-200 group-hover:text-indigo-700">
-                    <ChevronIcon />
-                  </div>
-                </div>
-
-                {/* summary */}
-                <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  {c.summaryStatus === "published" ? (
-                    <div className="flex items-center justify-between">
+                  {/* status line */}
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    {c?.summaryStatus === "published" ? (
+                      <div className="flex items-center justify-between gap-6">
+                        <div className="text-xs text-slate-600">
+                          Current Total
+                          <div className="mt-0.5 text-sm font-extrabold text-slate-900">
+                            {c?.summary?.total ?? 0}/100
+                          </div>
+                        </div>
+                        <div className="text-right text-xs text-slate-600">
+                          Grade
+                          <div className="mt-0.5 text-sm font-extrabold text-emerald-700">
+                            {c?.summary?.grade || "—"}
+                          </div>
+                        </div>
+                      </div>
+                    ) : c?.summaryStatus === "in_progress" ? (
+                      <div className="text-xs text-amber-700">
+                        Marks are being updated
+                        <div className="mt-0.5 text-[11px] text-amber-600">
+                          Some assessments are pending.
+                        </div>
+                      </div>
+                    ) : (
                       <div className="text-xs text-slate-600">
-                        Current Total
-                        <div className="mt-0.5 text-sm font-extrabold text-slate-900">
-                          {c.summary?.total}/100
+                        Marks not published yet
+                        <div className="mt-0.5 text-[11px] text-slate-500">
+                          Assessment structure not finalized.
                         </div>
                       </div>
-                      <div className="text-xs text-slate-600 text-right">
-                        Grade
-                        <div className="mt-0.5 text-sm font-extrabold text-emerald-700">
-                          {c.summary?.grade}
-                        </div>
-                      </div>
-                    </div>
-                  ) : c.summaryStatus === "in_progress" ? (
-                    <div className="text-xs text-amber-700">
-                      Marks are being updated
-                      <div className="mt-0.5 text-[11px] text-amber-600">
-                        Some assessments are pending.
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-xs text-slate-600">
-                      Marks not published yet
-                      <div className="mt-0.5 text-[11px] text-slate-500">
-                        Assessment structure not finalized.
-                      </div>
-                    </div>
-                  )}
-
-                </div>
-              </button>
-            );
-          })}
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -233,12 +261,20 @@ export default StudentDashboard;
 
 function StatCard({ label, value, icon }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-      <div className="flex items-center justify-between gap-2">
+    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between">
         <div className="text-xs font-semibold text-slate-500">{label}</div>
-        <div className="text-slate-600">{icon}</div>
+        <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-700">
+          {icon}
+        </div>
       </div>
-      <div className="mt-1 text-xl font-extrabold text-slate-900">{value}</div>
+
+      <div className="mt-2 text-2xl font-extrabold text-slate-900">{value}</div>
+
+      {/* subtle visual meter */}
+      <div className="mt-2 h-1.5 w-full rounded-full bg-slate-100">
+        <div className="h-1.5 w-2/3 rounded-full bg-indigo-200" />
+      </div>
     </div>
   );
 }
@@ -247,84 +283,193 @@ function StatCard({ label, value, icon }) {
 
 function ChevronIcon() {
   return (
-    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M9 18l6-6-6-6" />
     </svg>
   );
 }
+
 function CapIcon() {
   return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M22 10L12 5 2 10l10 5 10-5z" />
       <path d="M6 12v5c0 1 3 2 6 2s6-1 6-2v-5" />
     </svg>
   );
 }
+
 function GridIcon() {
   return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z" />
     </svg>
   );
 }
-function BookIcon() {
+
+function ChatIcon() {
   return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M4 19a2 2 0 0 0 2 2h12" />
-      <path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2z" />
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
     </svg>
   );
 }
-function FlaskIcon() {
+
+function LockIcon() {
   return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M10 2v6l-5 9a4 4 0 0 0 3.5 6h7A4 4 0 0 0 19 17l-5-9V2" />
-      <path d="M8 12h8" />
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <rect x="3" y="11" width="18" height="11" rx="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
     </svg>
   );
 }
-function MergeIcon() {
+
+function CheckIcon() {
   return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M7 7h10M7 17h10" />
-      <path d="M12 7v10" />
-      <path d="M12 12l3-3M12 12l-3 3" />
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M20 6L9 17l-5-5" />
     </svg>
   );
 }
+
+function ClockIcon() {
+  return (
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M12 8v5l3 3" />
+      <path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
+    </svg>
+  );
+}
+
+function MinusIcon() {
+  return (
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M5 12h14" />
+    </svg>
+  );
+}
+
 function HashIcon() {
   return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M4 9h16M4 15h16" />
       <path d="M10 3L8 21M16 3l-2 18" />
     </svg>
   );
 }
+
 function TagIcon() {
   return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M20.59 13.41L11 3H4v7l9.59 9.59a2 2 0 0 0 2.82 0l4.18-4.18a2 2 0 0 0 0-2.82z" />
       <path d="M7 7h.01" />
     </svg>
   );
 }
+
 function CalendarIcon() {
   return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M8 2v4M16 2v4" />
       <path d="M3 10h18" />
       <path d="M5 6h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" />
     </svg>
   );
 }
-function EmptyIcon() {
+
+function AlertIcon() {
   return (
-    <svg className="h-6 w-6 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M4 19a2 2 0 0 0 2 2h12" />
-      <path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2z" />
-      <path d="M9 9h6" />
+    <svg
+      className="h-5 w-5 text-rose-700"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
     </svg>
   );
 }
 
-export { StudentDashboard };
+function InfoIcon() {
+  return (
+    <svg
+      className="h-5 w-5 text-slate-600"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M12 22a10 10 0 1 0-10-10 10 10 0 0 0 10 10z" />
+      <path d="M12 16v-4" />
+      <path d="M12 8h.01" />
+    </svg>
+  );
+}

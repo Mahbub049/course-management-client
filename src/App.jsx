@@ -19,6 +19,7 @@ import TeacherCoursesPage from "./pages/TeacherCoursesPage";
 import AppLayout from './layouts/AppLayout.jsx';
 import TeacherAttendanceSheetPage from './pages/TeacherAttendanceSheetPage.jsx';
 import StudentAttendanceSheetPage from './pages/StudentAttendanceSheetPage.jsx';
+import { StudentCoursesPage } from './pages/StudentCoursesPage.jsx';
 
 function App() {
   return (
@@ -40,6 +41,8 @@ function App() {
           path="/student/courses/:courseId"
           element={<StudentCoursePage />}
         />
+        <Route path="/student/courses" element={<StudentCoursesPage />} />
+        <Route path="/student/courses/:courseId" element={<StudentCoursePage />} />
         <Route
           path="/student/complaints"
           element={<StudentComplaintsPage />}
