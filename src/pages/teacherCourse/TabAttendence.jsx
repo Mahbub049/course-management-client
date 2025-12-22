@@ -3,6 +3,7 @@ import { getCourseStudents } from "../../services/enrollmentService";
 import {
   fetchAttendanceSummary,
   saveAttendanceSummary,
+  fetchAttendanceSummaryFromSheet
 } from "../../services/attendanceSummaryService";
 import Swal from "sweetalert2";
 
@@ -31,6 +32,8 @@ export default function TabAttendance({ courseId }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+
 
   useEffect(() => {
     async function load() {
@@ -126,6 +129,43 @@ export default function TabAttendance({ courseId }) {
       setSaving(false);
     }
   };
+  const handleFetchFromSheet = async () => {
+    if (!courseId) return;
+
+    setSyncing(true);
+    setErr("");
+
+    try {
+      const data = await fetchAttendanceSummaryFromSheet(courseId);
+
+      const total = Number(data?.totalClasses || 0);
+      setGlobalTotal(total);
+
+      const map = {};
+      (data?.records || []).forEach((r) => {
+        map[r.studentId] = { attendedClasses: String(r.attendedClasses ?? 0) };
+      });
+
+      // ✅ ensure every student has a row (missing ones become 0)
+      students.forEach((s) => {
+        if (!map[s.id]) map[s.id] = { attendedClasses: "0" };
+      });
+
+      setAttMap(map);
+
+      Swal.fire({
+        title: "Fetched!",
+        text: "Attendance has been filled from daily attendance sheet. Now click Save Attendance.",
+        icon: "success",
+      });
+    } catch (e) {
+      console.error(e);
+      setErr(e?.response?.data?.message || "Failed to fetch from attendance sheet");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
 
   return (
     <div className="space-y-6">
@@ -151,18 +191,39 @@ export default function TabAttendance({ courseId }) {
               </p>
             </div>
 
-            <div className="flex flex-col gap-2 lg:items-end">
-              <div className="text-xs font-medium text-slate-600">
-                Total Classes
+            <div className="flex flex-wrap items-end justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              {/* Total Classes */}
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-slate-600">
+                  Total Classes
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  className="h-10 w-40 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
+                  value={globalTotal}
+                  onChange={(e) => setGlobalTotal(Number(e.target.value || 0))}
+                />
               </div>
-              <input
-                type="number"
-                min="0"
-                className="h-10 w-40 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
-                value={globalTotal}
-                onChange={(e) => setGlobalTotal(Number(e.target.value || 0))}
-              />
+
+              {/* Action */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleFetchFromSheet}
+                  disabled={syncing || loading || students.length === 0}
+                  className="inline-flex h-10 items-center justify-center rounded-lg bg-indigo-600 px-5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60"
+                >
+                  {syncing ? "Fetching..." : "Fetch from Sheet"}
+                </button>
+
+                {/* <span className="hidden sm:block text-xs text-slate-500">
+                  Auto-fills from daily attendance
+                </span> */}
+              </div>
             </div>
+
+
           </div>
         </div>
 

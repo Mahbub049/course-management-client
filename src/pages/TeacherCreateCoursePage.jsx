@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createCourseRequest } from "../services/courseService";
+import Swal from "sweetalert2";
 
 function TeacherCreateCoursePage() {
   const navigate = useNavigate();
@@ -48,16 +49,36 @@ function TeacherCreateCoursePage() {
         code: form.code.trim(),
         title: form.title.trim(),
         section: form.section.trim(),
-        semester: form.semester, // dropdown
-        year: form.year, // number
+        semester: form.semester,
+        year: form.year,
         courseType: form.courseType,
       };
 
       await createCourseRequest(payload);
+
+      await Swal.fire({
+        icon: "success",
+        title: "Course Created!",
+        text: "The course has been successfully created.",
+        confirmButtonColor: "#4f46e5",
+        confirmButtonText: "Go to Dashboard",
+      });
+
       navigate("/teacher/dashboard");
     } catch (err) {
       console.error(err);
-      setError(err?.response?.data?.message || "Failed to create course.");
+
+      Swal.fire({
+        icon: "error",
+        title: "Creation Failed",
+        text:
+          err?.response?.data?.message ||
+          "Failed to create course. Please try again.",
+      });
+
+      setError(
+        err?.response?.data?.message || "Failed to create course."
+      );
     } finally {
       setCreating(false);
     }
@@ -158,7 +179,7 @@ function TeacherCreateCoursePage() {
                 <option value="hybrid">Hybrid Course</option>
               </select>
             </div>
-            
+
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">
                 Section

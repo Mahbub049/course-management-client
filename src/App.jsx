@@ -17,6 +17,8 @@ import TeacherCoursesPage from "./pages/TeacherCoursesPage";
 
 
 import AppLayout from './layouts/AppLayout.jsx';
+import TeacherAttendanceSheetPage from './pages/TeacherAttendanceSheetPage.jsx';
+import StudentAttendanceSheetPage from './pages/StudentAttendanceSheetPage.jsx';
 
 function App() {
   return (
@@ -42,6 +44,8 @@ function App() {
           path="/student/complaints"
           element={<StudentComplaintsPage />}
         />
+        <Route path="/student/attendance" element={<StudentAttendanceSheetPage />} />
+
 
         <Route path="/teacher/dashboard" element={<TeacherDashboard />} />
         <Route path="/teacher/create-course" element={<TeacherCreateCoursePage />} /> {/* ✅ new */}
@@ -50,6 +54,7 @@ function App() {
         <Route path="/teacher/attendance" element={<TeacherAttendancePage />} />
         <Route path="/teacher/register" element={<TeacherRegisterPage />} />
         <Route path="/teacher/courses" element={<TeacherCoursesPage />} />
+        <Route path="/teacher/attendance-sheet" element={<TeacherAttendanceSheetPage />} />
 
 
 

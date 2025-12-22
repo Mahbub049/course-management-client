@@ -13,3 +13,9 @@ export const fetchStudentCourseMarks = async (courseId) => {
   const res = await api.get(`/student/courses/${courseId}/marks`);
   return res.data;
 };
+
+// Student: attendance sheet for one course
+export const fetchStudentAttendanceSheet = async (courseId) => {
+  const res = await api.get(`/attendance/student-sheet`, { params: { courseId } });
+  return res.data;
+};

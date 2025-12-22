@@ -32,17 +32,30 @@ function AppLayout() {
     { to: "/teacher/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
     { to: "/teacher/courses", label: "Courses", icon: <BookIcon /> },
     { to: "/teacher/create-course", label: "Create Course", icon: <PlusIcon /> },
+    
+    // ✅ UPDATED: Attendance + Attendance Sheet
+    { to: "/teacher/attendance", label: "Attendance", icon: <CalendarIcon /> },
+    {
+      to: "/teacher/attendance-sheet",
+      label: "Attendance Sheet",
+      icon: <TableIcon />,
+    },
     { to: "/teacher/complaints", label: "Complaints", icon: <AlertIcon /> },
+
     { to: "/change-password", label: "Account", icon: <UserIcon /> },
   ];
 
   const studentLinks = [
     { to: "/student/dashboard", label: "My Courses", icon: <BookIcon /> },
     { to: "/student/complaints", label: "Complaints", icon: <AlertIcon /> },
+    { to: "/student/attendance", label: "Attendance", icon: <CalendarIcon /> },
     { to: "/change-password", label: "Account", icon: <UserIcon /> },
   ];
 
-  const links = role === "teacher" ? teacherLinks : studentLinks;
+  const links = useMemo(() => {
+    if (!role) return [];
+    return role === "teacher" ? teacherLinks : studentLinks;
+  }, [role]);
 
   // Optional: topbar page title (simple)
   const pageTitle = useMemo(() => {
@@ -68,9 +81,7 @@ function AppLayout() {
                 <div className="text-sm font-semibold text-slate-900 leading-tight">
                   Course Management
                 </div>
-                <div className="text-xs text-slate-500">
-                  BUBT Marks Portal
-                </div>
+                <div className="text-xs text-slate-500">BUBT Marks Portal</div>
               </div>
             </div>
           </div>
@@ -116,7 +127,9 @@ function AppLayout() {
                     <span
                       className={[
                         "text-slate-400 transition",
-                        isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                        isActive
+                          ? "opacity-100"
+                          : "opacity-0 group-hover:opacity-100",
                       ].join(" ")}
                     >
                       <ArrowIcon />
@@ -196,7 +209,7 @@ function AppLayout() {
                 </span>
               )}
 
-              {/* Topbar logout (still keep) */}
+              {/* Topbar logout */}
               <button
                 onClick={handleLogout}
                 className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
@@ -223,7 +236,13 @@ export default AppLayout;
 
 function ArrowIcon() {
   return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M9 18l6-6-6-6" />
     </svg>
   );
@@ -231,7 +250,13 @@ function ArrowIcon() {
 
 function CapIcon() {
   return (
-    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M22 10L12 4 2 10l10 6 10-6z" />
       <path d="M6 12v5c0 1 3 3 6 3s6-2 6-3v-5" />
     </svg>
@@ -240,7 +265,13 @@ function CapIcon() {
 
 function DashboardIcon() {
   return (
-    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M4 13h6V4H4v9zM14 20h6v-7h-6v7zM14 11h6V4h-6v7zM4 20h6v-5H4v5z" />
     </svg>
   );
@@ -248,7 +279,13 @@ function DashboardIcon() {
 
 function BookIcon() {
   return (
-    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M4 19a2 2 0 0 0 2 2h14V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2z" />
       <path d="M4 7h16" />
     </svg>
@@ -257,7 +294,13 @@ function BookIcon() {
 
 function PlusIcon() {
   return (
-    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M12 5v14M5 12h14" />
     </svg>
   );
@@ -265,7 +308,13 @@ function PlusIcon() {
 
 function AlertIcon() {
   return (
-    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M12 9v4" />
       <path d="M12 17h.01" />
       <path d="M10.3 3.5h3.4L22 20H2z" />
@@ -273,9 +322,51 @@ function AlertIcon() {
   );
 }
 
+// ✅ NEW: Attendance icon
+function CalendarIcon() {
+  return (
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M8 2v3M16 2v3" />
+      <path d="M3 9h18" />
+      <path d="M5 5h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z" />
+      <path d="M8 13h4M8 17h6" />
+    </svg>
+  );
+}
+
+// ✅ NEW: Attendance sheet icon
+function TableIcon() {
+  return (
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M3 5h18v14H3z" />
+      <path d="M3 10h18" />
+      <path d="M8 5v14" />
+      <path d="M14 5v14" />
+    </svg>
+  );
+}
+
 function UserIcon() {
   return (
-    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M20 21a8 8 0 0 0-16 0" />
       <path d="M12 11a4 4 0 1 0-4-4 4 4 0 0 0 4 4z" />
     </svg>
@@ -284,7 +375,13 @@ function UserIcon() {
 
 function UserCircleIcon() {
   return (
-    <svg className="h-5 w-5 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-5 w-5 text-slate-700"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M20 21a8 8 0 0 0-16 0" />
       <path d="M12 11a4 4 0 1 0-4-4 4 4 0 0 0 4 4z" />
     </svg>
@@ -293,7 +390,13 @@ function UserCircleIcon() {
 
 function LogoutIcon() {
   return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M16 17l5-5-5-5" />
       <path d="M21 12H9" />
       <path d="M12 19H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h7" />

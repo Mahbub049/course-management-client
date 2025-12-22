@@ -3,7 +3,12 @@
 import { useEffect, useState } from "react";
 import { fetchTeacherCourses } from "../services/courseService";
 import { getCourseStudents } from "../services/enrollmentService";
-import { createAttendanceRecord } from "../services/attendanceService";
+import {
+    createAttendanceRecord,
+    fetchAttendanceDay,
+    updateAttendanceDay,
+} from "../services/attendanceService";
+
 
 export default function TeacherAttendancePage() {
     const [courses, setCourses] = useState([]);
@@ -16,6 +21,7 @@ export default function TeacherAttendancePage() {
         numClasses: 1,
     });
 
+    const [mode, setMode] = useState("create"); // "create" | "update"
     const [students, setStudents] = useState([]);
     const [loadingStudents, setLoadingStudents] = useState(false);
     const [studentsError, setStudentsError] = useState("");
@@ -72,11 +78,38 @@ export default function TeacherAttendancePage() {
             setStudents(list);
 
             // default: everyone present ✅
+            // default: everyone present (create mode)
             const initialAttendance = {};
-            list.forEach((s) => {
-                initialAttendance[s.roll] = true;
-            });
-            setAttendance(initialAttendance);
+            list.forEach((s) => (initialAttendance[s.roll] = true));
+
+            if (mode === "create") {
+                setAttendance(initialAttendance);
+                return;
+            }
+
+            // ✅ update mode: load existing attendance for that date
+            try {
+                const day = await fetchAttendanceDay(form.courseId, form.date);
+
+                // overwrite numClasses with saved one
+                setForm((prev) => ({ ...prev, numClasses: day.numClasses }));
+
+                const map = {};
+                // start all false, then fill
+                list.forEach((s) => (map[s.roll] = false));
+
+                (day.records || []).forEach((r) => {
+                    map[String(r.roll)] = !!r.present;
+                });
+
+                setAttendance(map);
+            } catch (err) {
+                console.error(err);
+                setStudentsError(err?.response?.data?.message || "No attendance found for this date.");
+                // keep list loaded but do not allow submit update without data
+                setAttendance({});
+            }
+
         } catch (err) {
             console.error(err);
             setStudentsError(
@@ -113,7 +146,14 @@ export default function TeacherAttendancePage() {
                 })),
             };
 
-            await createAttendanceRecord(payload);
+            if (mode === "create") {
+                await createAttendanceRecord(payload);
+                setSaveMessage("Attendance saved successfully.");
+            } else {
+                await updateAttendanceDay(payload);
+                setSaveMessage("Attendance updated successfully.");
+            }
+
             setSaveMessage("Attendance saved successfully.");
         } catch (err) {
             console.error(err);
@@ -140,6 +180,29 @@ export default function TeacherAttendancePage() {
                     Select a course, date and number of classes, then mark present students.
                     (Checked = Present)
                 </p>
+                <div className="mb-5 flex gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setMode("create")}
+                        className={`h-9 rounded-lg px-4 text-sm font-semibold border ${mode === "create"
+                                ? "bg-indigo-600 text-white border-indigo-600"
+                                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                            }`}
+                    >
+                        Create
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => setMode("update")}
+                        className={`h-9 rounded-lg px-4 text-sm font-semibold border ${mode === "update"
+                                ? "bg-amber-500 text-white border-amber-500"
+                                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                            }`}
+                    >
+                        Update
+                    </button>
+                </div>
 
                 {/* Course + Date + Classes form */}
                 <form
@@ -288,7 +351,8 @@ export default function TeacherAttendancePage() {
                                         disabled={saving}
                                         className="inline-flex items-center px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-60"
                                     >
-                                        {saving ? "Saving..." : "Submit Attendance"}
+                                        {saving ? "Saving..." : mode === "create" ? "Submit Attendance" : "Update Attendance"}
+
                                     </button>
                                     {saveMessage && (
                                         <span className="text-xs text-slate-600">

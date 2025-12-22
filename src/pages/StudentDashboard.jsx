@@ -186,29 +186,37 @@ function StudentDashboard() {
 
                 {/* summary */}
                 <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  {total != null && grade ? (
+                  {c.summaryStatus === "published" ? (
                     <div className="flex items-center justify-between">
                       <div className="text-xs text-slate-600">
                         Current Total
                         <div className="mt-0.5 text-sm font-extrabold text-slate-900">
-                          {total}/100
+                          {c.summary?.total}/100
                         </div>
                       </div>
                       <div className="text-xs text-slate-600 text-right">
                         Grade
                         <div className="mt-0.5 text-sm font-extrabold text-emerald-700">
-                          {grade}
+                          {c.summary?.grade}
                         </div>
+                      </div>
+                    </div>
+                  ) : c.summaryStatus === "in_progress" ? (
+                    <div className="text-xs text-amber-700">
+                      Marks are being updated
+                      <div className="mt-0.5 text-[11px] text-amber-600">
+                        Some assessments are pending.
                       </div>
                     </div>
                   ) : (
                     <div className="text-xs text-slate-600">
-                      Summary not available yet.
+                      Marks not published yet
                       <div className="mt-0.5 text-[11px] text-slate-500">
-                        Marks may not be published for this course.
+                        Assessment structure not finalized.
                       </div>
                     </div>
                   )}
+
                 </div>
               </button>
             );

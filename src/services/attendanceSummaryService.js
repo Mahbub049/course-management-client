@@ -11,3 +11,8 @@ export const saveAttendanceSummary = async (courseId, records) => {
   });
   return res.data;
 };
+
+export const fetchAttendanceSummaryFromSheet = async (courseId) => {
+  const res = await api.get(`/courses/${courseId}/attendance-summary/from-sheet`);
+  return res.data; // { totalClasses, records }
+};
