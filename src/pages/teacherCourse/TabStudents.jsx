@@ -1,5 +1,5 @@
 // client/src/pages/teacherCourse/TabStudents.jsx
-
+import * as XLSX from "xlsx";
 import { useEffect, useMemo, useState } from "react";
 import {
   addStudentToCourseRequest,
@@ -7,6 +7,7 @@ import {
   getCourseStudents,
   deleteStudentFromCourseRequest,
   resetStudentPasswordRequest,
+  exportCourseStudentsRequest,
 } from "../../services/enrollmentService";
 
 export default function TabStudents({ courseId }) {
@@ -179,6 +180,35 @@ export default function TabStudents({ courseId }) {
       setRegenLoadingId(null);
     }
   };
+
+  const handleExportExcel = async () => {
+    try {
+      const rows = await exportCourseStudentsRequest(courseId);
+
+      if (!rows || rows.length === 0) {
+        alert("No students to export");
+        return;
+      }
+
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+
+      XLSX.utils.book_append_sheet(
+        workbook,
+        worksheet,
+        "Students"
+      );
+
+      XLSX.writeFile(
+        workbook,
+        `Course_${courseId}_Students.xlsx`
+      );
+    } catch (err) {
+      console.error(err);
+      alert("Failed to export students");
+    }
+  };
+
 
   const filteredStudents = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -443,6 +473,14 @@ export default function TabStudents({ courseId }) {
                 className="w-72 max-w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
               />
             </div>
+
+            {/* ✅ EXPORT BUTTON */}
+            <button
+              onClick={handleExportExcel}
+              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
+            >
+              Export to Excel
+            </button>
           </div>
         </div>
 

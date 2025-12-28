@@ -31,3 +31,10 @@ export const resetStudentPasswordRequest = async (courseId, studentId) => {
   );
   return res.data;
 };
+
+
+// ✅ Export students (Excel)
+export const exportCourseStudentsRequest = async (courseId) => {
+  const res = await api.get(`/courses/${courseId}/students/export`);
+  return res.data;
+};
