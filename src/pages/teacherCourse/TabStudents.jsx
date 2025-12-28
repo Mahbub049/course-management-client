@@ -8,6 +8,7 @@ import {
   deleteStudentFromCourseRequest,
   resetStudentPasswordRequest,
   exportCourseStudentsRequest,
+  sendPasswordsByEmailRequest,
 } from "../../services/enrollmentService";
 
 export default function TabStudents({ courseId }) {
@@ -222,6 +223,32 @@ export default function TabStudents({ courseId }) {
       );
     });
   }, [students, query]);
+
+
+const handleSendEmails = async () => {
+  const ok = window.confirm(
+    "Send login credentials to all enrolled students who have email?\nStudents without email will be skipped."
+  );
+  if (!ok) return;
+
+  try {
+    const payload = {
+      subject: "BUBT Marks Portal Login Credentials",
+      message:
+        "Assalamu Alaikum. Here are your login credentials for BUBT Marks Portal. Please login and change your password immediately.",
+    };
+
+    const result = await sendPasswordsByEmailRequest(courseId, payload);
+
+    alert(
+      `Done!\nSent: ${result.sent}\nSkipped (No Email): ${result.skippedNoEmail}\nSkipped (No Password): ${result.skippedNoPassword}\nFailed: ${result.failed}`
+    );
+  } catch (err) {
+    console.error(err);
+    alert(err?.response?.data?.message || "Failed to send emails");
+  }
+};
+
 
   return (
     <div className="space-y-6">
@@ -481,6 +508,13 @@ export default function TabStudents({ courseId }) {
             >
               Export to Excel
             </button>
+            <button
+              onClick={handleSendEmails}
+              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
+            >
+              Send Email
+            </button>
+
           </div>
         </div>
 

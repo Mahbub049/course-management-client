@@ -38,3 +38,12 @@ export const exportCourseStudentsRequest = async (courseId) => {
   const res = await api.get(`/courses/${courseId}/students/export`);
   return res.data;
 };
+
+
+export const sendPasswordsByEmailRequest = async (courseId, payload) => {
+  const res = await api.post(
+    `/courses/${courseId}/students/send-password-emails`,
+    payload
+  );
+  return res.data;
+};
