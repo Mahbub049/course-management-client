@@ -508,12 +508,12 @@ const handleSendEmails = async () => {
             >
               Export to Excel
             </button>
-            <button
+            {/* <button
               onClick={handleSendEmails}
               className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
             >
               Send Email
-            </button>
+            </button> */}
 
           </div>
         </div>
