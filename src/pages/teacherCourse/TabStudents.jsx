@@ -9,6 +9,7 @@ import {
   resetStudentPasswordRequest,
   exportCourseStudentsRequest,
   sendPasswordsByEmailRequest,
+  removeAllStudentsFromCourseRequest, // ✅ NEW
 } from "../../services/enrollmentService";
 
 export default function TabStudents({ courseId }) {
@@ -30,6 +31,9 @@ export default function TabStudents({ courseId }) {
   const [bulkLoading, setBulkLoading] = useState(false);
 
   const [regenLoadingId, setRegenLoadingId] = useState(null);
+
+  // ✅ NEW: remove-all loading
+  const [removingAll, setRemovingAll] = useState(false);
 
   // UI (premium)
   const [query, setQuery] = useState("");
@@ -164,6 +168,37 @@ export default function TabStudents({ courseId }) {
     }
   };
 
+  // ✅ NEW: Remove all students
+  const handleRemoveAllStudents = async () => {
+    if (students.length === 0) {
+      alert("No students to remove.");
+      return;
+    }
+
+    const ok = window.confirm(
+      `⚠️ Remove ALL students from this course?\n\nThis will:\n- Unenroll ${students.length} students\n- Delete their marks for this course\n\nThis cannot be undone.`
+    );
+    if (!ok) return;
+
+    setRemovingAll(true);
+    try {
+      const result = await removeAllStudentsFromCourseRequest(courseId);
+
+      // safest: refresh list
+      const fresh = await getCourseStudents(courseId);
+      setStudents(fresh || []);
+
+      alert(
+        `Done!\nRemoved Enrollments: ${result.removedEnrollments}\nDeleted Marks: ${result.deletedMarks}`
+      );
+    } catch (err) {
+      console.error(err);
+      alert(err?.response?.data?.message || "Failed to remove all students");
+    } finally {
+      setRemovingAll(false);
+    }
+  };
+
   const handleRegenerate = async (studentId, enrollmentId) => {
     try {
       setRegenLoadingId(enrollmentId);
@@ -194,22 +229,14 @@ export default function TabStudents({ courseId }) {
       const worksheet = XLSX.utils.json_to_sheet(rows);
       const workbook = XLSX.utils.book_new();
 
-      XLSX.utils.book_append_sheet(
-        workbook,
-        worksheet,
-        "Students"
-      );
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Students");
 
-      XLSX.writeFile(
-        workbook,
-        `Course_${courseId}_Students.xlsx`
-      );
+      XLSX.writeFile(workbook, `Course_${courseId}_Students.xlsx`);
     } catch (err) {
       console.error(err);
       alert("Failed to export students");
     }
   };
-
 
   const filteredStudents = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -224,31 +251,29 @@ export default function TabStudents({ courseId }) {
     });
   }, [students, query]);
 
-
-const handleSendEmails = async () => {
-  const ok = window.confirm(
-    "Send login credentials to all enrolled students who have email?\nStudents without email will be skipped."
-  );
-  if (!ok) return;
-
-  try {
-    const payload = {
-      subject: "BUBT Marks Portal Login Credentials",
-      message:
-        "Assalamu Alaikum. Here are your login credentials for BUBT Marks Portal. Please login and change your password immediately.",
-    };
-
-    const result = await sendPasswordsByEmailRequest(courseId, payload);
-
-    alert(
-      `Done!\nSent: ${result.sent}\nSkipped (No Email): ${result.skippedNoEmail}\nSkipped (No Password): ${result.skippedNoPassword}\nFailed: ${result.failed}`
+  const handleSendEmails = async () => {
+    const ok = window.confirm(
+      "Send login credentials to all enrolled students who have email?\nStudents without email will be skipped."
     );
-  } catch (err) {
-    console.error(err);
-    alert(err?.response?.data?.message || "Failed to send emails");
-  }
-};
+    if (!ok) return;
 
+    try {
+      const payload = {
+        subject: "BUBT Marks Portal Login Credentials",
+        message:
+          "Assalamu Alaikum. Here are your login credentials for BUBT Marks Portal. Please login and change your password immediately.",
+      };
+
+      const result = await sendPasswordsByEmailRequest(courseId, payload);
+
+      alert(
+        `Done!\nSent: ${result.sent}\nSkipped (No Email): ${result.skippedNoEmail}\nSkipped (No Password): ${result.skippedNoPassword}\nFailed: ${result.failed}`
+      );
+    } catch (err) {
+      console.error(err);
+      alert(err?.response?.data?.message || "Failed to send emails");
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -501,6 +526,24 @@ const handleSendEmails = async () => {
               />
             </div>
 
+            {/* ✅ REMOVE ALL BUTTON */}
+            <button
+              onClick={handleRemoveAllStudents}
+              disabled={removingAll || students.length === 0}
+              className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700 disabled:opacity-60"
+              title="Remove all students from this course"
+            >
+              {removingAll ? (
+                <>
+                  <SpinnerIcon /> Removing…
+                </>
+              ) : (
+                <>
+                  <TrashIcon /> Remove All
+                </>
+              )}
+            </button>
+
             {/* ✅ EXPORT BUTTON */}
             <button
               onClick={handleExportExcel}
@@ -508,13 +551,13 @@ const handleSendEmails = async () => {
             >
               Export to Excel
             </button>
+
             {/* <button
               onClick={handleSendEmails}
               className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
             >
               Send Email
             </button> */}
-
           </div>
         </div>
 

@@ -8,18 +8,19 @@ export default function TeacherCourseLayout({ course, children, activeTab, setAc
     type === "lab"
       ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
       : type === "hybrid"
-      ? "bg-purple-50 text-purple-700 border border-purple-200"
-      : "bg-sky-50 text-sky-700 border border-sky-200";
+        ? "bg-purple-50 text-purple-700 border border-purple-200"
+        : "bg-sky-50 text-sky-700 border border-sky-200";
 
   const typeLabel = type === "lab" ? "Lab" : type === "hybrid" ? "Hybrid" : "Theory";
 
   const tabs = [
-    { id: "students", label: "Students", icon: <UsersIcon /> },
-    { id: "assessments", label: "Assessments", icon: <ClipboardIcon /> },
     { id: "marks", label: "Marks Entry", icon: <MarksIcon /> },
+    { id: "assessments", label: "Assessments", icon: <ClipboardIcon /> },
+    { id: "students", label: "Students", icon: <UsersIcon /> },
     { id: "attendance", label: "Attendance", icon: <CalendarIcon /> },
     { id: "settings", label: "Settings", icon: <SettingsIcon /> },
   ];
+
 
   return (
     <div className=" mx-auto space-y-5">

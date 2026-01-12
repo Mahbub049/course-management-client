@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { fetchTeacherComplaints, replyTeacherComplaint } from "../services/complaintService";
+import {
+  fetchTeacherComplaints,
+  replyTeacherComplaint,
+} from "../services/complaintService";
 
 const STATUS_BADGE_CLASSES = {
   open: "bg-rose-50 text-rose-700 border-rose-200",
@@ -16,14 +19,51 @@ const STATUS_LABEL = {
   resolved: "Resolved",
 };
 
+// ✅ NEW: Category badge classes
+const CATEGORY_BADGE_CLASSES = {
+  marks: "bg-indigo-50 text-indigo-700 border-indigo-200",
+  attendance: "bg-amber-50 text-amber-700 border-amber-200",
+  general: "bg-slate-50 text-slate-700 border-slate-200",
+};
+
+// ✅ NEW: Category label
+const CATEGORY_LABEL = {
+  marks: "Marks",
+  attendance: "Attendance",
+  general: "General",
+};
+
 function formatDate(iso) {
   if (!iso) return "—";
   const d = new Date(iso);
-  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  return d.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 function safeLower(x) {
   return (x || "").toString().toLowerCase();
+}
+
+// ✅ NEW: Determine component text based on category
+function getComponentText(c) {
+  const cat = c?.category || "marks";
+
+  if (cat === "attendance") {
+    if (c?.attendanceRef?.date && c?.attendanceRef?.period != null) {
+      return `${c.attendanceRef.date} (P${c.attendanceRef.period})`;
+    }
+    return "Attendance";
+  }
+
+  if (cat === "general") {
+    return "General Issue";
+  }
+
+  // marks
+  return c?.assessment?.name || "Whole course";
 }
 
 export default function TeacherComplaintsPage() {
@@ -74,7 +114,9 @@ export default function TeacherComplaintsPage() {
     complaints.forEach((c) => {
       if (c.course) {
         const key = c.course._id || c.course.code;
-        const label = `${c.course.code || ""}${c.course.title ? " – " + c.course.title : ""}`;
+        const label = `${c.course.code || ""}${
+          c.course.title ? " – " + c.course.title : ""
+        }`;
         if (!map.has(key)) map.set(key, label);
       }
     });
@@ -93,19 +135,29 @@ export default function TeacherComplaintsPage() {
 
       if (search.trim()) {
         const q = search.trim().toLowerCase();
+
+        // ✅ NEW: include attendanceRef in search string
+        const attendanceText =
+          c.category === "attendance" && c.attendanceRef
+            ? `${c.attendanceRef.date} period ${c.attendanceRef.period}`
+            : "";
+
         const text = [
           c.student?.name,
           c.student?.roll,
           c.course?.code,
           c.course?.title,
           c.category,
+          CATEGORY_LABEL[c.category],
           c.assessment?.name,
+          attendanceText,
           c.message,
           c.reply,
         ]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
+
         if (!text.includes(q)) return false;
       }
 
@@ -131,7 +183,11 @@ export default function TeacherComplaintsPage() {
     if (!selected) return;
     setSaving(true);
     try {
-      const updated = await replyTeacherComplaint(selected._id, replyDraft, selected.status);
+      const updated = await replyTeacherComplaint(
+        selected._id,
+        replyDraft,
+        selected.status
+      );
       setComplaints((prev) => prev.map((c) => (c._id === updated._id ? updated : c)));
       setSelected(updated);
     } catch (err) {
@@ -158,7 +214,14 @@ export default function TeacherComplaintsPage() {
   };
 
   const selectedBadge =
-    STATUS_BADGE_CLASSES[selected?.status] || "bg-slate-50 text-slate-700 border-slate-200";
+    STATUS_BADGE_CLASSES[selected?.status] ||
+    "bg-slate-50 text-slate-700 border-slate-200";
+
+  // ✅ NEW: selected category badge
+  const selectedCategory = selected?.category || "marks";
+  const selectedCategoryBadge =
+    CATEGORY_BADGE_CLASSES[selectedCategory] ||
+    "bg-slate-50 text-slate-700 border-slate-200";
 
   return (
     <div className="space-y-6">
@@ -250,7 +313,7 @@ export default function TeacherComplaintsPage() {
               <input
                 type="text"
                 className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-                placeholder="Student, roll, course, component, message..."
+                placeholder="Student, roll, course, component, attendance date/period..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -303,9 +366,17 @@ export default function TeacherComplaintsPage() {
                 ) : (
                   filteredComplaints.map((c) => {
                     const badgeClass =
-                      STATUS_BADGE_CLASSES[c.status] || "bg-slate-50 text-slate-700 border-slate-200";
+                      STATUS_BADGE_CLASSES[c.status] ||
+                      "bg-slate-50 text-slate-700 border-slate-200";
+
+                    const cat = c.category || "marks";
+                    const catBadge =
+                      CATEGORY_BADGE_CLASSES[cat] ||
+                      "bg-slate-50 text-slate-700 border-slate-200";
 
                     const isActive = selected?._id === c._id;
+
+                    const componentText = getComponentText(c);
 
                     return (
                       <tr
@@ -315,11 +386,15 @@ export default function TeacherComplaintsPage() {
                           isActive ? "bg-indigo-50/60" : "",
                         ].join(" ")}
                       >
-                        <td className="px-6 py-4 text-xs text-slate-500">{formatDate(c.createdAt)}</td>
+                        <td className="px-6 py-4 text-xs text-slate-500">
+                          {formatDate(c.createdAt)}
+                        </td>
 
                         <td className="px-6 py-4">
                           <div className="font-semibold text-slate-900">{c.course?.code || "—"}</div>
-                          <div className="text-xs text-slate-500 line-clamp-1">{c.course?.title || ""}</div>
+                          <div className="text-xs text-slate-500 line-clamp-1">
+                            {c.course?.title || ""}
+                          </div>
                         </td>
 
                         <td className="px-6 py-4">
@@ -327,17 +402,30 @@ export default function TeacherComplaintsPage() {
                           <div className="text-xs text-slate-500">{c.student?.roll || ""}</div>
                         </td>
 
+                        {/* ✅ UPDATED: Component cell shows component + category badge */}
                         <td className="px-6 py-4">
-                          <div className="text-sm font-semibold text-slate-800">
-                            {c.assessment?.name || c.category || "General"}
-                          </div>
-                          <div className="text-xs text-slate-500">
-                            {c.category ? `Category: ${c.category}` : "—"}
+                          <div className="text-sm font-semibold text-slate-800">{componentText}</div>
+
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            <span
+                              className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${catBadge}`}
+                              title="Complaint category"
+                            >
+                              {CATEGORY_LABEL[cat] || "Marks"}
+                            </span>
+
+                            {cat === "attendance" && c.attendanceRef?.date && (
+                              <span className="text-[11px] text-slate-500">
+                                Session: {c.attendanceRef.date} • P{c.attendanceRef.period}
+                              </span>
+                            )}
                           </div>
                         </td>
 
                         <td className="px-6 py-4">
-                          <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${badgeClass}`}>
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${badgeClass}`}
+                          >
                             {STATUS_LABEL[c.status] || c.status || "Open"}
                           </span>
                         </td>
@@ -364,7 +452,9 @@ export default function TeacherComplaintsPage() {
           <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
             <div className="text-sm font-semibold text-slate-900">Details</div>
             {selected ? (
-              <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${selectedBadge}`}>
+              <span
+                className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${selectedBadge}`}
+              >
                 {STATUS_LABEL[selected.status] || selected.status || "Open"}
               </span>
             ) : (
@@ -395,9 +485,23 @@ export default function TeacherComplaintsPage() {
                       <span className="text-slate-500">({selected.student?.roll})</span>
                     </div>
 
+                    {/* ✅ UPDATED: pills include category + component + attendance session */}
                     <div className="mt-2 flex flex-wrap gap-2">
                       <Pill label={`Section: ${selected.course?.section || "—"}`} />
-                      <Pill label={`Component: ${selected.assessment?.name || selected.category || "General"}`} />
+
+                      <span
+                        className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${selectedCategoryBadge}`}
+                      >
+                        {CATEGORY_LABEL[selectedCategory] || "Marks"}
+                      </span>
+
+                      <Pill label={`Component: ${getComponentText(selected)}`} />
+
+                      {selectedCategory === "attendance" && selected.attendanceRef?.date && (
+                        <Pill
+                          label={`Session: ${selected.attendanceRef.date} (P${selected.attendanceRef.period})`}
+                        />
+                      )}
                     </div>
                   </div>
                 </div>
@@ -410,15 +514,23 @@ export default function TeacherComplaintsPage() {
                 </div>
 
                 <div className="mt-5">
-                  <div className="text-xs font-semibold text-slate-600 mb-2">Your reply (visible to student)</div>
+                  <div className="text-xs font-semibold text-slate-600 mb-2">
+                    Your reply (visible to student)
+                  </div>
                   <textarea
                     className="w-full min-h-[130px] rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-                    placeholder="Write a clear response about the marks / decision."
+                    placeholder={
+                      selectedCategory === "attendance"
+                        ? "Write a clear response (e.g., checked attendance sheet for that date/period and updated)."
+                        : selectedCategory === "general"
+                        ? "Write a clear response (e.g., where to check / what will be updated)."
+                        : "Write a clear response about the marks / decision."
+                    }
                     value={replyDraft}
                     onChange={(e) => setReplyDraft(e.target.value)}
                   />
                   <div className="mt-2 text-xs text-slate-500">
-                    Tip: mention the assessment component, marks rule (if any), and your final decision.
+                    Tip: keep it specific and mention the final decision (updated / not updated / reason).
                   </div>
                 </div>
 
@@ -487,7 +599,9 @@ function StatChip({ label, value, tone }) {
       : "bg-slate-50 text-slate-700 border-slate-200";
 
   return (
-    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold ${cls}`}>
+    <span
+      className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold ${cls}`}
+    >
       <span className="opacity-80">{label}</span>
       <span className="font-bold">{value}</span>
     </span>

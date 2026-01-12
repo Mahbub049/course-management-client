@@ -14,7 +14,7 @@ export default function TeacherCoursePage() {
   const { courseId } = useParams();
   const navigate = useNavigate();
 
-  const [activeTab, setActiveTab] = useState("students");
+  const [activeTab, setActiveTab] = useState("marks");
   const [course, setCourse] = useState(null);
   const [loading, setLoading] = useState(true);
 

@@ -44,25 +44,27 @@ function pct(obt, full) {
 }
 
 /**
- * ✅ Your business rule total /100:
- *  - CT: best 2 -> average -> /15
- *  - Mid: /30
- *  - Final: /40
- *  - Presentation/Assignment:
- *      if both exist -> 5 + 5
- *      else whichever exists -> /10
- *  - Attendance: /5 from attendance summary
+ * ✅ Total /100:
+ *  - THEORY:
+ *      CT: best 2 -> average -> /15
+ *      Mid: /30
+ *      Final: /40
+ *      Presentation/Assignment:
+ *        if both exist -> 5 + 5
+ *        else whichever exists -> /10
+ *      Attendance: /5 from attendance summary
+ *  - LAB:
+ *      All non-mid/final/att assessments: avg -> /25
+ *      Mid: /30
+ *      Final: /40
+ *      Attendance: /5 from attendance summary
  */
 function computeTotal100(courseType, assessments, rowMarks, attendanceMarks5 = 0) {
   const list = Array.isArray(assessments) ? assessments : [];
   const name = (a) => String(a?.name || "").toLowerCase();
 
-  // ---- Attendance /5 (from Attendance tab summary) ----
   const attScore5 = clamp(attendanceMarks5, 0, 5);
 
-  // ✅ LAB COURSE RULE:
-  // Lab Assessments (any amount) -> avg pct -> scale to 25
-  // Mid -> 30, Final -> 40, Attendance -> 5 (from attendance tab)
   if (courseType === "lab") {
     const labList = list.filter((a) => {
       const n = name(a);
@@ -85,7 +87,6 @@ function computeTotal100(courseType, assessments, rowMarks, attendanceMarks5 = 0
     return Math.round(total * 100) / 100;
   }
 
-  // ✅ THEORY RULE (your existing logic)
   const ctList = list.filter((a) => name(a).includes("ct"));
   const mid = list.find((a) => name(a).includes("mid"));
   const final = list.find((a) => name(a).includes("final"));
@@ -123,7 +124,6 @@ function computeTotal100(courseType, assessments, rowMarks, attendanceMarks5 = 0
   return Math.round(total * 100) / 100;
 }
 
-
 export default function TabMarks({ courseId, course }) {
   const [students, setStudents] = useState([]);
   const [assessments, setAssessments] = useState([]);
@@ -136,6 +136,10 @@ export default function TabMarks({ courseId, course }) {
 
   const [tabMode, setTabMode] = useState("row"); // row | col
   const inputRefs = useRef([]);
+
+  // ✅ NEW: Sort modes
+  const [sortMode, setSortMode] = useState("entered"); // entered | roll-asc | roll-desc
+  const originalStudentsRef = useRef([]); // preserve entered order
 
   useEffect(() => {
     async function loadAll() {
@@ -155,6 +159,7 @@ export default function TabMarks({ courseId, course }) {
         assessmentsData = res[1] || [];
 
         setStudents(studentsData);
+        originalStudentsRef.current = studentsData; // ✅ keep original order
         setAssessments(assessmentsData);
       } catch (e) {
         console.error(e);
@@ -162,6 +167,7 @@ export default function TabMarks({ courseId, course }) {
           e?.response?.data?.message || "Failed to load students/assessments"
         );
         setStudents([]);
+        originalStudentsRef.current = [];
         setAssessments([]);
         setMarksMap({});
         setAttMarksMap({});
@@ -193,7 +199,6 @@ export default function TabMarks({ courseId, course }) {
         if (attSummary.status === "fulfilled") {
           const attRows = attSummary.value || [];
 
-          // store separate attendance marks map for total calc
           const newAttMap = {};
           attRows.forEach((r) => {
             newAttMap[r.student] = Number(r.marks ?? 0); // already /5
@@ -256,7 +261,7 @@ export default function TabMarks({ courseId, course }) {
 
     e.preventDefault();
 
-    const maxR = students.length - 1;
+    const maxR = sortedStudents.length - 1; // ✅ use sorted list
     const maxC = assessments.length - 1;
 
     let nextR = r;
@@ -286,7 +291,8 @@ export default function TabMarks({ courseId, course }) {
     try {
       const payload = [];
 
-      students.forEach((s) => {
+      // ✅ payload order does not matter, but use sortedStudents for consistency
+      sortedStudents.forEach((s) => {
         const row = marksMap[s.id] || {};
         assessments.forEach((a) => {
           // ✅ attendance is saved in Attendance tab, not here
@@ -332,13 +338,34 @@ export default function TabMarks({ courseId, course }) {
     return totals;
   }, [courseType, students, assessments, marksMap, attMarksMap]);
 
+  // ✅ NEW: Sorting result list
+  const sortedStudents = useMemo(() => {
+    if (sortMode === "entered") {
+      return originalStudentsRef.current || [];
+    }
+
+    const copy = [...students];
+
+    copy.sort((a, b) => {
+      const ra = String(a.roll ?? "");
+      const rb = String(b.roll ?? "");
+      if (sortMode === "roll-asc")
+        return ra.localeCompare(rb, undefined, { numeric: true });
+      if (sortMode === "roll-desc")
+        return rb.localeCompare(ra, undefined, { numeric: true });
+      return 0;
+    });
+
+    return copy;
+  }, [students, sortMode]);
+
   const handleExportExcel = () => {
-    if (!students.length || !assessments.length) {
+    if (!sortedStudents.length || !assessments.length) {
       alert("Nothing to export.");
       return;
     }
 
-    const rows = students.map((s) => {
+    const rows = sortedStudents.map((s) => {
       const rowMarks = marksMap[s.id] || {};
       const total = totalsPerStudent[s.id] ?? 0;
 
@@ -385,19 +412,18 @@ export default function TabMarks({ courseId, course }) {
     saveAs(blob, fileName);
   };
 
-  // const courseType = getCourseType(course);
   const courseTypeLabel = courseType === "lab" ? "Lab Course" : "Theory Course";
 
   const stats = useMemo(() => {
-    const n = students.length;
+    const n = sortedStudents.length;
     if (!n) return { avg: 0, top: 0, pass: 0 };
-    const totals = students.map((s) => Number(totalsPerStudent[s.id] ?? 0));
+    const totals = sortedStudents.map((s) => Number(totalsPerStudent[s.id] ?? 0));
     const sum = totals.reduce((a, b) => a + b, 0);
     const avg = sum / n;
     const top = Math.max(...totals);
     const pass = totals.filter((t) => t >= 40).length;
     return { avg, top, pass };
-  }, [students, totalsPerStudent]);
+  }, [sortedStudents, totalsPerStudent]);
 
   const badgeClass =
     courseType === "lab"
@@ -415,7 +441,9 @@ export default function TabMarks({ courseId, course }) {
                 <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
                   Marks Entry
                 </span>
-                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${badgeClass}`}>
+                <span
+                  className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${badgeClass}`}
+                >
                   {courseTypeLabel}
                 </span>
               </div>
@@ -429,16 +457,20 @@ export default function TabMarks({ courseId, course }) {
 
               <div className="mt-3 flex flex-wrap gap-2">
                 <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">
-                  Students: <span className="ml-1 font-semibold">{students.length}</span>
+                  Students:{" "}
+                  <span className="ml-1 font-semibold">{sortedStudents.length}</span>
                 </span>
                 <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">
-                  Assessments: <span className="ml-1 font-semibold">{assessments.length}</span>
+                  Assessments:{" "}
+                  <span className="ml-1 font-semibold">{assessments.length}</span>
                 </span>
                 <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">
-                  Avg: <span className="ml-1 font-semibold">{stats.avg.toFixed(1)}</span>
+                  Avg:{" "}
+                  <span className="ml-1 font-semibold">{stats.avg.toFixed(1)}</span>
                 </span>
                 <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">
-                  Top: <span className="ml-1 font-semibold">{stats.top.toFixed(1)}</span>
+                  Top:{" "}
+                  <span className="ml-1 font-semibold">{stats.top.toFixed(1)}</span>
                 </span>
                 <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">
                   Pass: <span className="ml-1 font-semibold">{stats.pass}</span>
@@ -447,19 +479,36 @@ export default function TabMarks({ courseId, course }) {
             </div>
 
             <div className="flex flex-col gap-3 lg:items-end">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-slate-600">
-                  Tab navigation
-                </span>
+              {/* ✅ Controls row */}
+              <div className="flex flex-wrap items-center gap-3 justify-end">
+                {/* Sort */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-slate-600">Sort by</span>
+                  <select
+                    value={sortMode}
+                    onChange={(e) => setSortMode(e.target.value)}
+                    className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                  >
+                    <option value="entered">Entered order</option>
+                    <option value="roll-asc">Roll (Ascending)</option>
+                    <option value="roll-desc">Roll (Descending)</option>
+                  </select>
+                </div>
 
-                <select
-                  value={tabMode}
-                  onChange={(e) => setTabMode(e.target.value)}
-                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                >
-                  <option value="row">Row-wise (CT1 → CT2)</option>
-                  <option value="col">Column-wise (downwards)</option>
-                </select>
+                {/* Tab navigation */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-slate-600">
+                    Tab navigation
+                  </span>
+                  <select
+                    value={tabMode}
+                    onChange={(e) => setTabMode(e.target.value)}
+                    className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                  >
+                    <option value="row">Row-wise (CT1 → CT2)</option>
+                    <option value="col">Column-wise (downwards)</option>
+                  </select>
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-2">
@@ -510,7 +559,7 @@ export default function TabMarks({ courseId, course }) {
               <span className="h-2.5 w-2.5 rounded-full bg-slate-300 animate-pulse" />
               Loading marks data...
             </div>
-          ) : students.length === 0 ? (
+          ) : sortedStudents.length === 0 ? (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
               No students enrolled. Add students first.
             </div>
@@ -550,7 +599,7 @@ export default function TabMarks({ courseId, course }) {
                 </thead>
 
                 <tbody>
-                  {students.map((s, rowIndex) => {
+                  {sortedStudents.map((s, rowIndex) => {
                     const row = marksMap[s.id] || {};
                     const total = totalsPerStudent[s.id] ?? 0;
 
@@ -620,8 +669,7 @@ export default function TabMarks({ courseId, course }) {
             </div>
           )}
 
-          {/* Bottom actions (kept for convenience) */}
-          {!loading && students.length > 0 && assessments.length > 0 && (
+          {!loading && sortedStudents.length > 0 && assessments.length > 0 && (
             <div className="mt-5 flex flex-wrap gap-2">
               <button
                 onClick={handleSave}

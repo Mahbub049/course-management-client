@@ -56,15 +56,35 @@ function TeacherCreateCoursePage() {
 
       await createCourseRequest(payload);
 
-      await Swal.fire({
+      const result = await Swal.fire({
         icon: "success",
         title: "Course Created!",
         text: "The course has been successfully created.",
-        confirmButtonColor: "#4f46e5",
+        showConfirmButton: true,
+        showCancelButton: true,
+        showCloseButton: true,          // ❌ cross button
         confirmButtonText: "Go to Dashboard",
+        cancelButtonText: "Add Another Course",
+        confirmButtonColor: "#4f46e5",
+        cancelButtonColor: "#64748b",
       });
 
-      navigate("/teacher/dashboard");
+      if (result.isConfirmed) {
+        navigate("/teacher/dashboard");
+      }
+
+      if (result.dismiss === Swal.DismissReason.cancel) {
+        // stay on page & reset form
+        setForm({
+          code: "",
+          title: "",
+          section: "",
+          semester: form.semester, // keep same semester
+          year: form.year,         // keep same year
+          courseType: form.courseType,
+        });
+      }
+
     } catch (err) {
       console.error(err);
 
@@ -83,6 +103,7 @@ function TeacherCreateCoursePage() {
       setCreating(false);
     }
   };
+
 
   return (
     <div className="mx-auto space-y-8">

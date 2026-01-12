@@ -10,6 +10,13 @@ const STATUS_BADGE_CLASSES = {
   resolved: "bg-emerald-50 text-emerald-700 border-emerald-200",
 };
 
+// ✅ NEW: category badge classes
+const CATEGORY_BADGE_CLASSES = {
+  marks: "bg-indigo-50 text-indigo-700 border-indigo-200",
+  attendance: "bg-amber-50 text-amber-700 border-amber-200",
+  general: "bg-slate-50 text-slate-700 border-slate-200",
+};
+
 function formatDateGB(iso) {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -19,6 +26,12 @@ function formatDateGB(iso) {
     month: "short",
     year: "numeric",
   });
+}
+
+function categoryLabel(cat) {
+  if (cat === "attendance") return "Attendance";
+  if (cat === "general") return "General";
+  return "Marks";
 }
 
 export default function StudentComplaintsPage() {
@@ -72,16 +85,24 @@ export default function StudentComplaintsPage() {
     return { total: complaints.length, open, inReview, resolved };
   }, [complaints]);
 
+  // ✅ UPDATED: include category + attendanceRef in search blob
   const filtered = useMemo(() => {
     return complaints.filter((c) => {
       if (statusFilter !== "all" && c.status !== statusFilter) return false;
 
       if (search.trim()) {
         const q = search.toLowerCase();
+        const attendanceText =
+          c.category === "attendance" && c.attendanceRef
+            ? `${c.attendanceRef.date} period ${c.attendanceRef.period}`
+            : "";
+
         const blob = [
+          c.category,
           c.course?.code,
           c.course?.title,
           c.assessment?.name,
+          attendanceText,
           c.message,
           c.reply,
           c.status,
@@ -89,6 +110,7 @@ export default function StudentComplaintsPage() {
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
+
         if (!blob.includes(q)) return false;
       }
 
@@ -171,7 +193,7 @@ export default function StudentComplaintsPage() {
               <input
                 type="text"
                 className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-                placeholder="Search by course, component, message, reply…"
+                placeholder="Search by course, component, date/period, message, reply…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -224,6 +246,7 @@ export default function StudentComplaintsPage() {
                     <th className="px-5 py-3">Date</th>
                     <th className="px-5 py-3">Course</th>
                     <th className="px-5 py-3">Component</th>
+                    <th className="px-5 py-3">Type</th>
                     <th className="px-5 py-3">Status</th>
                     <th className="px-5 py-3 text-right"></th>
                   </tr>
@@ -234,7 +257,19 @@ export default function StudentComplaintsPage() {
                       STATUS_BADGE_CLASSES[c.status] ||
                       "bg-slate-50 text-slate-700 border-slate-200";
 
+                    const cat = c.category || "marks";
+                    const catBadge =
+                      CATEGORY_BADGE_CLASSES[cat] ||
+                      "bg-slate-50 text-slate-700 border-slate-200";
+
                     const isSelected = selected?._id === c._id;
+
+                    const componentText =
+                      cat === "attendance"
+                        ? c.attendanceRef
+                          ? `${c.attendanceRef.date} (P${c.attendanceRef.period})`
+                          : "Attendance"
+                        : c.assessment?.name || "Whole course";
 
                     return (
                       <tr
@@ -259,7 +294,15 @@ export default function StudentComplaintsPage() {
                         </td>
 
                         <td className="px-5 py-3 text-xs text-slate-700">
-                          {c.assessment?.name || "Whole course"}
+                          {componentText}
+                        </td>
+
+                        <td className="px-5 py-3">
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${catBadge}`}
+                          >
+                            {categoryLabel(cat)}
+                          </span>
                         </td>
 
                         <td className="px-5 py-3">
@@ -297,14 +340,56 @@ export default function StudentComplaintsPage() {
                   <div className="text-xs text-slate-500">
                     {formatDateGB(selected.createdAt)}
                   </div>
+
                   <div className="mt-1 text-sm font-bold text-slate-900 truncate">
                     {selected.course?.code || "—"} – {selected.course?.title || "—"}
                   </div>
+
+                  {/* ✅ Context line: marks vs attendance */}
                   <div className="mt-1 text-xs text-slate-600">
-                    Component:{" "}
-                    <span className="font-semibold text-slate-800">
-                      {selected.assessment?.name || "Whole course"}
-                    </span>
+                    {(() => {
+                      const cat = selected.category || "marks";
+                      if (cat === "attendance") {
+                        const ref = selected.attendanceRef;
+                        return (
+                          <>
+                            Type:{" "}
+                            <span className="font-semibold text-slate-800">Attendance</span>
+                            {" • "}
+                            Session:{" "}
+                            <span className="font-semibold text-slate-800">
+                              {ref ? `${ref.date} (Period ${ref.period})` : "—"}
+                            </span>
+                          </>
+                        );
+                      }
+
+                      if (cat === "general") {
+                        return (
+                          <>
+                            Type:{" "}
+                            <span className="font-semibold text-slate-800">General</span>
+                            {" • "}
+                            Component:{" "}
+                            <span className="font-semibold text-slate-800">
+                              {selected.assessment?.name || "Whole course"}
+                            </span>
+                          </>
+                        );
+                      }
+
+                      return (
+                        <>
+                          Type:{" "}
+                          <span className="font-semibold text-slate-800">Marks</span>
+                          {" • "}
+                          Component:{" "}
+                          <span className="font-semibold text-slate-800">
+                            {selected.assessment?.name || "Whole course"}
+                          </span>
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
 
@@ -341,11 +426,9 @@ export default function StudentComplaintsPage() {
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <div className="text-xs font-semibold text-slate-600">
-                  Tip
-                </div>
+                <div className="text-xs font-semibold text-slate-600">Tip</div>
                 <div className="mt-1 text-xs text-slate-500">
-                  If your complaint is marked <b>In review</b>, it means the teacher is checking marks.
+                  If your complaint is marked <b>In review</b>, it means the teacher is checking.
                   When marked <b>Resolved</b>, the final decision has been updated.
                 </div>
               </div>

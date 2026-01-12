@@ -30,11 +30,6 @@ export default function TeacherAttendanceSheetPage() {
     loadCourses();
   }, []);
 
-  const selectedCourse = useMemo(
-    () => courses.find((c) => (c._id || c.id) === courseId),
-    [courses, courseId]
-  );
-
   const handleGenerate = async (e) => {
     e.preventDefault();
     setErr("");
@@ -60,63 +55,58 @@ export default function TeacherAttendanceSheetPage() {
   const computed = useMemo(() => {
     if (!data) return null;
 
-    const dates = data.dates || [];
+    const sessions = data.sessions || [];
     const students = data.students || [];
     const matrix = data.matrix || {};
 
-    const totalClassesAllDays = dates.reduce(
-      (sum, d) => sum + Number(d.numClasses || 0),
-      0
-    );
+    const totalClassesAll = sessions.length;
 
     const rows = students.map((s) => {
-      let presentClasses = 0;
+      let presentCount = 0;
 
-      dates.forEach((d) => {
-        const isPresent = !!matrix?.[s.roll]?.[d.date];
-        if (isPresent) presentClasses += Number(d.numClasses || 0);
+      sessions.forEach((sess) => {
+        const isPresent = !!matrix?.[s.roll]?.[sess.key];
+        if (isPresent) presentCount += 1;
       });
 
-      const totalClasses = totalClassesAllDays;
-      const percentage = totalClasses > 0 ? (presentClasses / totalClasses) * 100 : 0;
+      const totalClasses = totalClassesAll;
+      const percentage = totalClasses > 0 ? (presentCount / totalClasses) * 100 : 0;
 
       return {
         roll: s.roll,
         name: s.name,
-        presentClasses,
+        presentCount,
         totalClasses,
         percentage: Number(percentage.toFixed(2)),
       };
     });
 
-    return { dates, students, matrix, rows };
+    return { sessions, students, matrix, rows };
   }, [data]);
 
   const exportExcel = () => {
     if (!computed || !data) return;
 
-    const { dates, students, matrix, rows } = computed;
+    const { sessions, students, matrix, rows } = computed;
 
     const header = [
       "Roll",
       "Name",
-      ...dates.map((d) => `${d.date} (${d.numClasses})`),
+      ...sessions.map((s) => s.label),
       "Total Present",
       "Total Classes",
       "Percentage",
     ];
 
-    const body = students.map((s) => {
-      const meta = rows.find((r) => r.roll === s.roll);
-      const dateCells = dates.map((d) =>
-        !!matrix?.[s.roll]?.[d.date] ? "P" : "A"
-      );
+    const body = students.map((st) => {
+      const meta = rows.find((r) => r.roll === st.roll);
+      const sessionCells = sessions.map((sess) => (!!matrix?.[st.roll]?.[sess.key] ? "P" : "A"));
 
       return [
-        s.roll,
-        s.name,
-        ...dateCells,
-        meta?.presentClasses ?? 0,
+        st.roll,
+        st.name,
+        ...sessionCells,
+        meta?.presentCount ?? 0,
         meta?.totalClasses ?? 0,
         meta?.percentage ?? 0,
       ];
@@ -134,10 +124,10 @@ export default function TeacherAttendanceSheetPage() {
     <div className="mx-auto">
       <section className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
         <h1 className="text-xl font-semibold text-slate-800 mb-1">
-          Attendance Sheet (Date-wise)
+          Attendance Sheet (Period-wise)
         </h1>
         <p className="text-sm text-slate-500 mb-6">
-          Select a course to generate the date-wise attendance sheet.
+          Select a course to generate the attendance sheet (date + period).
         </p>
 
         <form onSubmit={handleGenerate} className="grid md:grid-cols-4 gap-4 items-end mb-6">
@@ -198,10 +188,13 @@ export default function TeacherAttendanceSheetPage() {
                     <th className="px-3 py-2 text-left font-medium text-slate-600">Roll</th>
                     <th className="px-3 py-2 text-left font-medium text-slate-600">Name</th>
 
-                    {computed.dates.map((d) => (
-                      <th key={d.date} className="px-3 py-2 text-center font-medium text-slate-600 whitespace-nowrap">
-                        {d.date}
-                        <div className="text-[10px] text-slate-500">Classes: {d.numClasses}</div>
+                    {computed.sessions.map((s) => (
+                      <th
+                        key={s.key}
+                        className="px-3 py-2 text-center font-medium text-slate-600 whitespace-nowrap"
+                      >
+                        {s.date}
+                        <div className="text-[10px] text-slate-500">P{s.period}</div>
                       </th>
                     ))}
 
@@ -212,23 +205,23 @@ export default function TeacherAttendanceSheetPage() {
                 </thead>
 
                 <tbody>
-                  {computed.students.map((s) => {
-                    const meta = computed.rows.find((r) => r.roll === s.roll);
+                  {computed.students.map((st) => {
+                    const meta = computed.rows.find((r) => r.roll === st.roll);
                     return (
-                      <tr key={s.roll} className="border-b last:border-0 border-slate-100">
-                        <td className="px-3 py-2">{s.roll}</td>
-                        <td className="px-3 py-2">{s.name}</td>
+                      <tr key={st.roll} className="border-b last:border-0 border-slate-100">
+                        <td className="px-3 py-2">{st.roll}</td>
+                        <td className="px-3 py-2">{st.name}</td>
 
-                        {computed.dates.map((d) => {
-                          const present = !!computed.matrix?.[s.roll]?.[d.date];
+                        {computed.sessions.map((sess) => {
+                          const present = !!computed.matrix?.[st.roll]?.[sess.key];
                           return (
-                            <td key={d.date} className="px-3 py-2 text-center font-semibold">
+                            <td key={sess.key} className="px-3 py-2 text-center font-semibold">
                               {present ? "P" : "A"}
                             </td>
                           );
                         })}
 
-                        <td className="px-3 py-2 text-center">{meta?.presentClasses ?? 0}</td>
+                        <td className="px-3 py-2 text-center">{meta?.presentCount ?? 0}</td>
                         <td className="px-3 py-2 text-center">{meta?.totalClasses ?? 0}</td>
                         <td className="px-3 py-2 text-center">{meta?.percentage ?? 0}%</td>
                       </tr>

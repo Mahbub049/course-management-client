@@ -26,12 +26,9 @@ export const deleteStudentFromCourseRequest = async (courseId, enrollmentId) => 
 
 // ✅ Regenerate password (by studentId)
 export const resetStudentPasswordRequest = async (courseId, studentId) => {
-  const res = await api.post(
-    `/courses/${courseId}/students/${studentId}/reset-password`
-  );
+  const res = await api.post(`/courses/${courseId}/students/${studentId}/reset-password`);
   return res.data;
 };
-
 
 // ✅ Export students (Excel)
 export const exportCourseStudentsRequest = async (courseId) => {
@@ -39,11 +36,13 @@ export const exportCourseStudentsRequest = async (courseId) => {
   return res.data;
 };
 
-
 export const sendPasswordsByEmailRequest = async (courseId, payload) => {
-  const res = await api.post(
-    `/courses/${courseId}/students/send-password-emails`,
-    payload
-  );
+  const res = await api.post(`/courses/${courseId}/students/send-password-emails`, payload);
+  return res.data;
+};
+
+// ✅ NEW: Remove all students from a course
+export const removeAllStudentsFromCourseRequest = async (courseId) => {
+  const res = await api.delete(`/courses/${courseId}/students`);
   return res.data;
 };
