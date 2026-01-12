@@ -126,7 +126,14 @@ export default function TeacherCoursePage() {
 
       {activeTab === "marks" && <TabMarks courseId={courseId} course={course} />}
       {activeTab === "attendance" && <TabAttendance courseId={courseId} />}
-      {activeTab === "settings" && <TabSettings courseId={courseId} course={course} />}
+      {activeTab === "settings" && (
+        <TabSettings
+          courseId={courseId}
+          course={course}
+          onCourseUpdated={setCourse}   // ✅ THIS LINE
+        />
+      )}
+
     </TeacherCourseLayout>
   );
 }
