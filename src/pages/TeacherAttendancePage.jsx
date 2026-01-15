@@ -77,6 +77,15 @@ export default function TeacherAttendancePage() {
     }));
   };
 
+  const toggleAllStudents = () => {
+    const newValue = !areAllChecked; // toggle
+    const updated = {};
+    students.forEach((s) => {
+      updated[s.roll] = newValue;
+    });
+    setAttendance(updated);
+  };
+
   const handleLoadStudents = async (e) => {
     e.preventDefault();
     setSaveMessage("");
@@ -195,6 +204,12 @@ export default function TeacherAttendancePage() {
     }
   };
 
+  const areAllChecked = useMemo(() => {
+    if (!students.length) return false;
+    return students.every((s) => attendance[s.roll]);
+  }, [students, attendance]);
+
+
   return (
     <div className="mx-auto">
       <section className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
@@ -209,11 +224,10 @@ export default function TeacherAttendancePage() {
           <button
             type="button"
             onClick={() => setMode("create")}
-            className={`h-9 rounded-lg px-4 text-sm font-semibold border ${
-              mode === "create"
-                ? "bg-indigo-600 text-white border-indigo-600"
-                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
-            }`}
+            className={`h-9 rounded-lg px-4 text-sm font-semibold border ${mode === "create"
+              ? "bg-indigo-600 text-white border-indigo-600"
+              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+              }`}
           >
             Create
           </button>
@@ -221,11 +235,10 @@ export default function TeacherAttendancePage() {
           <button
             type="button"
             onClick={() => setMode("update")}
-            className={`h-9 rounded-lg px-4 text-sm font-semibold border ${
-              mode === "update"
-                ? "bg-amber-500 text-white border-amber-500"
-                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
-            }`}
+            className={`h-9 rounded-lg px-4 text-sm font-semibold border ${mode === "update"
+              ? "bg-amber-500 text-white border-amber-500"
+              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+              }`}
           >
             Update
           </button>
@@ -390,9 +403,8 @@ export default function TeacherAttendancePage() {
                 {mode === "update"
                   ? `Updating Period ${Number(form.period)}`
                   : entryMode === "single"
-                  ? `Creating Period ${Number(form.period)}`
-                  : `Bulk: Period ${Number(form.startPeriod)} to ${
-                      Number(form.startPeriod) + Number(form.numClasses) - 1
+                    ? `Creating Period ${Number(form.period)}`
+                    : `Bulk: Period ${Number(form.startPeriod)} to ${Number(form.startPeriod) + Number(form.numClasses) - 1
                     }`}
               </span>
             </div>
@@ -405,6 +417,16 @@ export default function TeacherAttendancePage() {
 
             {!loadingStudents && students.length > 0 && (
               <form onSubmit={handleSubmitAttendance}>
+                <div className="mb-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={toggleAllStudents}
+                    className="text-xs px-3 py-1.5 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-100"
+                  >
+                    {areAllChecked ? "Uncheck All" : "Check All"}
+                  </button>
+                </div>
+
                 <div className="border border-slate-200 rounded-lg overflow-hidden">
                   <table className="min-w-full text-sm">
                     <thead className="bg-slate-50 border-b border-slate-200">
@@ -443,10 +465,10 @@ export default function TeacherAttendancePage() {
                     {saving
                       ? "Saving..."
                       : mode === "create"
-                      ? entryMode === "single"
-                        ? "Submit Attendance (Period)"
-                        : "Submit Attendance (Bulk)"
-                      : "Update Attendance (Period)"}
+                        ? entryMode === "single"
+                          ? "Submit Attendance (Period)"
+                          : "Submit Attendance (Bulk)"
+                        : "Update Attendance (Period)"}
                   </button>
 
                   {saveMessage && <span className="text-xs text-slate-600">{saveMessage}</span>}
