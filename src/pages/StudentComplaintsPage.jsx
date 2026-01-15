@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { fetchStudentComplaints } from "../services/complaintService";
+import {
+  createStudentComplaint,
+  fetchStudentComplaints,
+} from "../services/complaintService";
+import { fetchStudentCourses } from "../services/studentService";
 
 const STATUS_BADGE_CLASSES = {
   open: "bg-red-50 text-red-700 border-red-200",
@@ -10,10 +14,8 @@ const STATUS_BADGE_CLASSES = {
   resolved: "bg-emerald-50 text-emerald-700 border-emerald-200",
 };
 
-// ✅ NEW: category badge classes
+// ✅ General-only category badge
 const CATEGORY_BADGE_CLASSES = {
-  marks: "bg-indigo-50 text-indigo-700 border-indigo-200",
-  attendance: "bg-amber-50 text-amber-700 border-amber-200",
   general: "bg-slate-50 text-slate-700 border-slate-200",
 };
 
@@ -28,19 +30,26 @@ function formatDateGB(iso) {
   });
 }
 
-function categoryLabel(cat) {
-  if (cat === "attendance") return "Attendance";
-  if (cat === "general") return "General";
-  return "Marks";
-}
-
 export default function StudentComplaintsPage() {
   const navigate = useNavigate();
   const role = localStorage.getItem("marksPortalRole");
 
+  // complaints
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [complaints, setComplaints] = useState([]);
+
+  // course list for form
+  const [coursesLoading, setCoursesLoading] = useState(true);
+  const [coursesError, setCoursesError] = useState("");
+  const [courses, setCourses] = useState([]);
+
+  // general complaint form state
+  const [formCourseId, setFormCourseId] = useState("");
+  const [message, setMessage] = useState("");
+  const [submitLoading, setSubmitLoading] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [submitSuccess, setSubmitSuccess] = useState("");
 
   // filters + selection
   const [statusFilter, setStatusFilter] = useState("all");
@@ -51,24 +60,50 @@ export default function StudentComplaintsPage() {
     if (role !== "student") navigate("/login");
   }, [role, navigate]);
 
+  const loadComplaints = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await fetchStudentComplaints();
+      setComplaints(data || []);
+      // keep selection valid (if list changed)
+      setSelected((prev) => {
+        if (!prev) return null;
+        const stillExists = (data || []).find((c) => c._id === prev._id);
+        return stillExists || null;
+      });
+    } catch (err) {
+      console.error(err);
+      setError(err?.response?.data?.message || "Failed to load your complaints");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadCourses = async () => {
+    setCoursesLoading(true);
+    setCoursesError("");
+    try {
+      const data = await fetchStudentCourses();
+      setCourses(Array.isArray(data) ? data : []);
+
+      // auto-select first course if none selected
+      if (!formCourseId && Array.isArray(data) && data.length > 0) {
+        setFormCourseId(data[0]._id);
+      }
+    } catch (err) {
+      console.error(err);
+      setCoursesError(err?.response?.data?.message || "Failed to load your courses");
+    } finally {
+      setCoursesLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (role !== "student") return;
-
-    const load = async () => {
-      setLoading(true);
-      setError("");
-      try {
-        const data = await fetchStudentComplaints();
-        setComplaints(data || []);
-      } catch (err) {
-        console.error(err);
-        setError(err?.response?.data?.message || "Failed to load your complaints");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    load();
+    loadComplaints();
+    loadCourses();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role]);
 
   const stats = useMemo(() => {
@@ -85,24 +120,17 @@ export default function StudentComplaintsPage() {
     return { total: complaints.length, open, inReview, resolved };
   }, [complaints]);
 
-  // ✅ UPDATED: include category + attendanceRef in search blob
+  // ✅ Simplified search: general-only, but still search course/title/message/reply/status
   const filtered = useMemo(() => {
     return complaints.filter((c) => {
       if (statusFilter !== "all" && c.status !== statusFilter) return false;
 
       if (search.trim()) {
         const q = search.toLowerCase();
-        const attendanceText =
-          c.category === "attendance" && c.attendanceRef
-            ? `${c.attendanceRef.date} period ${c.attendanceRef.period}`
-            : "";
-
         const blob = [
           c.category,
           c.course?.code,
           c.course?.title,
-          c.assessment?.name,
-          attendanceText,
           c.message,
           c.reply,
           c.status,
@@ -118,6 +146,48 @@ export default function StudentComplaintsPage() {
     });
   }, [complaints, statusFilter, search]);
 
+  const handleSubmitGeneralComplaint = async (e) => {
+    e.preventDefault();
+    setSubmitError("");
+    setSubmitSuccess("");
+
+    if (!formCourseId) {
+      setSubmitError("Please select a course.");
+      return;
+    }
+
+    if (!message.trim()) {
+      setSubmitError("Please write a short description of the issue.");
+      return;
+    }
+
+    try {
+      setSubmitLoading(true);
+
+      const payload = {
+        courseId: formCourseId,
+        category: "general",
+        message: message.trim(),
+      };
+
+      await createStudentComplaint(payload);
+
+      setSubmitSuccess("Your general complaint has been submitted.");
+      setMessage("");
+
+      // refresh list
+      await loadComplaints();
+
+      // optional: show latest complaint in details automatically
+      setSelected(null);
+    } catch (err) {
+      console.error(err);
+      setSubmitError(err?.response?.data?.message || "Failed to submit complaint.");
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
+
   return (
     <div className="mx-auto space-y-6">
       {/* Header */}
@@ -132,7 +202,7 @@ export default function StudentComplaintsPage() {
             My Complaints
           </h1>
           <p className="mt-1 text-sm text-slate-500 max-w-2xl">
-            Track the status of your submitted complaints and view teacher replies.
+            Submit a general issue and track teacher replies here.
           </p>
         </div>
 
@@ -144,6 +214,118 @@ export default function StudentComplaintsPage() {
             <ArrowLeftIcon />
             Back to My Courses
           </button>
+        </div>
+      </div>
+
+      {/* ✅ NEW: General Complaint Form */}
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">Raise a General Complaint</h2>
+            <p className="text-xs text-slate-500">
+              Use this for any general course-related issue (not marks/attendance).
+            </p>
+          </div>
+
+          <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+            <ShieldIcon /> Student Request
+          </span>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {(submitError || submitSuccess) && (
+            <div
+              className={[
+                "rounded-2xl border px-5 py-4 text-sm",
+                submitError
+                  ? "border-rose-200 bg-rose-50 text-rose-700"
+                  : "border-emerald-200 bg-emerald-50 text-emerald-700",
+              ].join(" ")}
+            >
+              <div className="font-semibold">
+                {submitError ? "Could not submit" : "Submitted"}
+              </div>
+              <div className="opacity-90">{submitError || submitSuccess}</div>
+            </div>
+          )}
+
+          {coursesError && (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
+              <div className="font-semibold">Could not load courses</div>
+              <div className="opacity-90">{coursesError}</div>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmitGeneralComplaint} className="space-y-4">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+              {/* Course */}
+              <div className="lg:col-span-4">
+                <label className="block text-sm font-semibold text-slate-700">Course</label>
+                <select
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:bg-slate-50"
+                  value={formCourseId}
+                  onChange={(e) => {
+                    setFormCourseId(e.target.value);
+                    setSubmitError("");
+                    setSubmitSuccess("");
+                  }}
+                  disabled={coursesLoading || !courses.length}
+                >
+                  {coursesLoading ? (
+                    <option value="">Loading courses…</option>
+                  ) : courses.length === 0 ? (
+                    <option value="">No courses found</option>
+                  ) : (
+                    courses.map((c) => (
+                      <option key={c._id} value={c._id}>
+                        {c.code} — {c.title}
+                      </option>
+                    ))
+                  )}
+                </select>
+                <p className="mt-2 text-xs text-slate-500">
+                  Select the course related to your issue.
+                </p>
+              </div>
+
+              {/* Message */}
+              <div className="lg:col-span-8">
+                <label className="block text-sm font-semibold text-slate-700">Your message</label>
+                <textarea
+                  rows={4}
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                  placeholder="Example: Assessment not visible yet / marks policy unclear / any general course issue."
+                  value={message}
+                  onChange={(e) => {
+                    setMessage(e.target.value);
+                    setSubmitError("");
+                    setSubmitSuccess("");
+                  }}
+                />
+                <p className="mt-2 text-xs text-slate-500">
+                  Keep it short and specific.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={submitLoading || coursesLoading || !courses.length}
+                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60"
+              >
+                {submitLoading ? (
+                  <>
+                    <SpinnerIcon /> Submitting…
+                  </>
+                ) : (
+                  <>
+                    <SendIcon /> Submit General Complaint
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
         </div>
       </div>
 
@@ -193,7 +375,7 @@ export default function StudentComplaintsPage() {
               <input
                 type="text"
                 className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-                placeholder="Search by course, component, date/period, message, reply…"
+                placeholder="Search by course, message, reply, status…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -245,7 +427,6 @@ export default function StudentComplaintsPage() {
                   <tr>
                     <th className="px-5 py-3">Date</th>
                     <th className="px-5 py-3">Course</th>
-                    <th className="px-5 py-3">Component</th>
                     <th className="px-5 py-3">Type</th>
                     <th className="px-5 py-3">Status</th>
                     <th className="px-5 py-3 text-right"></th>
@@ -257,19 +438,11 @@ export default function StudentComplaintsPage() {
                       STATUS_BADGE_CLASSES[c.status] ||
                       "bg-slate-50 text-slate-700 border-slate-200";
 
-                    const cat = c.category || "marks";
                     const catBadge =
-                      CATEGORY_BADGE_CLASSES[cat] ||
+                      CATEGORY_BADGE_CLASSES.general ||
                       "bg-slate-50 text-slate-700 border-slate-200";
 
                     const isSelected = selected?._id === c._id;
-
-                    const componentText =
-                      cat === "attendance"
-                        ? c.attendanceRef
-                          ? `${c.attendanceRef.date} (P${c.attendanceRef.period})`
-                          : "Attendance"
-                        : c.assessment?.name || "Whole course";
 
                     return (
                       <tr
@@ -293,15 +466,11 @@ export default function StudentComplaintsPage() {
                           </div>
                         </td>
 
-                        <td className="px-5 py-3 text-xs text-slate-700">
-                          {componentText}
-                        </td>
-
                         <td className="px-5 py-3">
                           <span
                             className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${catBadge}`}
                           >
-                            {categoryLabel(cat)}
+                            General
                           </span>
                         </td>
 
@@ -345,51 +514,9 @@ export default function StudentComplaintsPage() {
                     {selected.course?.code || "—"} – {selected.course?.title || "—"}
                   </div>
 
-                  {/* ✅ Context line: marks vs attendance */}
                   <div className="mt-1 text-xs text-slate-600">
-                    {(() => {
-                      const cat = selected.category || "marks";
-                      if (cat === "attendance") {
-                        const ref = selected.attendanceRef;
-                        return (
-                          <>
-                            Type:{" "}
-                            <span className="font-semibold text-slate-800">Attendance</span>
-                            {" • "}
-                            Session:{" "}
-                            <span className="font-semibold text-slate-800">
-                              {ref ? `${ref.date} (Period ${ref.period})` : "—"}
-                            </span>
-                          </>
-                        );
-                      }
-
-                      if (cat === "general") {
-                        return (
-                          <>
-                            Type:{" "}
-                            <span className="font-semibold text-slate-800">General</span>
-                            {" • "}
-                            Component:{" "}
-                            <span className="font-semibold text-slate-800">
-                              {selected.assessment?.name || "Whole course"}
-                            </span>
-                          </>
-                        );
-                      }
-
-                      return (
-                        <>
-                          Type:{" "}
-                          <span className="font-semibold text-slate-800">Marks</span>
-                          {" • "}
-                          Component:{" "}
-                          <span className="font-semibold text-slate-800">
-                            {selected.assessment?.name || "Whole course"}
-                          </span>
-                        </>
-                      );
-                    })()}
+                    Type:{" "}
+                    <span className="font-semibold text-slate-800">General</span>
                   </div>
                 </div>
 
@@ -501,6 +628,42 @@ function EmptyIcon() {
       <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
       <path d="M8 9h8" />
       <path d="M8 13h5" />
+    </svg>
+  );
+}
+
+function ShieldIcon() {
+  return (
+    <svg
+      className="h-4 w-4 text-slate-700"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </svg>
+  );
+}
+
+function SendIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M22 2L11 13" />
+      <path d="M22 2l-7 20-4-9-9-4 20-7z" />
+    </svg>
+  );
+}
+
+function SpinnerIcon() {
+  return (
+    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 0 1 8-8v3a5 5 0 0 0-5 5H4z"
+      />
     </svg>
   );
 }
