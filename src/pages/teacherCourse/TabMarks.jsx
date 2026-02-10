@@ -87,7 +87,29 @@ function computeTotal100(courseType, assessments, rowMarks, attendanceMarks5 = 0
     return Math.round(total * 100) / 100;
   }
 
-  const ctList = list.filter((a) => name(a).includes("ct"));
+  // ✅ CT detection: supports ct, class test, quiz, test (any format)
+  const isCT = (nRaw) => {
+    const n = String(nRaw || "").toLowerCase().trim();
+
+    // Exclude other known components
+    if (n.includes("mid") || n.includes("final") || n.includes("att")) return false;
+    if (n.includes("assign") || n.includes("present")) return false;
+
+    // Normalize spaces/dashes
+    const compact = n.replace(/[\s\-_]+/g, "");
+
+    // Accept: ct, ct1/ct-2, class test, classtest, quiz, test
+    if (compact.startsWith("ct")) return true;
+    if (compact.includes("classtest")) return true;
+    if (n.includes("class test")) return true;
+    if (n.includes("quiz")) return true;
+    if (n.includes("test")) return true;
+
+    return false;
+  };
+
+  const ctList = list.filter((a) => isCT(a?.name));
+
   const mid = list.find((a) => name(a).includes("mid"));
   const final = list.find((a) => name(a).includes("final"));
   const presentation = list.find((a) => name(a).includes("present"));

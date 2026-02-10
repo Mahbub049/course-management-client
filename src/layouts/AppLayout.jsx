@@ -12,6 +12,10 @@ function AppLayout() {
 
   // ✅ NEW: mobile drawer state
   const [mobileOpen, setMobileOpen] = useState(false);
+  // ✅ NEW: desktop/tablet sidebar collapse state
+  const [collapsed, setCollapsed] = useState(() => {
+    return localStorage.getItem("marksPortalSidebarCollapsed") === "true";
+  });
 
   useEffect(() => {
     const r = localStorage.getItem("marksPortalRole");
@@ -37,6 +41,12 @@ function AppLayout() {
     if (mobileOpen) window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [mobileOpen]);
+
+  // ✅ Persist desktop collapse state
+  useEffect(() => {
+    localStorage.setItem("marksPortalSidebarCollapsed", String(collapsed));
+  }, [collapsed]);
+
 
   const handleLogout = () => {
     localStorage.removeItem("marksPortalToken");
@@ -80,23 +90,31 @@ function AppLayout() {
   }, [location.pathname, links]);
 
   // ✅ Extracted sidebar so we can reuse for desktop + mobile drawer
-  const SidebarContent = ({ isMobile = false }) => (
+  const SidebarContent = ({ isMobile = false, collapsed = false }) => (
     <div className="flex h-full flex-col">
       {/* Decorative gradient */}
       <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-r from-primary-50 via-purple-50 to-sky-50" />
 
       {/* Brand */}
-      <div className="relative px-6 pt-6 pb-4 border-b border-slate-200">
+      <div
+        className={[
+          "relative pt-6 pb-4 border-b border-slate-200",
+          collapsed && !isMobile ? "px-3" : "px-6",
+        ].join(" ")}
+      >
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm">
             <CapIcon />
           </div>
-          <div className="min-w-0">
-            <div className="text-sm font-semibold text-slate-900 leading-tight truncate">
-              Course Management
+          {!(collapsed && !isMobile) && (
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-slate-900 leading-tight truncate">
+                Course Management
+              </div>
+              <div className="text-xs text-slate-500 truncate">BUBT Marks Portal</div>
             </div>
-            <div className="text-xs text-slate-500 truncate">BUBT Marks Portal</div>
-          </div>
+          )}
+
 
           {/* ✅ Close button only in mobile drawer */}
           {isMobile && (
@@ -109,6 +127,19 @@ function AppLayout() {
               <XIcon />
             </button>
           )}
+
+          {/* ✅ Collapse button only on desktop/tablet */}
+          {!isMobile && (
+            <button
+              onClick={() => setCollapsed((v) => !v)}
+              className="ml-auto inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              type="button"
+            >
+              <span className="text-lg leading-none">{collapsed ? "»" : "«"}</span>
+            </button>
+          )}
+
         </div>
       </div>
 
@@ -120,8 +151,10 @@ function AppLayout() {
             to={link.to}
             className={({ isActive }) =>
               [
-                "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
-                isActive
+                [
+                  "group relative flex items-center rounded-xl text-sm font-semibold transition",
+                  collapsed && !isMobile ? "justify-center px-2 py-2.5" : "gap-3 px-3 py-2.5",
+                ].join(" "), isActive
                   ? "bg-primary-50 text-primary-700"
                   : "text-slate-700 hover:bg-slate-100",
               ].join(" ")
@@ -147,16 +180,20 @@ function AppLayout() {
                   {link.icon}
                 </span>
 
-                <span className="flex-1">{link.label}</span>
+                {!(collapsed && !isMobile) && <span className="flex-1">{link.label}</span>}
 
-                <span
-                  className={[
-                    "text-slate-400 transition",
-                    isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-                  ].join(" ")}
-                >
-                  <ArrowIcon />
-                </span>
+
+                {!(collapsed && !isMobile) && (
+                  <span
+                    className={[
+                      "text-slate-400 transition",
+                      isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                    ].join(" ")}
+                  >
+                    <ArrowIcon />
+                  </span>
+                )}
+
               </>
             )}
           </NavLink>
@@ -165,19 +202,27 @@ function AppLayout() {
 
       {/* Profile / Footer */}
       <div className="relative p-4 border-t border-slate-200">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div
+          className={[
+            "rounded-2xl border border-slate-200 bg-white shadow-sm transition-all",
+            collapsed && !isMobile ? "p-2" : "p-4",
+          ].join(" ")}
+        >
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center border border-slate-200">
               <UserCircleIcon />
             </div>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-slate-900 truncate">
-                {userName || "User"}
+            {!(collapsed && !isMobile) && (
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-slate-900 truncate">
+                  {userName || "User"}
+                </div>
+                <div className="text-xs text-slate-500">
+                  {role === "teacher" ? "Teacher Account" : "Student Account"}
+                </div>
               </div>
-              <div className="text-xs text-slate-500">
-                {role === "teacher" ? "Teacher Account" : "Student Account"}
-              </div>
-            </div>
+            )}
+
           </div>
 
           <button
@@ -197,9 +242,15 @@ function AppLayout() {
     <div className="min-h-screen bg-slate-50">
       <div className="flex min-h-screen">
         {/* ✅ Desktop Sidebar */}
-        <aside className="hidden md:flex md:w-72 flex-col border-r border-slate-200 bg-white relative">
-          <SidebarContent />
+        <aside
+          className={[
+            "hidden md:flex flex-col border-r border-slate-200 bg-white relative transition-all duration-300",
+            collapsed ? "md:w-20" : "md:w-72",
+          ].join(" ")}
+        >
+          <SidebarContent collapsed={collapsed} />
         </aside>
+
 
         {/* ✅ Mobile Drawer */}
         {/* ✅ Mobile Drawer (smooth) */}

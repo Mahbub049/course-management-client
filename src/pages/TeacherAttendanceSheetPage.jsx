@@ -1,7 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchTeacherCourses } from "../services/courseService";
 import { fetchAttendanceSheet } from "../services/attendanceService";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
+
+
+// Sort helper: roll small -> big (numeric-safe)
+const sortByRollAsc = (a, b) => {
+  const ar = Number(a?.roll);
+  const br = Number(b?.roll);
+
+  if (!Number.isNaN(ar) && !Number.isNaN(br)) return ar - br;
+  return String(a?.roll || "").localeCompare(String(b?.roll || ""));
+};
+
 
 export default function TeacherAttendanceSheetPage() {
   const [courses, setCourses] = useState([]);
@@ -56,8 +67,9 @@ export default function TeacherAttendanceSheetPage() {
     if (!data) return null;
 
     const sessions = data.sessions || [];
-    const students = data.students || [];
+    const students = [...(data.students || [])].sort(sortByRollAsc); // ✅ sorted
     const matrix = data.matrix || {};
+
 
     const totalClassesAll = sessions.length;
 
@@ -113,6 +125,38 @@ export default function TeacherAttendanceSheetPage() {
     });
 
     const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
+    // ✅ Apply coloring to attendance cells in Excel (P=green, A=red)
+    const startRow = 2; // 1=header, data starts from row 2
+    const startCol = 3; // Roll=1, Name=2, attendance starts from 3
+
+    for (let r = 0; r < body.length; r++) {
+      for (let c = 0; c < sessions.length; c++) {
+        const value = body[r][startCol - 1 + c]; // because array index
+        const cellAddress = XLSX.utils.encode_cell({
+          r: (startRow - 1) + r,
+          c: (startCol - 1) + c,
+        });
+
+        const cell = ws[cellAddress];
+        if (!cell) continue;
+
+        if (value === "A") {
+          cell.s = {
+            fill: { fgColor: { rgb: "FEE2E2" } }, // soft red
+            font: { color: { rgb: "991B1B" }, bold: true },
+            alignment: { horizontal: "center", vertical: "center" },
+          };
+        } else {
+          cell.s = {
+            fill: { fgColor: { rgb: "DCFCE7" } }, // soft green
+            font: { color: { rgb: "166534" }, bold: true },
+            alignment: { horizontal: "center", vertical: "center" },
+          };
+        }
+      }
+    }
+
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Attendance Sheet");
 
@@ -214,12 +258,21 @@ export default function TeacherAttendanceSheetPage() {
 
                         {computed.sessions.map((sess) => {
                           const present = !!computed.matrix?.[st.roll]?.[sess.key];
+
+                          const cellClass = present
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
+                            : "bg-rose-50 text-rose-700 border border-rose-100"; // ✅ soothing red
+
                           return (
-                            <td key={sess.key} className="px-3 py-2 text-center font-semibold">
+                            <td
+                              key={sess.key}
+                              className={`px-3 py-2 text-center font-semibold ${cellClass}`}
+                            >
                               {present ? "P" : "A"}
                             </td>
                           );
                         })}
+
 
                         <td className="px-3 py-2 text-center">{meta?.presentCount ?? 0}</td>
                         <td className="px-3 py-2 text-center">{meta?.totalClasses ?? 0}</td>
