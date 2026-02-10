@@ -9,6 +9,8 @@ import {
   fetchAttendanceDay,
   updateAttendanceDay,
 } from "../services/attendanceService";
+import Swal from "sweetalert2";
+
 
 export default function TeacherAttendancePage() {
   const [courses, setCourses] = useState([]);
@@ -31,6 +33,8 @@ export default function TeacherAttendancePage() {
   });
 
   const [students, setStudents] = useState([]);
+
+  const [showSheet, setShowSheet] = useState(false);
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [studentsError, setStudentsError] = useState("");
 
@@ -107,6 +111,8 @@ export default function TeacherAttendancePage() {
       const data = await getCourseStudents(form.courseId);
       const list = data || [];
       setStudents(list);
+      setShowSheet(list.length > 0);
+
 
       // default: everyone present ✅
       const initialAttendance = {};
@@ -138,6 +144,7 @@ export default function TeacherAttendancePage() {
       setStudentsError(err?.response?.data?.message || "Failed to load students for this course.");
       setStudents([]);
       setAttendance({});
+      setShowSheet(false);
     } finally {
       setLoadingStudents(false);
     }
@@ -165,7 +172,18 @@ export default function TeacherAttendancePage() {
             records: baseRecords,
           };
           await createAttendanceRecord(payload);
-          setSaveMessage(`Attendance saved for Period ${Number(form.period)}.`);
+          await Swal.fire({
+            icon: "success",
+            title: "Attendance Submitted",
+            text: `Attendance saved for Period ${Number(form.period)}.`,
+            confirmButtonText: "OK",
+          });
+
+          // ✅ After OK: hide sheet + reset view
+          setShowSheet(false);
+          setStudents([]);
+          setAttendance({});
+
         } else {
           const payload = {
             courseId: form.courseId,
@@ -183,7 +201,18 @@ export default function TeacherAttendancePage() {
           if (created) msg += `Created: [${created}]. `;
           if (skipped) msg += `Skipped (already existed): [${skipped}].`;
 
-          setSaveMessage(msg.trim());
+          await Swal.fire({
+            icon: "success",
+            title: "Attendance Submitted",
+            text: msg.trim(),
+            confirmButtonText: "OK",
+          });
+
+          // ✅ After OK: hide sheet + reset view
+          setShowSheet(false);
+          setStudents([]);
+          setAttendance({});
+
         }
       } else {
         // update (period-wise)
@@ -194,11 +223,28 @@ export default function TeacherAttendancePage() {
           records: baseRecords,
         };
         await updateAttendanceDay(payload);
-        setSaveMessage(`Attendance updated for Period ${Number(form.period)}.`);
+        await Swal.fire({
+          icon: "success",
+          title: "Attendance Updated",
+          text: `Attendance updated for Period ${Number(form.period)}.`,
+          confirmButtonText: "OK",
+        });
+
+        // ✅ After OK: hide sheet + reset view
+        setShowSheet(false);
+        setStudents([]);
+        setAttendance({});
+
       }
     } catch (err) {
       console.error(err);
-      setSaveMessage(err?.response?.data?.message || "Failed to save attendance.");
+      await Swal.fire({
+        icon: "error",
+        title: "Failed",
+        text: err?.response?.data?.message || "Failed to save attendance.",
+        confirmButtonText: "OK",
+      });
+
     } finally {
       setSaving(false);
     }
@@ -212,7 +258,7 @@ export default function TeacherAttendancePage() {
 
   return (
     <div className="mx-auto">
-      <section className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+      <section className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6">
         <h1 className="text-xl font-semibold text-slate-800 mb-1">Attendance</h1>
         <p className="text-sm text-slate-500 mb-6">
           Select a course and date. You can take attendance period-wise, or take multiple periods at once.
@@ -220,7 +266,7 @@ export default function TeacherAttendancePage() {
         </p>
 
         {/* Create / Update */}
-        <div className="mb-5 flex gap-2">
+        <div className="mb-5 flex flex-col sm:flex-row gap-2">
           <button
             type="button"
             onClick={() => setMode("create")}
@@ -391,7 +437,7 @@ export default function TeacherAttendancePage() {
         </form>
 
         {/* Header */}
-        {selectedCourse && (
+        {selectedCourse && showSheet && (
           <div className="mt-4">
             <div className="flex justify-between items-center mb-3">
               <h2 className="text-sm font-semibold text-slate-700">
@@ -427,8 +473,8 @@ export default function TeacherAttendancePage() {
                   </button>
                 </div>
 
-                <div className="border border-slate-200 rounded-lg overflow-hidden">
-                  <table className="min-w-full text-sm">
+                <div className="border border-slate-200 rounded-lg overflow-x-auto">
+                  <table className="min-w-[520px] w-full text-sm">
                     <thead className="bg-slate-50 border-b border-slate-200">
                       <tr>
                         <th className="px-3 py-2 text-left font-medium text-slate-600">Roll</th>
