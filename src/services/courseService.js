@@ -3,9 +3,19 @@
 import api from './api';
 
 // Get all courses for the logged-in teacher
-export const fetchTeacherCourses = async () => {
-  const res = await api.get('/courses');
-  return res.data; // array of courses
+export const fetchTeacherCourses = async ({ archived = false } = {}) => {
+  const res = await api.get(`/courses?archived=${archived}`);
+  return res.data;
+};
+
+export const archiveCourseRequest = async (courseId) => {
+  const res = await api.put(`/courses/${courseId}`, { archived: true });
+  return res.data;
+};
+
+export const unarchiveCourseRequest = async (courseId) => {
+  const res = await api.put(`/courses/${courseId}`, { archived: false });
+  return res.data;
 };
 
 // Create a new course

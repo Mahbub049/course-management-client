@@ -2,10 +2,12 @@
 
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
+import { useTheme } from "../context/ThemeContext";
 
 function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { isDark, toggleTheme } = useTheme();
 
   const [role, setRole] = useState(null);
   const [userName, setUserName] = useState("");
@@ -98,7 +100,7 @@ function AppLayout() {
       {/* Brand */}
       <div
         className={[
-          "relative pt-6 pb-4 border-b border-slate-200",
+          "relative pt-6 pb-4 border-b border-slate-200 dark:border-slate-800",
           collapsed && !isMobile ? "px-3" : "px-6",
         ].join(" ")}
       >
@@ -201,10 +203,10 @@ function AppLayout() {
       </nav>
 
       {/* Profile / Footer */}
-      <div className="relative p-4 border-t border-slate-200">
+      <div className="relative p-4 border-t border-slate-200 dark:border-slate-800">
         <div
           className={[
-            "rounded-2xl border border-slate-200 bg-white shadow-sm transition-all",
+            "rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm transition-all",
             collapsed && !isMobile ? "p-2" : "p-4",
           ].join(" ")}
         >
@@ -239,12 +241,12 @@ function AppLayout() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <div className="flex min-h-screen">
         {/* ✅ Desktop Sidebar */}
         <aside
           className={[
-            "hidden md:flex flex-col border-r border-slate-200 bg-white relative transition-all duration-300",
+            "hidden md:flex flex-col border-r border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800 relative transition-all duration-300",
             collapsed ? "md:w-20" : "md:w-72",
           ].join(" ")}
         >
@@ -275,7 +277,7 @@ function AppLayout() {
           {/* panel */}
           <div
             className={[
-              "absolute left-0 top-0 h-full w-[85%] max-w-xs bg-white shadow-xl border-r border-slate-200 relative",
+              "absolute left-0 top-0 h-full w-[85%] max-w-xs bg-white dark:bg-slate-900 shadow-xl border-r border-slate-200 dark:border-slate-800 relative",
               "transition-transform duration-300 ease-out",
               mobileOpen ? "translate-x-0" : "-translate-x-full",
             ].join(" ")}
@@ -288,7 +290,7 @@ function AppLayout() {
         {/* Main area */}
         <div className="flex-1 flex flex-col min-w-0">
           {/* Top bar */}
-          <header className="h-16 flex items-center justify-between px-4 sm:px-6 md:px-8 border-b border-slate-200 bg-white">
+          <header className="h-16 flex items-center justify-between px-4 sm:px-6 md:px-8 border-b border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800">
             <div className="flex items-center gap-3 min-w-0">
               {/* ✅ Mobile menu button */}
               <button
@@ -337,6 +339,17 @@ function AppLayout() {
                   {role === "teacher" ? "Teacher" : "Student"}
                 </span>
               )}
+
+<button
+  onClick={toggleTheme}
+  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50
+             dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+  type="button"
+  title="Toggle theme"
+>
+  {isDark ? <MoonIcon /> : <SunIcon />}
+  <span className="hidden sm:inline">{isDark ? "Dark" : "Light"}</span>
+</button>
 
               <button
                 onClick={handleLogout}
@@ -555,6 +568,23 @@ function LogoutIcon() {
       <path d="M16 17l5-5-5-5" />
       <path d="M21 12H9" />
       <path d="M12 19H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h7" />
+    </svg>
+  );
+}
+
+function SunIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12z" />
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a6.5 6.5 0 0 0 9.8 9.8z" />
     </svg>
   );
 }

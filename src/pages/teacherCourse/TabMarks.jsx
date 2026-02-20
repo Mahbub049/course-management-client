@@ -84,7 +84,15 @@ function computeTotal100(courseType, assessments, rowMarks, attendanceMarks5 = 0
     const finalScore40 = final ? pct(rowMarks?.[final._id], final.fullMarks) * 40 : 0;
 
     const total = labScore25 + midScore30 + finalScore40 + attScore5;
-    return Math.round(total * 100) / 100;
+    // Round to nearest 0.5 using your custom rule
+    const rounded =
+      total % 1 === 0
+        ? total
+        : total % 1 <= 0.5
+          ? Math.floor(total) + 0.5
+          : Math.ceil(total);
+
+    return rounded;
   }
 
   // ✅ CT detection: supports ct, class test, quiz, test (any format)
@@ -143,7 +151,14 @@ function computeTotal100(courseType, assessments, rowMarks, attendanceMarks5 = 0
   }
 
   const total = ctScore15 + midScore30 + finalScore40 + paScore10 + attScore5;
-  return Math.round(total * 100) / 100;
+  const rounded =
+    total % 1 === 0
+      ? total
+      : total % 1 <= 0.5
+        ? Math.floor(total) + 0.5
+        : Math.ceil(total);
+
+  return rounded;
 }
 
 export default function TabMarks({ courseId, course }) {

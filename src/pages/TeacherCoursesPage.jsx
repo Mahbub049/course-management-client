@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { fetchTeacherCourses, deleteCourseRequest } from "../services/courseService";
+import { fetchTeacherCourses, deleteCourseRequest, archiveCourseRequest, unarchiveCourseRequest } from "../services/courseService";
 import Swal from 'sweetalert2'
 
 export default function TeacherCoursesPage() {
@@ -10,6 +10,9 @@ export default function TeacherCoursesPage() {
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [courseError, setCourseError] = useState("");
   const [deletingId, setDeletingId] = useState(null);
+  const [viewMode, setViewMode] = useState("active"); // "active" | "archived"
+  const [archivingId, setArchivingId] = useState(null);
+  const [unarchivingId, setUnarchivingId] = useState(null);
 
   // ✅ UI states (premium)
   const [query, setQuery] = useState("");
@@ -20,7 +23,7 @@ export default function TeacherCoursesPage() {
       setLoadingCourses(true);
       setCourseError("");
       try {
-        const data = await fetchTeacherCourses();
+        const data = await fetchTeacherCourses({ archived: viewMode === "archived" });
         setCourses(data || []);
       } catch (err) {
         console.error(err);
@@ -30,7 +33,7 @@ export default function TeacherCoursesPage() {
       }
     };
     loadCourses();
-  }, []);
+  }, [viewMode]);
 
   const openCourse = (course) => {
     if (!course?.id) return;
@@ -93,6 +96,55 @@ export default function TeacherCoursesPage() {
     }
   };
 
+  const handleArchive = async (course) => {
+    const result = await Swal.fire({
+      title: "Archive course?",
+      text: `${course.code} - ${course.title} will be moved to Archived Courses.`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Yes, archive",
+      cancelButtonText: "Cancel",
+      reverseButtons: true,
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      setArchivingId(course.id);
+      await archiveCourseRequest(course.id);
+      setCourses((prev) => prev.filter((c) => c.id !== course.id));
+      Swal.fire("Archived!", "Course moved to Archived Courses.", "success");
+    } catch (err) {
+      Swal.fire("Error", err?.response?.data?.message || "Failed to archive course", "error");
+    } finally {
+      setArchivingId(null);
+    }
+  };
+
+  const handleUnarchive = async (course) => {
+    const result = await Swal.fire({
+      title: "Unarchive course?",
+      text: `${course.code} - ${course.title} will return to My Courses.`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Yes, unarchive",
+      cancelButtonText: "Cancel",
+      reverseButtons: true,
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      setUnarchivingId(course.id);
+      await unarchiveCourseRequest(course.id);
+      setCourses((prev) => prev.filter((c) => c.id !== course.id));
+      Swal.fire("Restored!", "Course moved back to My Courses.", "success");
+    } catch (err) {
+      Swal.fire("Error", err?.response?.data?.message || "Failed to unarchive course", "error");
+    } finally {
+      setUnarchivingId(null);
+    }
+  };
 
   const counts = useMemo(() => {
     const c = { all: courses.length, theory: 0, lab: 0, hybrid: 0 };
@@ -139,10 +191,31 @@ export default function TeacherCoursesPage() {
                 Courses
               </div>
               <h1 className="mt-3 text-2xl md:text-3xl font-bold tracking-tight text-slate-900">
-                Manage Your Courses
+                {viewMode === "archived" ? "Archived Courses" : "Manage Your Courses"}
               </h1>
+
+              <div className="mt-4 inline-flex rounded-xl border border-slate-200 bg-white p-1">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("active")}
+                  className={`px-4 py-2 text-sm font-semibold rounded-lg ${viewMode === "active" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50"
+                    }`}
+                >
+                  My Courses
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("archived")}
+                  className={`px-4 py-2 text-sm font-semibold rounded-lg ${viewMode === "archived" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50"
+                    }`}
+                >
+                  Archived
+                </button>
+              </div>
               <p className="mt-1 text-sm text-slate-500 max-w-2xl">
-                Create courses, open course dashboards, and manage assessments, students, and marks.
+                {viewMode === "archived"
+                  ? "Archived courses are hidden from My Courses but can still be opened anytime."
+                  : "Create courses, open course dashboards, and manage assessments, students, and marks."}
               </p>
 
               <div className="mt-4 flex flex-wrap gap-2 text-xs">
@@ -218,7 +291,9 @@ export default function TeacherCoursesPage() {
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
           <div>
-            <h2 className="text-base font-semibold text-slate-900">Your Courses</h2>
+            <h2 className="text-base font-semibold text-slate-900">
+              {viewMode === "archived" ? "Archived Courses" : "Your Courses"}
+            </h2>
             <p className="text-xs text-slate-500">
               Showing <span className="font-semibold">{filteredCourses.length}</span> of{" "}
               <span className="font-semibold">{courses.length}</span>
@@ -320,6 +395,45 @@ export default function TeacherCoursesPage() {
                           Open
                         </button>
 
+                        {viewMode === "active" ? (
+                          <button
+                            type="button"
+                            onClick={() => handleArchive(c)}
+                            disabled={archivingId === c.id}
+                            className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-700 border border-slate-200 hover:bg-slate-50 disabled:opacity-60"
+                          >
+                            {archivingId === c.id ? (
+                              <>
+                                <SpinnerIcon />
+                                Archiving…
+                              </>
+                            ) : (
+                              <>
+                                <ArchiveIcon />
+                                Archive
+                              </>
+                            )}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleUnarchive(c)}
+                            disabled={unarchivingId === c.id}
+                            className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-emerald-700 border border-emerald-200 hover:bg-emerald-50 disabled:opacity-60"
+                          >
+                            {unarchivingId === c.id ? (
+                              <>
+                                <SpinnerIcon />
+                                Restoring…
+                              </>
+                            ) : (
+                              <>
+                                <RestoreIcon />
+                                Unarchive
+                              </>
+                            )}
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleDelete(c)}
@@ -421,6 +535,26 @@ function TrashIcon() {
       <path d="M8 6V4h8v2" />
       <path d="M19 6l-1 14H6L5 6" />
       <path d="M10 11v6M14 11v6" />
+    </svg>
+  );
+}
+
+function ArchiveIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M21 8v13H3V8" />
+      <path d="M1 3h22v5H1z" />
+      <path d="M10 12h4" />
+    </svg>
+  );
+}
+
+function RestoreIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M3 7v6h6" />
+      <path d="M21 17a9 9 0 0 1-15.5 3.5L3 19" />
+      <path d="M21 7a9 9 0 0 0-15.5-3.5L3 5" />
     </svg>
   );
 }
