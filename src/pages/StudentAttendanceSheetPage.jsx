@@ -14,9 +14,8 @@ export default function StudentAttendanceSheetPage() {
   const [err, setErr] = useState("");
   const [data, setData] = useState(null);
 
-  // ✅ Complaint modal states
   const [issueOpen, setIssueOpen] = useState(false);
-  const [issueRow, setIssueRow] = useState(null); // {date, period, status}
+  const [issueRow, setIssueRow] = useState(null);
   const [issueMessage, setIssueMessage] = useState("");
   const [submittingIssue, setSubmittingIssue] = useState(false);
   const [issueSuccess, setIssueSuccess] = useState("");
@@ -26,7 +25,12 @@ export default function StudentAttendanceSheetPage() {
       try {
         setLoadingCourses(true);
         const list = await fetchStudentCourses();
-        setCourses(list || []);
+        const safeList = list || [];
+        setCourses(safeList);
+
+        if (safeList.length > 0 && !courseId) {
+          setCourseId(safeList[0]._id || safeList[0].id || "");
+        }
       } catch (e) {
         setErr(e?.response?.data?.message || "Failed to load courses");
       } finally {
@@ -38,6 +42,7 @@ export default function StudentAttendanceSheetPage() {
   const handleView = async () => {
     if (!courseId) return setErr("Please select a course");
     setErr("");
+    setIssueSuccess("");
     setData(null);
 
     try {
@@ -66,7 +71,6 @@ export default function StudentAttendanceSheetPage() {
     setIssueSuccess("");
     setErr("");
     setIssueRow(row);
-    // small helpful default text
     setIssueMessage(
       `I have an attendance issue for ${row.date} (Period ${row.period}). Please review it.`
     );
@@ -94,15 +98,13 @@ export default function StudentAttendanceSheetPage() {
         courseId,
         category: "attendance",
         attendanceRef: {
-          date: issueRow.date, // "YYYY-MM-DD" from backend response
+          date: issueRow.date,
           period: Number(issueRow.period),
         },
         message: issueMessage.trim(),
       });
 
       setIssueSuccess("Attendance issue submitted successfully.");
-      // keep modal open a bit so user sees success; you can auto-close too
-      // closeIssueModal(); // (optional) uncomment if you want auto close
     } catch (e) {
       setErr(e?.response?.data?.message || "Failed to submit attendance issue");
     } finally {
@@ -111,139 +113,237 @@ export default function StudentAttendanceSheetPage() {
   };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
-      <h1 className="text-xl font-semibold text-slate-800 mb-1">Attendance</h1>
-      <p className="text-sm text-slate-500 mb-6">
-        Select a course to view your attendance (period-wise). You can also report attendance issues per class.
-      </p>
+    <div className="space-y-6">
+      {/* Hero */}
+      <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-indigo-50 p-5 shadow-sm dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/30 sm:p-6 lg:p-7">
+        <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-indigo-200/40 blur-3xl dark:bg-indigo-600/20" />
+        <div className="absolute -left-10 bottom-0 h-32 w-32 rounded-full bg-sky-200/40 blur-3xl dark:bg-sky-600/20" />
 
-      <div className="flex flex-wrap items-end gap-3 mb-4">
-        <div className="min-w-[320px]">
-          <label className="block text-xs font-medium text-slate-600 mb-1">
-            Course
-          </label>
-          <select
-            value={courseId}
-            onChange={(e) => setCourseId(e.target.value)}
-            className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"
-            disabled={loadingCourses}
-          >
-            <option value="">Select course</option>
-            {courses.map((c) => (
-              <option key={c._id || c.id} value={c._id || c.id}>
-                {c.code} – {c.title} (Sec {c.section}) – {c.semester} {c.year}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <button
-          type="button"
-          onClick={handleView}
-          disabled={loading || loadingCourses}
-          className="h-10 rounded-lg bg-indigo-600 px-5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
-        >
-          {loading ? "Loading..." : "View Attendance"}
-        </button>
-      </div>
-
-      {err && <p className="text-sm text-red-600 mb-4">{err}</p>}
-
-      {data && computed && (
-        <>
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-            <div className="text-sm font-semibold text-slate-700">
-              {data.course.code} – {data.course.title} (Sec {data.course.section}) –{" "}
-              {data.course.semester} {data.course.year}
-            </div>
-
-            <div className="text-sm text-slate-700">
-              <span className="font-semibold">Present:</span> {computed.totalPresent} /{" "}
-              {computed.totalClasses}{" "}
-              <span className="ml-2 font-semibold">({computed.percentage}%)</span>
-            </div>
+        <div className="relative">
+          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs font-semibold text-slate-700 backdrop-blur dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200">
+            <CalendarIcon />
+            Attendance
           </div>
 
-          {!computed.rows.length ? (
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-              No attendance has been taken yet for this course.
+          <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+            Attendance Sheet
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
+            Select a course to view your attendance period-wise. You can also report
+            attendance issues for a specific class entry.
+          </p>
+        </div>
+      </section>
+
+      {/* Filter / action */}
+      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr),auto] xl:items-end">
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200">
+              Course
+            </label>
+            <select
+              value={courseId}
+              onChange={(e) => setCourseId(e.target.value)}
+              className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              disabled={loadingCourses}
+            >
+              <option value="">Select course</option>
+              {courses.map((c) => (
+                <option key={c._id || c.id} value={c._id || c.id}>
+                  {c.code} – {c.title} (Sec {c.section}) – {c.semester} {c.year}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleView}
+            disabled={loading || loadingCourses}
+            className="h-12 rounded-2xl bg-indigo-600 px-6 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {loading ? "Loading..." : "View Attendance"}
+          </button>
+        </div>
+
+        {err && (
+          <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+            {err}
+          </div>
+        )}
+      </section>
+
+      {/* Summary */}
+      {data && computed && (
+        <>
+          <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <SummaryCard
+              label="Total Present"
+              value={computed.totalPresent}
+              sub={`${computed.totalClasses} total classes`}
+            />
+            <SummaryCard
+              label="Attendance Percentage"
+              value={`${computed.percentage}%`}
+              sub="Current attendance rate"
+            />
+            <SummaryCard
+              label="Course"
+              value={data.course.code}
+              sub={`${data.course.title} • Sec ${data.course.section}`}
+            />
+          </section>
+
+          <section className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 overflow-hidden">
+            <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800 sm:px-6">
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+                    Attendance Records
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {data.course.code} – {data.course.title} (Sec {data.course.section}) –{" "}
+                    {data.course.semester} {data.course.year}
+                  </p>
+                </div>
+
+                <div className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  Present: {computed.totalPresent} / {computed.totalClasses}
+                </div>
+              </div>
             </div>
-          ) : (
-            <div className="border border-slate-200 rounded-lg overflow-hidden">
-              <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 border-b border-slate-200">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-medium text-slate-600">
-                      Date
-                    </th>
-                    <th className="px-3 py-2 text-center font-medium text-slate-600">
-                      Period
-                    </th>
-                    <th className="px-3 py-2 text-center font-medium text-slate-600">
-                      Status
-                    </th>
-                    <th className="px-3 py-2 text-right font-medium text-slate-600">
-                      Action
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {computed.rows.map((r) => (
-                    <tr
-                      key={`${r.date}-P${r.period}`}
-                      className="border-b last:border-0 border-slate-100"
-                    >
-                      <td className="px-3 py-2">{r.date}</td>
-                      <td className="px-3 py-2 text-center">{r.period}</td>
-                      <td className="px-3 py-2 text-center font-semibold">
-                        {r.status}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <button
-                          type="button"
-                          onClick={() => openIssueModal(r)}
-                          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+
+            {!computed.rows.length ? (
+              <div className="px-6 py-10 text-center">
+                <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+                  <EmptyIcon />
+                </div>
+                <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                  No attendance records found
+                </div>
+                <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  No attendance has been taken yet for this course.
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* desktop table */}
+                <div className="hidden overflow-x-auto lg:block">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-slate-50 dark:bg-slate-800/70">
+                      <tr className="border-b border-slate-200 dark:border-slate-800">
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-300">
+                          Date
+                        </th>
+                        <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-300">
+                          Period
+                        </th>
+                        <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-300">
+                          Status
+                        </th>
+                        <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-300">
+                          Action
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {computed.rows.map((r) => (
+                        <tr
+                          key={`${r.date}-P${r.period}`}
+                          className="transition hover:bg-slate-50 dark:hover:bg-slate-800/50"
                         >
-                          <FlagIcon />
-                          Report Issue
-                        </button>
-                      </td>
-                    </tr>
+                          <td className="px-6 py-4 text-slate-700 dark:text-slate-200">
+                            {r.date}
+                          </td>
+                          <td className="px-6 py-4 text-center text-slate-700 dark:text-slate-200">
+                            {r.period}
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <AttendanceBadge status={r.status} />
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <button
+                              type="button"
+                              onClick={() => openIssueModal(r)}
+                              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                            >
+                              <FlagIcon />
+                              Report Issue
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* mobile cards */}
+                <div className="grid gap-4 p-4 lg:hidden">
+                  {computed.rows.map((r) => (
+                    <div
+                      key={`${r.date}-P${r.period}`}
+                      className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-xs text-slate-500 dark:text-slate-400">
+                            Date
+                          </div>
+                          <div className="font-semibold text-slate-900 dark:text-white">
+                            {r.date}
+                          </div>
+                        </div>
+
+                        <AttendanceBadge status={r.status} />
+                      </div>
+
+                      <div className="mt-3 text-sm text-slate-600 dark:text-slate-300">
+                        Period: <span className="font-semibold">{r.period}</span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => openIssueModal(r)}
+                        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                      >
+                        <FlagIcon />
+                        Report Issue
+                      </button>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                </div>
+              </>
+            )}
+          </section>
         </>
       )}
 
-      {/* ✅ Issue Modal */}
+      {/* Issue Modal */}
       {issueOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          {/* overlay */}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <button
             type="button"
             onClick={closeIssueModal}
-            className="absolute inset-0 bg-slate-900/40"
+            className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
             aria-label="Close"
           />
 
-          {/* modal */}
-          <div className="relative w-[92%] max-w-lg rounded-2xl border border-slate-200 bg-white shadow-xl p-5">
+          <div className="relative z-10 w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-900 sm:p-6">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-sm font-bold text-slate-900">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
                   Report Attendance Issue
-                </div>
-                <div className="mt-1 text-xs text-slate-500">
-                  This will be sent to the teacher in the Complaints Center.
-                </div>
+                </h3>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  This will be sent to the teacher in the complaints center.
+                </p>
               </div>
 
               <button
                 type="button"
                 onClick={closeIssueModal}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                 disabled={submittingIssue}
                 aria-label="Close modal"
               >
@@ -251,50 +351,51 @@ export default function StudentAttendanceSheetPage() {
               </button>
             </div>
 
-            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200">
               <div className="font-semibold">Selected Class</div>
-              <div className="mt-1 text-sm">
-                Date: <span className="font-semibold">{issueRow?.date}</span>{" "}
-                | Period: <span className="font-semibold">{issueRow?.period}</span>{" "}
-                | Your Status:{" "}
-                <span className="font-semibold">{issueRow?.status}</span>
+              <div className="mt-2 leading-6">
+                Date: <span className="font-semibold">{issueRow?.date}</span>
+                <br />
+                Period: <span className="font-semibold">{issueRow?.period}</span>
+                <br />
+                Your Status: <span className="font-semibold">{issueRow?.status}</span>
               </div>
             </div>
 
-            <div className="mt-4">
-              <label className="block text-xs font-semibold text-slate-600 mb-1">
+            <div className="mt-5">
+              <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200">
                 Your message
               </label>
               <textarea
                 value={issueMessage}
                 onChange={(e) => setIssueMessage(e.target.value)}
-                className="w-full min-h-[120px] rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-                placeholder="Explain what went wrong (e.g., I was present, but shows absent)."
+                className="min-h-[140px] w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                placeholder="Explain what went wrong, for example: I was present but it shows absent."
                 disabled={submittingIssue}
               />
-              <div className="mt-1 text-xs text-slate-500">
-                Tip: mention any proof (photo, screenshot, witness) if needed.
+              <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                Tip: mention any proof like screenshot or witness if needed.
               </div>
             </div>
 
             {issueSuccess && (
-              <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+              <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
                 {issueSuccess}
               </div>
             )}
 
             {err && (
-              <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
                 {err}
               </div>
             )}
 
-            <div className="mt-4 flex gap-2">
+            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <button
                 type="button"
                 onClick={closeIssueModal}
                 disabled={submittingIssue}
-                className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
               >
                 Cancel
               </button>
@@ -303,7 +404,7 @@ export default function StudentAttendanceSheetPage() {
                 type="button"
                 onClick={handleSubmitIssue}
                 disabled={submittingIssue}
-                className="flex-1 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                className="rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-60"
               >
                 {submittingIssue ? "Submitting..." : "Submit Issue"}
               </button>
@@ -315,7 +416,61 @@ export default function StudentAttendanceSheetPage() {
   );
 }
 
-/* ---------------- Icons ---------------- */
+function SummaryCard({ label, value, sub }) {
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+        {label}
+      </div>
+      <div className="mt-2 text-2xl font-extrabold text-slate-900 dark:text-white">
+        {value}
+      </div>
+      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{sub}</div>
+    </div>
+  );
+}
+
+function AttendanceBadge({ status }) {
+  const normalized = String(status || "").toLowerCase();
+
+  const cls =
+    normalized === "present"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+      : normalized === "absent"
+      ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300"
+      : normalized === "late"
+      ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
+      : "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300";
+
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold capitalize ${cls}`}
+    >
+      {status}
+    </span>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M8 2v4M16 2v4" />
+      <path d="M3 10h18" />
+      <path d="M5 6h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" />
+    </svg>
+  );
+}
+
+function EmptyIcon() {
+  return (
+    <svg className="h-6 w-6 text-slate-500 dark:text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M8 2v4M16 2v4" />
+      <path d="M3 10h18" />
+      <path d="M5 6h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" />
+      <path d="M9 14h6" />
+    </svg>
+  );
+}
 
 function FlagIcon() {
   return (

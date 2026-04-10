@@ -2,13 +2,15 @@
 
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { changePasswordRequest, updateProfileRequest } from "../services/authService";
+import {
+  changePasswordRequest,
+  updateProfileRequest,
+} from "../services/authService";
 
 function ChangePasswordPage() {
   const navigate = useNavigate();
   const role = localStorage.getItem("marksPortalRole");
 
-  // profile state
   const [username, setUsername] = useState(
     localStorage.getItem("marksPortalUsername") || ""
   );
@@ -19,7 +21,6 @@ function ChangePasswordPage() {
   const [profileError, setProfileError] = useState("");
   const [profileSuccess, setProfileSuccess] = useState("");
 
-  // password state
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
@@ -86,7 +87,8 @@ function ChangePasswordPage() {
 
       setProfileSuccess("Profile updated successfully.");
 
-      if (data.username) localStorage.setItem("marksPortalUsername", data.username);
+      if (data.username)
+        localStorage.setItem("marksPortalUsername", data.username);
       if (data.name) localStorage.setItem("marksPortalName", data.name);
     } catch (err) {
       console.error(err);
@@ -99,46 +101,63 @@ function ChangePasswordPage() {
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-            Account Settings
-          </h1>
-          <p className="mt-1 text-sm text-slate-500 max-w-2xl">
-            Update your password securely. Teachers can also update username and display name.
-          </p>
-        </div>
+      {/* Hero */}
+      <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-indigo-50 p-5 shadow-sm dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/30 sm:p-6 lg:p-7">
+        <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-indigo-200/40 blur-3xl dark:bg-indigo-600/20" />
+        <div className="absolute -left-10 bottom-0 h-32 w-32 rounded-full bg-sky-200/40 blur-3xl dark:bg-sky-600/20" />
 
-        <div className="flex gap-2">
+        <div className="relative flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs font-semibold text-slate-700 backdrop-blur dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200">
+              <SettingsIcon />
+              Account Settings
+            </div>
+
+            <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+              Manage Your Account
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
+              Update your password securely. Teachers can also change username
+              and display name from this page.
+            </p>
+          </div>
+
           <button
             type="button"
             onClick={() => navigate(-1)}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
           >
             <ArrowLeftIcon />
             Back
           </button>
         </div>
-      </div>
+      </section>
 
       {/* Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Change Password Card */}
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center border border-indigo-100">
-              <LockIcon />
-            </div>
-            <div>
-              <h2 className="text-base font-semibold text-slate-900">Change Password</h2>
-              <p className="text-xs text-slate-500">
-                Keep your account secure by updating your password regularly.
-              </p>
+      <div
+        className={`grid grid-cols-1 gap-5 ${
+          role === "teacher" ? "xl:grid-cols-2" : ""
+        }`}
+      >
+        {/* Change Password */}
+        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800 sm:px-6">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-indigo-100 bg-indigo-50 dark:border-indigo-500/20 dark:bg-indigo-500/10">
+                <LockIcon />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+                  Change Password
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Keep your account secure by updating your password regularly.
+                </p>
+              </div>
             </div>
           </div>
 
-          <div className="p-6">
+          <div className="p-5 sm:p-6">
             {error && (
               <AlertBox tone="danger" title="Action required" message={error} />
             )}
@@ -146,11 +165,11 @@ function ChangePasswordPage() {
               <AlertBox tone="success" title="Success" message={success} />
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+            <form onSubmit={handleSubmit} className="mt-4 space-y-4">
               <Field label="Current Password">
                 <input
                   type="password"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-1 focus:ring-indigo-500"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
                   autoComplete="current-password"
@@ -158,10 +177,13 @@ function ChangePasswordPage() {
                 />
               </Field>
 
-              <Field label="New Password" hint="Minimum 6 characters. Use a strong password if possible.">
+              <Field
+                label="New Password"
+                hint="Minimum 6 characters. Use a stronger password if possible."
+              >
                 <input
                   type="password"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-1 focus:ring-indigo-500"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   autoComplete="new-password"
@@ -172,7 +194,7 @@ function ChangePasswordPage() {
               <Field label="Confirm New Password">
                 <input
                   type="password"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-1 focus:ring-indigo-500"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
                   value={confirmNewPassword}
                   onChange={(e) => setConfirmNewPassword(e.target.value)}
                   autoComplete="new-password"
@@ -180,16 +202,16 @@ function ChangePasswordPage() {
                 />
               </Field>
 
-              <div className="flex justify-end gap-3 pt-2">
+              <div className="flex justify-end pt-2">
                 <button
                   type="submit"
                   disabled={loading}
-                  className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {loading ? (
                     <>
                       <SpinnerIcon />
-                      Saving…
+                      Saving...
                     </>
                   ) : (
                     <>
@@ -201,36 +223,51 @@ function ChangePasswordPage() {
               </div>
             </form>
           </div>
-        </div>
+        </section>
 
         {/* Teacher Account Details */}
         {role === "teacher" && (
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-purple-50 flex items-center justify-center border border-purple-100">
-                <UserBadgeIcon />
-              </div>
-              <div>
-                <h2 className="text-base font-semibold text-slate-900">Account Details</h2>
-                <p className="text-xs text-slate-500">
-                  Update your teacher username and display name.
-                </p>
+          <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800 sm:px-6">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-violet-100 bg-violet-50 dark:border-violet-500/20 dark:bg-violet-500/10">
+                  <UserBadgeIcon />
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+                    Account Details
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Update your teacher username and display name.
+                  </p>
+                </div>
               </div>
             </div>
 
-            <div className="p-6">
+            <div className="p-5 sm:p-6">
               {profileError && (
-                <AlertBox tone="danger" title="Could not save" message={profileError} />
+                <AlertBox
+                  tone="danger"
+                  title="Could not save"
+                  message={profileError}
+                />
               )}
               {profileSuccess && (
-                <AlertBox tone="success" title="Saved" message={profileSuccess} />
+                <AlertBox
+                  tone="success"
+                  title="Saved"
+                  message={profileSuccess}
+                />
               )}
 
-              <form onSubmit={handleProfileSave} className="space-y-4 mt-4">
-                <Field label="Teacher Username" hint="This is the ID you use to login as teacher.">
+              <form onSubmit={handleProfileSave} className="mt-4 space-y-4">
+                <Field
+                  label="Teacher Username"
+                  hint="This is the ID you use to log in as teacher."
+                >
                   <input
                     type="text"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-1 focus:ring-indigo-500"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     placeholder="e.g. main_teacher"
@@ -240,7 +277,7 @@ function ChangePasswordPage() {
                 <Field label="Display Name (optional)">
                   <input
                     type="text"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-1 focus:ring-indigo-500"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
                     placeholder="e.g. Mahbub Sarwar"
@@ -251,12 +288,12 @@ function ChangePasswordPage() {
                   <button
                     type="submit"
                     disabled={profileLoading}
-                    className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
                   >
                     {profileLoading ? (
                       <>
                         <SpinnerIcon />
-                        Saving…
+                        Saving...
                       </>
                     ) : (
                       <>
@@ -268,14 +305,17 @@ function ChangePasswordPage() {
                 </div>
               </form>
 
-              <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <div className="text-xs font-semibold text-slate-700">Tip</div>
-                <p className="mt-1 text-xs text-slate-600">
-                  If you change your display name, it will reflect in the sidebar and dashboard after refresh.
+              <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/80">
+                <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                  Tip
+                </div>
+                <p className="mt-1 text-xs leading-6 text-slate-600 dark:text-slate-400">
+                  If you change your display name, it will appear in the sidebar
+                  and dashboard after refresh.
                 </p>
               </div>
             </div>
-          </div>
+          </section>
         )}
       </div>
     </div>
@@ -289,9 +329,15 @@ export default ChangePasswordPage;
 function Field({ label, hint, children }) {
   return (
     <div>
-      <label className="block text-sm font-semibold text-slate-700">{label}</label>
-      <div className="mt-1">{children}</div>
-      {hint ? <p className="mt-1 text-xs text-slate-500">{hint}</p> : null}
+      <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
+        {label}
+      </label>
+      <div className="mt-1.5">{children}</div>
+      {hint ? (
+        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+          {hint}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -299,22 +345,43 @@ function Field({ label, hint, children }) {
 function AlertBox({ tone = "danger", title, message }) {
   const styles =
     tone === "success"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-      : "border-red-200 bg-red-50 text-red-800";
+      ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+      : "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300";
 
   return (
-    <div className={`mb-3 rounded-xl border px-4 py-3 text-sm ${styles}`}>
+    <div className={`mb-3 rounded-2xl border px-4 py-3 text-sm ${styles}`}>
       <div className="font-semibold">{title}</div>
-      <div className="mt-0.5 text-sm opacity-90">{message}</div>
+      <div className="mt-0.5 opacity-90">{message}</div>
     </div>
   );
 }
 
-/* ---------------- Icons (inline SVG) ---------------- */
+/* ---------------- Icons ---------------- */
+
+function SettingsIcon() {
+  return (
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M12 3l2.2 2.2 3-.4.8 2.9 2.7 1.4-1 2.8 1 2.8-2.7 1.4-.8 2.9-3-.4L12 21l-2.2-2.2-3 .4-.8-2.9-2.7-1.4 1-2.8-1-2.8 2.7-1.4.8-2.9 3 .4L12 3z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
 
 function LockIcon() {
   return (
-    <svg className="h-5 w-5 text-indigo-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-5 w-5 text-indigo-700 dark:text-indigo-300"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M7 11V8a5 5 0 0 1 10 0v3" />
       <path d="M5 11h14v10H5z" />
     </svg>
@@ -323,7 +390,13 @@ function LockIcon() {
 
 function UserBadgeIcon() {
   return (
-    <svg className="h-5 w-5 text-purple-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-5 w-5 text-violet-700 dark:text-violet-300"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M20 21a8 8 0 0 0-16 0" />
       <path d="M12 11a4 4 0 1 0-4-4 4 4 0 0 0 4 4z" />
       <path d="M18 8h4" />
@@ -334,7 +407,13 @@ function UserBadgeIcon() {
 
 function ArrowLeftIcon() {
   return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M15 18l-6-6 6-6" />
     </svg>
   );
@@ -342,7 +421,13 @@ function ArrowLeftIcon() {
 
 function CheckIcon() {
   return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M20 6L9 17l-5-5" />
     </svg>
   );
@@ -351,7 +436,14 @@ function CheckIcon() {
 function SpinnerIcon() {
   return (
     <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      />
       <path
         className="opacity-75"
         fill="currentColor"

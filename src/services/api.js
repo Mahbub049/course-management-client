@@ -1,8 +1,8 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: "http://localhost:5000/api", // no template string needed
-  // baseURL: import.meta.env.VITE_API_BASE_URL, // no template string needed
+  // baseURL: "http://localhost:5000/api", // no template string needed
+  baseURL: import.meta.env.VITE_API_BASE_URL, // no template string needed
   // withCredentials: true, // only enable if you use cookies (you use JWT, so keep it OFF)
 });
 
