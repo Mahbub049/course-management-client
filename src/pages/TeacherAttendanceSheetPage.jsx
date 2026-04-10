@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchTeacherCourses } from "../services/courseService";
 import { fetchAttendanceSheet } from "../services/attendanceService";
 import * as XLSX from "xlsx-js-style";
-
 
 // Sort helper: roll small -> big (numeric-safe)
 const sortByRollAsc = (a, b) => {
@@ -15,6 +14,11 @@ const sortByRollAsc = (a, b) => {
 
 
 export default function TeacherAttendanceSheetPage() {
+
+  const topScrollRef = useRef(null);
+  const tableScrollRef = useRef(null);
+  const innerWidthRef = useRef(null);
+
   const [courses, setCourses] = useState([]);
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [courseErr, setCourseErr] = useState("");
@@ -164,6 +168,34 @@ export default function TeacherAttendanceSheetPage() {
     XLSX.writeFile(wb, filename);
   };
 
+  const syncTopToTable = () => {
+    if (tableScrollRef.current && topScrollRef.current) {
+      tableScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+    }
+  };
+
+  const syncTableToTop = () => {
+    if (tableScrollRef.current && topScrollRef.current) {
+      topScrollRef.current.scrollLeft = tableScrollRef.current.scrollLeft;
+    }
+  };
+
+  useEffect(() => {
+    const updateWidth = () => {
+      if (innerWidthRef.current && tableScrollRef.current) {
+        const table = tableScrollRef.current.querySelector("table");
+        if (table) {
+          innerWidthRef.current.style.width = `${table.scrollWidth}px`;
+        }
+      }
+    };
+
+    updateWidth();
+    window.addEventListener("resize", updateWidth);
+
+    return () => window.removeEventListener("resize", updateWidth);
+  }, [computed]);
+
   return (
     <div className="mx-auto">
       <section className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
@@ -225,63 +257,100 @@ export default function TeacherAttendanceSheetPage() {
               </button>
             </div>
 
-            <div className="border border-slate-200 rounded-lg overflow-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 border-b border-slate-200">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-medium text-slate-600">Roll</th>
-                    <th className="px-3 py-2 text-left font-medium text-slate-600">Name</th>
+            <div className="border border-slate-200 rounded-lg bg-white">
+              {/* Top horizontal scrollbar */}
+              <div
+                ref={topScrollRef}
+                onScroll={syncTopToTable}
+                className="overflow-x-auto overflow-y-hidden border-b border-slate-200"
+              >
+                <div ref={innerWidthRef} className="h-4" />
+              </div>
 
-                    {computed.sessions.map((s) => (
-                      <th
-                        key={s.key}
-                        className="px-3 py-2 text-center font-medium text-slate-600 whitespace-nowrap"
-                      >
-                        {s.date}
-                        <div className="text-[10px] text-slate-500">P{s.period}</div>
+              {/* Actual table scroll area */}
+              <div
+                ref={tableScrollRef}
+                onScroll={syncTableToTop}
+                className="overflow-x-auto overflow-y-visible"
+              >
+                <table className="min-w-max text-sm border-separate border-spacing-0">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="sticky left-0 z-30 bg-slate-50 px-3 py-2 text-left font-medium text-slate-600 min-w-[110px] border-b border-slate-200">
+                        Roll
                       </th>
-                    ))}
+                      <th className="sticky left-[110px] z-30 bg-slate-50 px-3 py-2 text-left font-medium text-slate-600 min-w-[220px] border-b border-slate-200">
+                        Name
+                      </th>
 
-                    <th className="px-3 py-2 text-center font-medium text-slate-600">Total Present</th>
-                    <th className="px-3 py-2 text-center font-medium text-slate-600">Total Classes</th>
-                    <th className="px-3 py-2 text-center font-medium text-slate-600">%</th>
-                  </tr>
-                </thead>
+                      {computed.sessions.map((s) => (
+                        <th
+                          key={s.key}
+                          className="px-3 py-2 text-center font-medium text-slate-600 whitespace-nowrap min-w-[84px] border-b border-slate-200"
+                        >
+                          {s.date}
+                          <div className="text-[10px] text-slate-500">P{s.period}</div>
+                        </th>
+                      ))}
 
-                <tbody>
-                  {computed.students.map((st) => {
-                    const meta = computed.rows.find((r) => r.roll === st.roll);
-                    return (
-                      <tr key={st.roll} className="border-b last:border-0 border-slate-100">
-                        <td className="px-3 py-2">{st.roll}</td>
-                        <td className="px-3 py-2">{st.name}</td>
+                      <th className="sticky right-[190px] z-30 bg-slate-50 px-3 py-2 text-center font-medium text-slate-600 whitespace-nowrap min-w-[110px] border-b border-slate-200">
+                        Total Present
+                      </th>
+                      <th className="sticky right-[80px] z-30 bg-slate-50 px-3 py-2 text-center font-medium text-slate-600 whitespace-nowrap min-w-[110px] border-b border-slate-200">
+                        Total Classes
+                      </th>
+                      <th className="sticky right-0 z-30 bg-slate-50 px-3 py-2 text-center font-medium text-slate-600 whitespace-nowrap min-w-[80px] border-b border-slate-200">
+                        %
+                      </th>
+                    </tr>
+                  </thead>
 
-                        {computed.sessions.map((sess) => {
-                          const present = !!computed.matrix?.[st.roll]?.[sess.key];
+                  <tbody>
+                    {computed.students.map((st) => {
+                      const meta = computed.rows.find((r) => r.roll === st.roll);
 
-                          const cellClass = present
-                            ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
-                            : "bg-rose-50 text-rose-700 border border-rose-100"; // ✅ soothing red
+                      return (
+                        <tr key={st.roll} className="border-b last:border-0 border-slate-100">
+                          <td className="sticky left-0 z-20 bg-white px-3 py-2 min-w-[110px] border-b border-slate-100">
+                            {st.roll}
+                          </td>
 
-                          return (
-                            <td
-                              key={sess.key}
-                              className={`px-3 py-2 text-center font-semibold ${cellClass}`}
-                            >
-                              {present ? "P" : "A"}
-                            </td>
-                          );
-                        })}
+                          <td className="sticky left-[110px] z-20 bg-white px-3 py-2 min-w-[220px] border-b border-slate-100 whitespace-nowrap">
+                            {st.name}
+                          </td>
 
+                          {computed.sessions.map((sess) => {
+                            const present = !!computed.matrix?.[st.roll]?.[sess.key];
 
-                        <td className="px-3 py-2 text-center">{meta?.presentCount ?? 0}</td>
-                        <td className="px-3 py-2 text-center">{meta?.totalClasses ?? 0}</td>
-                        <td className="px-3 py-2 text-center">{meta?.percentage ?? 0}%</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                            const cellClass = present
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
+                              : "bg-rose-50 text-rose-700 border border-rose-100";
+
+                            return (
+                              <td
+                                key={sess.key}
+                                className={`px-3 py-2 text-center font-semibold min-w-[84px] ${cellClass}`}
+                              >
+                                {present ? "P" : "A"}
+                              </td>
+                            );
+                          })}
+
+                          <td className="sticky right-[190px] z-20 bg-white px-3 py-2 text-center whitespace-nowrap border-b border-slate-100">
+                            {meta?.presentCount ?? 0}
+                          </td>
+                          <td className="sticky right-[80px] z-20 bg-white px-3 py-2 text-center whitespace-nowrap border-b border-slate-100">
+                            {meta?.totalClasses ?? 0}
+                          </td>
+                          <td className="sticky right-0 z-20 bg-white px-3 py-2 text-center whitespace-nowrap border-b border-slate-100">
+                            {meta?.percentage ?? 0}%
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </>
         )}

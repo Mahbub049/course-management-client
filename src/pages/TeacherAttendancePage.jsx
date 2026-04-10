@@ -1,6 +1,6 @@
 // client/src/pages/TeacherAttendancePage.jsx
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchTeacherCourses } from "../services/courseService";
 import { getCourseStudents } from "../services/enrollmentService";
 import {
@@ -13,6 +13,7 @@ import Swal from "sweetalert2";
 
 
 export default function TeacherAttendancePage() {
+  const dateInputRef = useRef(null);
   const [courses, setCourses] = useState([]);
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [courseError, setCourseError] = useState("");
@@ -255,6 +256,9 @@ export default function TeacherAttendancePage() {
     return students.every((s) => attendance[s.roll]);
   }, [students, attendance]);
 
+  const presentCount = useMemo(() => {
+    return students.filter((s) => !!attendance[s.roll]).length;
+  }, [students, attendance]);
 
   return (
     <div className="mx-auto">
@@ -415,11 +419,14 @@ export default function TeacherAttendancePage() {
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Date</label>
             <input
+              ref={dateInputRef}
               type="date"
               name="date"
               value={form.date}
               onChange={handleChange}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              onClick={() => dateInputRef.current?.showPicker?.()}
+              onFocus={() => dateInputRef.current?.showPicker?.()}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
             />
           </div>
 
@@ -463,38 +470,96 @@ export default function TeacherAttendancePage() {
 
             {!loadingStudents && students.length > 0 && (
               <form onSubmit={handleSubmitAttendance}>
-                <div className="mb-2 flex justify-end">
+                <div className="mb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div className="text-sm font-medium text-slate-700">
+                    Present: <span className="text-emerald-600">{presentCount}</span> / {students.length}
+                  </div>
+
                   <button
                     type="button"
                     onClick={toggleAllStudents}
-                    className="text-xs px-3 py-1.5 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-100"
+                    className="text-xs px-3 py-1.5 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-100 w-full sm:w-auto"
                   >
                     {areAllChecked ? "Uncheck All" : "Check All"}
                   </button>
                 </div>
 
-                <div className="border border-slate-200 rounded-lg overflow-x-auto">
-                  <table className="min-w-[520px] w-full text-sm">
+                {/* Mobile view */}
+                <div className="block md:hidden space-y-2">
+                  {students.map((s) => (
+                    <div
+                      key={s.roll}
+                      className="border border-slate-200 rounded-lg p-3 flex items-center justify-between gap-3"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-slate-800 break-words">
+                          {s.name}
+                        </div>
+                        <div className="text-xs text-slate-500 mt-1">
+                          Roll: {s.roll}
+                        </div>
+                      </div>
+
+                      <label className="flex items-center gap-2 shrink-0 cursor-pointer select-none">
+                        <span className="text-xs text-slate-600">Present</span>
+                        <input
+                          type="checkbox"
+                          checked={!!attendance[s.roll]}
+                          onChange={() => toggleStudent(s.roll)}
+                          className="h-5 w-5 rounded border-slate-300"
+                        />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Desktop / tablet view */}
+                {/* Desktop / tablet view */}
+                <div className="hidden md:block border border-slate-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
                     <thead className="bg-slate-50 border-b border-slate-200">
                       <tr>
-                        <th className="px-3 py-2 text-left font-medium text-slate-600">Roll</th>
-                        <th className="px-3 py-2 text-left font-medium text-slate-600">Name</th>
-                        <th className="px-3 py-2 text-center font-medium text-slate-600">Present</th>
+                        <th className="w-[60px] px-3 py-3 text-center font-medium text-slate-600">
+                          Present
+                        </th>
+                        <th className="w-[160px] px-3 py-3 text-left font-medium text-slate-600">
+                          Roll
+                        </th>
+                        <th className="px-3 py-3 text-left font-medium text-slate-600">
+                          Name
+                        </th>
                       </tr>
                     </thead>
 
                     <tbody>
                       {students.map((s) => (
-                        <tr key={s.roll} className="border-b last:border-0 border-slate-100">
-                          <td className="px-3 py-2">{s.roll}</td>
-                          <td className="px-3 py-2">{s.name}</td>
-                          <td className="px-3 py-2 text-center">
+                        <tr
+                          key={s.roll}
+                          className="border-b last:border-0 border-slate-100 hover:bg-slate-50 cursor-pointer"
+                          onClick={() => toggleStudent(s.roll)}
+                        >
+                          {/* Checkbox FIRST */}
+                          <td className="px-3 py-3 text-center align-middle">
                             <input
                               type="checkbox"
                               checked={!!attendance[s.roll]}
-                              onChange={() => toggleStudent(s.roll)}
-                              className="h-4 w-4 rounded border-slate-300"
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                toggleStudent(s.roll);
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="h-5 w-5 rounded border-slate-300 cursor-pointer"
                             />
+                          </td>
+
+                          {/* Roll */}
+                          <td className="px-3 py-3 align-middle whitespace-nowrap">
+                            {s.roll}
+                          </td>
+
+                          {/* Name */}
+                          <td className="px-3 py-3 align-middle">
+                            {s.name}
                           </td>
                         </tr>
                       ))}
@@ -502,11 +567,11 @@ export default function TeacherAttendancePage() {
                   </table>
                 </div>
 
-                <div className="mt-4 flex items-center gap-3">
+                <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-3">
                   <button
                     type="submit"
                     disabled={saving}
-                    className="inline-flex items-center px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-60"
+                    className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-60"
                   >
                     {saving
                       ? "Saving..."

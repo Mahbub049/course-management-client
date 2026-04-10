@@ -8,7 +8,10 @@ import {
   fetchMarksForCourse,
   saveMarksForCourseRequest,
 } from "../../services/markService";
-import { fetchAssessmentsForCourse } from "../../services/assessmentService";
+import {
+  fetchAssessmentsForCourse,
+  publishAssessmentRequest,
+} from "../../services/assessmentService";
 import { fetchAttendanceSummary } from "../../services/attendanceSummaryService";
 
 function getCourseType(course) {
@@ -170,6 +173,7 @@ export default function TabMarks({ courseId, course }) {
   const [loading, setLoading] = useState(true);
   const [marksError, setMarksError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [publishingAssessmentId, setPublishingAssessmentId] = useState(null);
 
   const [tabMode, setTabMode] = useState("row"); // row | col
   const inputRefs = useRef([]);
@@ -178,99 +182,99 @@ export default function TabMarks({ courseId, course }) {
   const [sortMode, setSortMode] = useState("entered"); // entered | roll-asc | roll-desc
   const originalStudentsRef = useRef([]); // preserve entered order
 
-  useEffect(() => {
-    async function loadAll() {
-      setLoading(true);
-      setMarksError("");
+  const loadAllData = async () => {
+    setLoading(true);
+    setMarksError("");
 
-      let studentsData = [];
-      let assessmentsData = [];
+    let studentsData = [];
+    let assessmentsData = [];
 
-      // ✅ Load students + assessments first
-      try {
-        const res = await Promise.all([
-          getCourseStudents(courseId),
-          fetchAssessmentsForCourse(courseId),
-        ]);
-        studentsData = res[0] || [];
-        assessmentsData = res[1] || [];
+    // Load students + assessments first
+    try {
+      const res = await Promise.all([
+        getCourseStudents(courseId),
+        fetchAssessmentsForCourse(courseId),
+      ]);
 
-        setStudents(studentsData);
-        originalStudentsRef.current = studentsData; // ✅ keep original order
-        setAssessments(assessmentsData);
-      } catch (e) {
-        console.error(e);
-        setMarksError(
-          e?.response?.data?.message || "Failed to load students/assessments"
-        );
-        setStudents([]);
-        originalStudentsRef.current = [];
-        setAssessments([]);
-        setMarksMap({});
-        setAttMarksMap({});
-        setLoading(false);
-        return;
-      }
+      studentsData = res[0] || [];
+      assessmentsData = res[1] || [];
 
-      // ✅ Load marks + attendance summary (optional)
-      try {
-        const [marksData, attSummary] = await Promise.allSettled([
-          fetchMarksForCourse(courseId),
-          fetchAttendanceSummary(courseId),
-        ]);
-
-        const map = {};
-
-        // ---- marks (non-attendance) from Mark collection ----
-        if (marksData.status === "fulfilled") {
-          (marksData.value || []).forEach((m) => {
-            const sid = m.student;
-            if (!map[sid]) map[sid] = {};
-            map[sid][m.assessment] = m.obtainedMarks;
-          });
-        } else {
-          console.warn("Marks load failed:", marksData.reason);
-        }
-
-        // ---- attendance summary (/5) ----
-        if (attSummary.status === "fulfilled") {
-          const attRows = attSummary.value || [];
-
-          const newAttMap = {};
-          attRows.forEach((r) => {
-            newAttMap[r.student] = Number(r.marks ?? 0); // already /5
-          });
-          setAttMarksMap(newAttMap);
-
-          // also show in Attendance column if an Attendance assessment exists
-          const attendanceAssessment = (assessmentsData || []).find((a) =>
-            String(a.name || "").toLowerCase().includes("att")
-          );
-
-          if (attendanceAssessment) {
-            attRows.forEach((r) => {
-              const sid = r.student;
-              if (!map[sid]) map[sid] = {};
-              map[sid][attendanceAssessment._id] = r.marks ?? 0;
-            });
-          }
-        } else {
-          console.warn("Attendance summary load failed:", attSummary.reason);
-          setAttMarksMap({});
-        }
-
-        setMarksMap(map);
-      } catch (e) {
-        console.error(e);
-        setMarksError("Failed to load marks/attendance summary");
-        setMarksMap({});
-        setAttMarksMap({});
-      } finally {
-        setLoading(false);
-      }
+      setStudents(studentsData);
+      originalStudentsRef.current = studentsData;
+      setAssessments(assessmentsData);
+    } catch (e) {
+      console.error(e);
+      setMarksError(
+        e?.response?.data?.message || "Failed to load students/assessments"
+      );
+      setStudents([]);
+      originalStudentsRef.current = [];
+      setAssessments([]);
+      setMarksMap({});
+      setAttMarksMap({});
+      setLoading(false);
+      return;
     }
 
-    loadAll();
+    // Load marks + attendance summary
+    try {
+      const [marksData, attSummary] = await Promise.allSettled([
+        fetchMarksForCourse(courseId),
+        fetchAttendanceSummary(courseId),
+      ]);
+
+      const map = {};
+
+      // marks from Mark collection
+      if (marksData.status === "fulfilled") {
+        (marksData.value || []).forEach((m) => {
+          const sid = m.student;
+          if (!map[sid]) map[sid] = {};
+          map[sid][m.assessment] = m.obtainedMarks;
+        });
+      } else {
+        console.warn("Marks load failed:", marksData.reason);
+      }
+
+      // attendance summary (/5)
+      if (attSummary.status === "fulfilled") {
+        const attRows = attSummary.value || [];
+
+        const newAttMap = {};
+        attRows.forEach((r) => {
+          newAttMap[r.student] = Number(r.marks ?? 0);
+        });
+        setAttMarksMap(newAttMap);
+
+        const attendanceAssessment = (assessmentsData || []).find((a) =>
+          String(a.name || "").toLowerCase().includes("att")
+        );
+
+        if (attendanceAssessment) {
+          attRows.forEach((r) => {
+            const sid = r.student;
+            if (!map[sid]) map[sid] = {};
+            map[sid][attendanceAssessment._id] = r.marks ?? 0;
+          });
+        }
+      } else {
+        console.warn("Attendance summary load failed:", attSummary.reason);
+        setAttMarksMap({});
+      }
+
+      setMarksMap(map);
+    } catch (e) {
+      console.error(e);
+      setMarksError("Failed to load marks/attendance summary");
+      setMarksMap({});
+      setAttMarksMap({});
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAllData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [courseId]);
 
@@ -363,6 +367,47 @@ export default function TabMarks({ courseId, course }) {
     }
   };
 
+  const handlePublishAssessment = async (assessment) => {
+    const assessmentName = assessment?.name || "This assessment";
+
+    const result = await Swal.fire({
+      title: `Publish ${assessmentName}?`,
+      text: "Students will be able to see marks for this assessment.",
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Yes, publish",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#4f46e5",
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      setPublishingAssessmentId(assessment._id);
+      setMarksError("");
+
+      await publishAssessmentRequest(courseId, assessment._id);
+
+      await Swal.fire({
+        title: "Published!",
+        text: `${assessmentName} is now visible to students.`,
+        icon: "success",
+        timer: 1500,
+        showConfirmButton: false,
+      });
+
+      await loadAllData();
+    } catch (err) {
+      console.error(err);
+      Swal.fire({
+        title: "Publish failed",
+        text: err?.response?.data?.message || "Failed to publish assessment",
+        icon: "error",
+      });
+    } finally {
+      setPublishingAssessmentId(null);
+    }
+  };
   const courseType = getCourseType(course);
 
   const totalsPerStudent = useMemo(() => {
@@ -619,10 +664,38 @@ export default function TabMarks({ courseId, course }) {
                     {assessments.map((a) => (
                       <th
                         key={a._id}
-                        className="px-3 py-3 text-left text-xs font-semibold text-slate-600"
+                        className="px-3 py-3 text-left text-xs font-semibold text-slate-600 min-w-[160px]"
                       >
-                        <div className="leading-tight">{a.name}</div>
-                        <div className="text-[11px] text-slate-400">/{a.fullMarks}</div>
+                        <div className="flex flex-col gap-2">
+                          <div>
+                            <div className="leading-tight">{a.name}</div>
+                            <div className="text-[11px] text-slate-400">/{a.fullMarks}</div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${a.isPublished
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                : "bg-amber-50 text-amber-700 border border-amber-200"
+                                }`}
+                            >
+                              {a.isPublished ? "Published" : "Draft"}
+                            </span>
+
+                            <button
+                              type="button"
+                              onClick={() => handlePublishAssessment(a)}
+                              disabled={publishingAssessmentId === a._id}
+                              className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60"
+                            >
+                              {publishingAssessmentId === a._id
+                                ? "Publishing..."
+                                : a.isPublished
+                                  ? "Republish"
+                                  : "Publish"}
+                            </button>
+                          </div>
+                        </div>
                       </th>
                     ))}
 
