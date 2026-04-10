@@ -9,9 +9,10 @@ import {
 import { fetchStudentCourses } from "../services/studentService";
 
 const STATUS_BADGE_CLASSES = {
-  open: "bg-red-50 text-red-700 border-red-200",
+  open: "bg-rose-50 text-rose-700 border-rose-200",
   in_review: "bg-amber-50 text-amber-700 border-amber-200",
   resolved: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  rejected: "bg-slate-100 text-slate-700 border-slate-300", // ✅ new
 };
 
 // ✅ General-only category badge
@@ -521,10 +522,9 @@ export default function StudentComplaintsPage() {
                 </div>
 
                 <span
-                  className={`shrink-0 inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold capitalize ${
-                    STATUS_BADGE_CLASSES[selected.status] ||
+                  className={`shrink-0 inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold capitalize ${STATUS_BADGE_CLASSES[selected.status] ||
                     "bg-slate-50 text-slate-700 border-slate-200"
-                  }`}
+                    }`}
                 >
                   {selected.status || "open"}
                 </span>

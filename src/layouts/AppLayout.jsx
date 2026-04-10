@@ -1,5 +1,3 @@
-// client/src/layouts/AppLayout.jsx
-
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { useTheme } from "../context/ThemeContext";
@@ -11,10 +9,7 @@ function AppLayout() {
 
   const [role, setRole] = useState(null);
   const [userName, setUserName] = useState("");
-
-  // ✅ NEW: mobile drawer state
   const [mobileOpen, setMobileOpen] = useState(false);
-  // ✅ NEW: desktop/tablet sidebar collapse state
   const [collapsed, setCollapsed] = useState(() => {
     return localStorage.getItem("marksPortalSidebarCollapsed") === "true";
   });
@@ -30,12 +25,10 @@ function AppLayout() {
     }
   }, [navigate]);
 
-  // ✅ Close drawer on route change (nice UX)
   useEffect(() => {
     setMobileOpen(false);
   }, [location.pathname]);
 
-  // ✅ ESC to close drawer
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.key === "Escape") setMobileOpen(false);
@@ -44,11 +37,9 @@ function AppLayout() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [mobileOpen]);
 
-  // ✅ Persist desktop collapse state
   useEffect(() => {
     localStorage.setItem("marksPortalSidebarCollapsed", String(collapsed));
   }, [collapsed]);
-
 
   const handleLogout = () => {
     localStorage.removeItem("marksPortalToken");
@@ -61,7 +52,6 @@ function AppLayout() {
     { to: "/teacher/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
     { to: "/teacher/courses", label: "Courses", icon: <BookIcon /> },
     { to: "/teacher/create-course", label: "Create Course", icon: <PlusIcon /> },
-
     { to: "/teacher/attendance", label: "Attendance", icon: <CalendarIcon /> },
     {
       to: "/teacher/attendance-sheet",
@@ -69,7 +59,6 @@ function AppLayout() {
       icon: <TableIcon />,
     },
     { to: "/teacher/complaints", label: "Complaints", icon: <AlertIcon /> },
-
     { to: "/change-password", label: "Account", icon: <UserIcon /> },
   ];
 
@@ -91,38 +80,36 @@ function AppLayout() {
     return found?.label || "BUBT Marks Portal";
   }, [location.pathname, links]);
 
-  // ✅ Extracted sidebar so we can reuse for desktop + mobile drawer
   const SidebarContent = ({ isMobile = false, collapsed = false }) => (
     <div className="flex h-full flex-col">
-      {/* Decorative gradient */}
-      <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-r from-primary-50 via-purple-50 to-sky-50" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-gradient-to-r from-violet-100 via-fuchsia-50 to-sky-100 dark:from-violet-500/10 dark:via-fuchsia-500/5 dark:to-sky-500/10" />
 
-      {/* Brand */}
       <div
         className={[
-          "relative pt-6 pb-4 border-b border-slate-200 dark:border-slate-800",
-          collapsed && !isMobile ? "px-3" : "px-6",
+          "relative border-b border-slate-200/80 px-4 pb-4 pt-5 dark:border-slate-800",
+          collapsed && !isMobile ? "px-3" : "sm:px-5",
         ].join(" ")}
       >
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-sm dark:bg-violet-600">
             <CapIcon />
           </div>
+
           {!(collapsed && !isMobile) && (
             <div className="min-w-0">
-              <div className="text-sm font-semibold text-slate-900 leading-tight truncate">
+              <div className="truncate text-sm font-semibold text-slate-900 dark:text-white">
                 Course Management
               </div>
-              <div className="text-xs text-slate-500 truncate">BUBT Marks Portal</div>
+              <div className="truncate text-xs text-slate-500 dark:text-slate-400">
+                BUBT Marks Portal
+              </div>
             </div>
           )}
 
-
-          {/* ✅ Close button only in mobile drawer */}
           {isMobile && (
             <button
               onClick={() => setMobileOpen(false)}
-              className="ml-auto inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              className="ml-auto inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
               aria-label="Close menu"
               type="button"
             >
@@ -130,110 +117,107 @@ function AppLayout() {
             </button>
           )}
 
-          {/* ✅ Collapse button only on desktop/tablet */}
           {!isMobile && (
             <button
               onClick={() => setCollapsed((v) => !v)}
-              className="ml-auto inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              className="ml-auto hidden h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 md:inline-flex"
               title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
               type="button"
             >
               <span className="text-lg leading-none">{collapsed ? "»" : "«"}</span>
             </button>
           )}
-
         </div>
       </div>
 
-      {/* Nav */}
-      <nav className="relative flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+      <nav className="relative flex-1 space-y-1 overflow-y-auto px-3 py-4">
         {links.map((link) => (
           <NavLink
             key={link.to}
             to={link.to}
             className={({ isActive }) =>
               [
-                [
-                  "group relative flex items-center rounded-xl text-sm font-semibold transition",
-                  collapsed && !isMobile ? "justify-center px-2 py-2.5" : "gap-3 px-3 py-2.5",
-                ].join(" "), isActive
-                  ? "bg-primary-50 text-primary-700"
-                  : "text-slate-700 hover:bg-slate-100",
+                "group relative flex rounded-2xl text-sm font-semibold transition-all duration-200",
+                collapsed && !isMobile
+                  ? "justify-center px-2 py-2.5"
+                  : "items-center gap-3 px-3 py-3",
+                isActive
+                  ? "bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300"
+                  : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800/70",
               ].join(" ")
             }
           >
             {({ isActive }) => (
               <>
-                {/* Left indicator */}
                 <span
                   className={[
-                    "absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r-full transition",
-                    isActive ? "bg-primary-600" : "bg-transparent",
+                    "absolute left-0 top-1/2 h-7 w-1 -translate-y-1/2 rounded-r-full transition",
+                    isActive ? "bg-violet-600" : "bg-transparent",
                   ].join(" ")}
                 />
+
                 <span
                   className={[
-                    "h-9 w-9 rounded-lg border flex items-center justify-center transition",
+                    "flex h-10 w-10 items-center justify-center rounded-xl border transition",
                     isActive
-                      ? "border-primary-200 bg-white text-primary-700"
-                      : "border-slate-200 bg-slate-50 text-slate-700 group-hover:bg-white",
+                      ? "border-violet-200 bg-white text-violet-700 dark:border-violet-500/20 dark:bg-slate-800 dark:text-violet-300"
+                      : "border-slate-200 bg-slate-50 text-slate-700 group-hover:bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:group-hover:bg-slate-700",
                   ].join(" ")}
                 >
                   {link.icon}
                 </span>
 
-                {!(collapsed && !isMobile) && <span className="flex-1">{link.label}</span>}
-
+                {!(collapsed && !isMobile) && (
+                  <span className="flex-1 truncate">{link.label}</span>
+                )}
 
                 {!(collapsed && !isMobile) && (
                   <span
                     className={[
-                      "text-slate-400 transition",
+                      "text-slate-400 transition dark:text-slate-500",
                       isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100",
                     ].join(" ")}
                   >
                     <ArrowIcon />
                   </span>
                 )}
-
               </>
             )}
           </NavLink>
         ))}
       </nav>
 
-      {/* Profile / Footer */}
-      <div className="relative p-4 border-t border-slate-200 dark:border-slate-800">
+      <div className="relative border-t border-slate-200/80 p-4 dark:border-slate-800">
         <div
           className={[
-            "rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm transition-all",
-            collapsed && !isMobile ? "p-2" : "p-4",
+            "rounded-3xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/90",
+            collapsed && !isMobile ? "p-2" : "",
           ].join(" ")}
         >
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center border border-slate-200">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
               <UserCircleIcon />
             </div>
+
             {!(collapsed && !isMobile) && (
               <div className="min-w-0">
-                <div className="text-sm font-semibold text-slate-900 truncate">
+                <div className="truncate text-sm font-semibold text-slate-900 dark:text-white">
                   {userName || "User"}
                 </div>
-                <div className="text-xs text-slate-500">
+                <div className="text-xs text-slate-500 dark:text-slate-400">
                   {role === "teacher" ? "Teacher Account" : "Student Account"}
                 </div>
               </div>
             )}
-
           </div>
 
           <button
             onClick={handleLogout}
-            className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+            className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
             type="button"
           >
             <LogoutIcon />
-            Logout
+            {!(collapsed && !isMobile) && <span>Logout</span>}
           </button>
         </div>
       </div>
@@ -241,21 +225,17 @@ function AppLayout() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <div className="min-h-screen bg-slate-100 text-slate-900 transition-colors duration-300 dark:bg-[#020617] dark:text-slate-100">
       <div className="flex min-h-screen">
-        {/* ✅ Desktop Sidebar */}
         <aside
           className={[
-            "hidden md:flex flex-col border-r border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800 relative transition-all duration-300",
+            "relative hidden border-r border-slate-200/80 bg-white/90 backdrop-blur-sm transition-all duration-300 dark:border-slate-800 dark:bg-slate-950/80 md:flex md:flex-col",
             collapsed ? "md:w-20" : "md:w-72",
           ].join(" ")}
         >
           <SidebarContent collapsed={collapsed} />
         </aside>
 
-
-        {/* ✅ Mobile Drawer */}
-        {/* ✅ Mobile Drawer (smooth) */}
         <div
           className={[
             "fixed inset-0 z-50 md:hidden transition",
@@ -263,10 +243,9 @@ function AppLayout() {
           ].join(" ")}
           aria-hidden={!mobileOpen}
         >
-          {/* overlay */}
           <button
             className={[
-              "absolute inset-0 bg-slate-900/40 transition-opacity duration-300",
+              "absolute inset-0 bg-slate-900/50 transition-opacity duration-300",
               mobileOpen ? "opacity-100" : "opacity-0",
             ].join(" ")}
             onClick={() => setMobileOpen(false)}
@@ -274,11 +253,9 @@ function AppLayout() {
             type="button"
           />
 
-          {/* panel */}
           <div
             className={[
-              "absolute left-0 top-0 h-full w-[85%] max-w-xs bg-white dark:bg-slate-900 shadow-xl border-r border-slate-200 dark:border-slate-800 relative",
-              "transition-transform duration-300 ease-out",
+              "absolute left-0 top-0 h-full w-[86%] max-w-xs border-r border-slate-200 bg-white shadow-xl transition-transform duration-300 ease-out dark:border-slate-800 dark:bg-slate-950",
               mobileOpen ? "translate-x-0" : "-translate-x-full",
             ].join(" ")}
           >
@@ -286,84 +263,84 @@ function AppLayout() {
           </div>
         </div>
 
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/85 px-4 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/75 sm:px-6 md:px-8">
+            <div className="flex h-16 items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setMobileOpen(true)}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 md:hidden"
+                  aria-label="Open menu"
+                >
+                  <MenuIcon />
+                </button>
 
-        {/* Main area */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* Top bar */}
-          <header className="h-16 flex items-center justify-between px-4 sm:px-6 md:px-8 border-b border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800">
-            <div className="flex items-center gap-3 min-w-0">
-              {/* ✅ Mobile menu button */}
-              <button
-                type="button"
-                onClick={() => setMobileOpen(true)}
-                className="md:hidden inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                aria-label="Open menu"
-              >
-                <MenuIcon />
-              </button>
-
-              {/* Mobile brand */}
-              <div className="md:hidden flex items-center gap-2 min-w-0">
-                <div className="h-9 w-9 rounded-xl bg-slate-900 text-white flex items-center justify-center shrink-0">
-                  <CapIcon />
-                </div>
-                <div className="leading-tight min-w-0">
-                  <div className="text-sm font-semibold text-slate-900 truncate">
-                    BUBT Marks Portal
+                <div className="flex min-w-0 items-center gap-2 md:hidden">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white dark:bg-violet-600">
+                    <CapIcon />
                   </div>
-                  <div className="text-[11px] text-slate-500 truncate">
+                  <div className="min-w-0 leading-tight">
+                    <div className="truncate text-sm font-semibold text-slate-900 dark:text-white">
+                      BUBT Marks Portal
+                    </div>
+                    <div className="truncate text-[11px] text-slate-500 dark:text-slate-400">
+                      {pageTitle}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="hidden min-w-0 md:block">
+                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                    Current page
+                  </div>
+                  <div className="truncate text-sm font-semibold text-slate-900 dark:text-white">
                     {pageTitle}
                   </div>
                 </div>
               </div>
 
-              {/* Desktop title */}
-              <div className="hidden md:block min-w-0">
-                <div className="text-xs text-slate-500">Current page</div>
-                <div className="text-sm font-semibold text-slate-900 truncate">
-                  {pageTitle}
-                </div>
+              <div className="flex items-center gap-2 sm:gap-3">
+                {userName && (
+                  <span className="hidden text-sm text-slate-600 dark:text-slate-300 lg:inline">
+                    Signed in as{" "}
+                    <span className="font-semibold text-slate-900 dark:text-white">
+                      {userName}
+                    </span>
+                  </span>
+                )}
+
+                {role && (
+                  <span className="hidden items-center rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 sm:inline-flex">
+                    {role === "teacher" ? "Teacher" : "Student"}
+                  </span>
+                )}
+
+                <button
+                  onClick={toggleTheme}
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                  type="button"
+                  title="Toggle theme"
+                >
+                  {isDark ? <MoonIcon /> : <SunIcon />}
+                  <span className="hidden sm:inline">
+                    {isDark ? "Dark" : "Light"}
+                  </span>
+                </button>
+
+                <button
+                  onClick={handleLogout}
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                  type="button"
+                >
+                  <LogoutIcon />
+                  <span className="hidden sm:inline">Logout</span>
+                </button>
               </div>
-            </div>
-
-            <div className="flex items-center gap-2 sm:gap-3">
-              {userName && (
-                <span className="hidden sm:inline text-sm text-slate-600">
-                  Signed in as{" "}
-                  <span className="font-semibold text-slate-900">{userName}</span>
-                </span>
-              )}
-
-              {role && (
-                <span className="hidden xs:inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 border border-slate-200">
-                  {role === "teacher" ? "Teacher" : "Student"}
-                </span>
-              )}
-
-<button
-  onClick={toggleTheme}
-  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50
-             dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-  type="button"
-  title="Toggle theme"
->
-  {isDark ? <MoonIcon /> : <SunIcon />}
-  <span className="hidden sm:inline">{isDark ? "Dark" : "Light"}</span>
-</button>
-
-              <button
-                onClick={handleLogout}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                type="button"
-              >
-                <LogoutIcon />
-                <span className="hidden sm:inline">Logout</span>
-              </button>
             </div>
           </header>
 
-          {/* Page content */}
-          <main className="flex-1 px-4 sm:px-6 md:px-8 py-5 sm:py-6 min-w-0">
+          <main className="flex-1 min-w-0 px-4 py-5 sm:px-6 sm:py-6 md:px-8">
             <Outlet />
           </main>
         </div>
@@ -374,7 +351,7 @@ function AppLayout() {
 
 export default AppLayout;
 
-/* ---------------- Icons (inline SVG) ---------------- */
+/* ---------------- Icons ---------------- */
 
 function ArrowIcon() {
   return (
@@ -544,7 +521,7 @@ function UserIcon() {
 function UserCircleIcon() {
   return (
     <svg
-      className="h-5 w-5 text-slate-700"
+      className="h-5 w-5 text-slate-700 dark:text-slate-200"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -574,7 +551,13 @@ function LogoutIcon() {
 
 function SunIcon() {
   return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12z" />
       <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
     </svg>
@@ -583,7 +566,13 @@ function SunIcon() {
 
 function MoonIcon() {
   return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a6.5 6.5 0 0 0 9.8 9.8z" />
     </svg>
   );

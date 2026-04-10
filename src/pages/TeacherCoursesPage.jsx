@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { fetchTeacherCourses, deleteCourseRequest, archiveCourseRequest, unarchiveCourseRequest } from "../services/courseService";
-import Swal from 'sweetalert2'
+import {
+  fetchTeacherCourses,
+  deleteCourseRequest,
+  archiveCourseRequest,
+  unarchiveCourseRequest,
+} from "../services/courseService";
+import Swal from "sweetalert2";
 
 export default function TeacherCoursesPage() {
   const navigate = useNavigate();
@@ -14,7 +19,6 @@ export default function TeacherCoursesPage() {
   const [archivingId, setArchivingId] = useState(null);
   const [unarchivingId, setUnarchivingId] = useState(null);
 
-  // ✅ UI states (premium)
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all"); // all | theory | lab | hybrid
 
@@ -23,7 +27,9 @@ export default function TeacherCoursesPage() {
       setLoadingCourses(true);
       setCourseError("");
       try {
-        const data = await fetchTeacherCourses({ archived: viewMode === "archived" });
+        const data = await fetchTeacherCourses({
+          archived: viewMode === "archived",
+        });
         setCourses(data || []);
       } catch (err) {
         console.error(err);
@@ -32,6 +38,7 @@ export default function TeacherCoursesPage() {
         setLoadingCourses(false);
       }
     };
+
     loadCourses();
   }, [viewMode]);
 
@@ -40,47 +47,55 @@ export default function TeacherCoursesPage() {
     navigate(`/teacher/courses/${course.id}`);
   };
 
-  // import Swal from "sweetalert2";
-
   const handleDelete = async (course) => {
     if (!course?.id) return;
 
     const result = await Swal.fire({
       title: "Delete course?",
       html: `
-      <p><strong>${course.code} – ${course.title}</strong></p>
-      <p class="text-sm mt-2">
-        This will permanently delete:
-        <br/>• Students
-        <br/>• Assessments
-        <br/>• Marks
-        <br/>• Complaints
-      </p>
-    `,
+        <p><strong>${course.code} – ${course.title}</strong></p>
+        <p class="text-sm mt-2">
+          This will permanently delete:
+          <br/>• Students
+          <br/>• Assessments
+          <br/>• Marks
+          <br/>• Complaints
+        </p>
+      `,
       icon: "warning",
       showCancelButton: true,
-      confirmButtonColor: "#d33",
-      cancelButtonColor: "#6b7280",
+      confirmButtonColor: "#dc2626",
+      cancelButtonColor: "#64748b",
       confirmButtonText: "Yes, delete",
       cancelButtonText: "Cancel",
       reverseButtons: true,
+      background: document.documentElement.classList.contains("dark")
+        ? "#0f172a"
+        : "#ffffff",
+      color: document.documentElement.classList.contains("dark")
+        ? "#e2e8f0"
+        : "#0f172a",
     });
 
     if (!result.isConfirmed) return;
 
     try {
       setDeletingId(course.id);
-
       await deleteCourseRequest(course.id);
-
       setCourses((prev) => prev.filter((c) => c.id !== course.id));
 
       await Swal.fire({
         title: "Deleted!",
         text: "The course and all related data have been removed.",
         icon: "success",
-        timer: 2000,
+        timer: 1800,
         showConfirmButton: false,
+        background: document.documentElement.classList.contains("dark")
+          ? "#0f172a"
+          : "#ffffff",
+        color: document.documentElement.classList.contains("dark")
+          ? "#e2e8f0"
+          : "#0f172a",
       });
     } catch (err) {
       console.error(err);
@@ -90,6 +105,12 @@ export default function TeacherCoursesPage() {
           err?.response?.data?.message ||
           "Failed to delete course. Please try again.",
         icon: "error",
+        background: document.documentElement.classList.contains("dark")
+          ? "#0f172a"
+          : "#ffffff",
+        color: document.documentElement.classList.contains("dark")
+          ? "#e2e8f0"
+          : "#0f172a",
       });
     } finally {
       setDeletingId(null);
@@ -105,6 +126,12 @@ export default function TeacherCoursesPage() {
       confirmButtonText: "Yes, archive",
       cancelButtonText: "Cancel",
       reverseButtons: true,
+      background: document.documentElement.classList.contains("dark")
+        ? "#0f172a"
+        : "#ffffff",
+      color: document.documentElement.classList.contains("dark")
+        ? "#e2e8f0"
+        : "#0f172a",
     });
 
     if (!result.isConfirmed) return;
@@ -113,9 +140,29 @@ export default function TeacherCoursesPage() {
       setArchivingId(course.id);
       await archiveCourseRequest(course.id);
       setCourses((prev) => prev.filter((c) => c.id !== course.id));
-      Swal.fire("Archived!", "Course moved to Archived Courses.", "success");
+      Swal.fire({
+        title: "Archived!",
+        text: "Course moved to Archived Courses.",
+        icon: "success",
+        background: document.documentElement.classList.contains("dark")
+          ? "#0f172a"
+          : "#ffffff",
+        color: document.documentElement.classList.contains("dark")
+          ? "#e2e8f0"
+          : "#0f172a",
+      });
     } catch (err) {
-      Swal.fire("Error", err?.response?.data?.message || "Failed to archive course", "error");
+      Swal.fire({
+        title: "Error",
+        text: err?.response?.data?.message || "Failed to archive course",
+        icon: "error",
+        background: document.documentElement.classList.contains("dark")
+          ? "#0f172a"
+          : "#ffffff",
+        color: document.documentElement.classList.contains("dark")
+          ? "#e2e8f0"
+          : "#0f172a",
+      });
     } finally {
       setArchivingId(null);
     }
@@ -130,6 +177,12 @@ export default function TeacherCoursesPage() {
       confirmButtonText: "Yes, unarchive",
       cancelButtonText: "Cancel",
       reverseButtons: true,
+      background: document.documentElement.classList.contains("dark")
+        ? "#0f172a"
+        : "#ffffff",
+      color: document.documentElement.classList.contains("dark")
+        ? "#e2e8f0"
+        : "#0f172a",
     });
 
     if (!result.isConfirmed) return;
@@ -138,9 +191,29 @@ export default function TeacherCoursesPage() {
       setUnarchivingId(course.id);
       await unarchiveCourseRequest(course.id);
       setCourses((prev) => prev.filter((c) => c.id !== course.id));
-      Swal.fire("Restored!", "Course moved back to My Courses.", "success");
+      Swal.fire({
+        title: "Restored!",
+        text: "Course moved back to My Courses.",
+        icon: "success",
+        background: document.documentElement.classList.contains("dark")
+          ? "#0f172a"
+          : "#ffffff",
+        color: document.documentElement.classList.contains("dark")
+          ? "#e2e8f0"
+          : "#0f172a",
+      });
     } catch (err) {
-      Swal.fire("Error", err?.response?.data?.message || "Failed to unarchive course", "error");
+      Swal.fire({
+        title: "Error",
+        text: err?.response?.data?.message || "Failed to unarchive course",
+        icon: "error",
+        background: document.documentElement.classList.contains("dark")
+          ? "#0f172a"
+          : "#ffffff",
+        color: document.documentElement.classList.contains("dark")
+          ? "#e2e8f0"
+          : "#0f172a",
+      });
     } finally {
       setUnarchivingId(null);
     }
@@ -177,60 +250,75 @@ export default function TeacherCoursesPage() {
   }, [courses, query, typeFilter]);
 
   return (
-    <div className="space-y-6">
-      {/* Premium Header */}
-      <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="absolute -right-24 -top-24 h-64 w-64 rounded-full bg-purple-100 blur-3xl" />
-        <div className="absolute -left-24 -bottom-24 h-64 w-64 rounded-full bg-sky-100 blur-3xl" />
+    <div className="space-y-5 md:space-y-6 text-slate-900 dark:text-slate-100">
+      <section className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-br from-white via-slate-50 to-indigo-50 shadow-sm dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900">
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute -left-20 top-10 h-44 w-44 rounded-full bg-sky-200/40 blur-3xl dark:bg-sky-500/10" />
+          <div className="absolute right-0 top-0 h-56 w-56 rounded-full bg-violet-200/40 blur-3xl dark:bg-violet-500/10" />
+          <div className="absolute bottom-0 left-1/3 h-40 w-40 rounded-full bg-cyan-200/30 blur-3xl dark:bg-cyan-500/10" />
+        </div>
 
-        <div className="relative p-6 md:p-8">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-primary-200 bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-700">
+        <div className="relative p-4 sm:p-6 md:p-8">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0 flex-1">
+              <div className="inline-flex items-center gap-2 rounded-full border border-primary-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-primary-700 shadow-sm backdrop-blur dark:border-primary-900/50 dark:bg-slate-900/80 dark:text-primary-300">
                 <BookIcon />
                 Courses
               </div>
-              <h1 className="mt-3 text-2xl md:text-3xl font-bold tracking-tight text-slate-900">
-                {viewMode === "archived" ? "Archived Courses" : "Manage Your Courses"}
-              </h1>
 
-              <div className="mt-4 inline-flex rounded-xl border border-slate-200 bg-white p-1">
+              <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <h1 className="text-2xl font-bold tracking-tight md:text-3xl xl:text-[2rem] text-slate-900 dark:text-white">
+                    {viewMode === "archived"
+                      ? "Archived Courses"
+                      : "Manage Your Courses"}
+                  </h1>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+                    {viewMode === "archived"
+                      ? "Archived courses stay out of the active list, but you can restore them anytime when needed."
+                      : "Create courses, search quickly, and manage assessments, students, and marks from one cleaner dashboard."}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/80 bg-white/70 p-1.5 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-950/60">
                 <button
                   type="button"
                   onClick={() => setViewMode("active")}
-                  className={`px-4 py-2 text-sm font-semibold rounded-lg ${viewMode === "active" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50"
-                    }`}
+                  className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                    viewMode === "active"
+                      ? "bg-slate-900 text-white shadow-sm dark:bg-primary-600"
+                      : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                  }`}
                 >
                   My Courses
                 </button>
                 <button
                   type="button"
                   onClick={() => setViewMode("archived")}
-                  className={`px-4 py-2 text-sm font-semibold rounded-lg ${viewMode === "archived" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50"
-                    }`}
+                  className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                    viewMode === "archived"
+                      ? "bg-slate-900 text-white shadow-sm dark:bg-primary-600"
+                      : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                  }`}
                 >
                   Archived
                 </button>
               </div>
-              <p className="mt-1 text-sm text-slate-500 max-w-2xl">
-                {viewMode === "archived"
-                  ? "Archived courses are hidden from My Courses but can still be opened anytime."
-                  : "Create courses, open course dashboards, and manage assessments, students, and marks."}
-              </p>
 
-              <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                <Pill label={`Total: ${counts.all}`} />
-                <Pill label={`Theory: ${counts.theory}`} />
-                <Pill label={`Lab: ${counts.lab}`} />
-                <Pill label={`Hybrid: ${counts.hybrid}`} />
+              <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <StatCard label="Total" value={counts.all} />
+                <StatCard label="Theory" value={counts.theory} />
+                <StatCard label="Lab" value={counts.lab} />
+                <StatCard label="Hybrid" value={counts.hybrid} />
               </div>
             </div>
 
-            <div className="flex gap-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:w-auto xl:min-w-[320px]">
               <button
                 type="button"
                 onClick={() => navigate("/teacher/create-course")}
-                className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-primary-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-primary-600/20 transition hover:bg-primary-700 dark:shadow-primary-900/30"
               >
                 <PlusIcon />
                 Create Course
@@ -239,7 +327,7 @@ export default function TeacherCoursesPage() {
               <button
                 type="button"
                 onClick={() => navigate("/teacher/dashboard")}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-200 dark:hover:bg-slate-900"
               >
                 <ArrowLeftIcon />
                 Dashboard
@@ -247,27 +335,26 @@ export default function TeacherCoursesPage() {
             </div>
           </div>
 
-          {/* Search + Filter Bar */}
-          <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-3">
+          <div className="mt-6 grid grid-cols-1 gap-3 lg:grid-cols-3">
             <div className="lg:col-span-2">
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <label className="relative block">
+                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
                   <SearchIcon />
                 </span>
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search by code, title, section, semester, year..."
-                  className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                  className="w-full rounded-2xl border border-slate-200 bg-white/90 py-3 pl-11 pr-4 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-100 dark:placeholder:text-slate-500"
                 />
-              </div>
+              </label>
             </div>
 
             <div>
               <select
                 value={typeFilter}
                 onChange={(e) => setTypeFilter(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                className="w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-100"
               >
                 <option value="all">All Types</option>
                 <option value="theory">Theory</option>
@@ -277,32 +364,40 @@ export default function TeacherCoursesPage() {
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Error */}
       {courseError && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
           <div className="font-semibold">Could not load courses</div>
           <div className="mt-0.5 opacity-90">{courseError}</div>
         </div>
       )}
 
-      {/* Courses Table Card */}
-      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-slate-900">
-              {viewMode === "archived" ? "Archived Courses" : "Your Courses"}
-            </h2>
-            <p className="text-xs text-slate-500">
-              Showing <span className="font-semibold">{filteredCourses.length}</span> of{" "}
-              <span className="font-semibold">{courses.length}</span>
-            </p>
+      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/80">
+        <div className="border-b border-slate-100 px-4 py-4 sm:px-6 dark:border-slate-800">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+                {viewMode === "archived" ? "Archived Courses" : "Your Courses"}
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Showing <span className="font-semibold">{filteredCourses.length}</span> of{" "}
+                <span className="font-semibold">{courses.length}</span>
+              </p>
+            </div>
+            <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+              <span className="rounded-full border border-slate-200 px-3 py-1 dark:border-slate-700">
+                Desktop table
+              </span>
+              <span className="rounded-full border border-slate-200 px-3 py-1 dark:border-slate-700">
+                Mobile cards
+              </span>
+            </div>
           </div>
         </div>
 
         {loadingCourses ? (
-          <div className="p-6">
+          <div className="p-4 sm:p-6">
             <div className="grid gap-3">
               <SkeletonRow />
               <SkeletonRow />
@@ -310,185 +405,407 @@ export default function TeacherCoursesPage() {
             </div>
           </div>
         ) : filteredCourses.length === 0 ? (
-          <div className="p-8 text-center">
-            <div className="mx-auto h-12 w-12 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center">
+          <div className="p-8 text-center sm:p-10">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-900">
               <BookIcon />
             </div>
-            <h3 className="mt-3 text-sm font-semibold text-slate-900">No courses found</h3>
-            <p className="mt-1 text-sm text-slate-500">
-              Try changing filters or create your first course.
+            <h3 className="mt-4 text-sm font-semibold text-slate-900 dark:text-white">
+              No courses found
+            </h3>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Try changing the filters or create a new course.
             </p>
 
             <button
               onClick={() => navigate("/teacher/create-course")}
-              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+              className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-primary-600 dark:hover:bg-primary-700"
             >
               <PlusIcon />
               Create Course
             </button>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-50">
-                <tr className="border-b border-slate-200">
-                  <th className="px-5 py-3 text-left text-xs font-semibold text-slate-600">Code</th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold text-slate-600">Title</th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold text-slate-600">Section</th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold text-slate-600">Semester</th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold text-slate-600">Year</th>
-                  <th className="px-5 py-3 text-right text-xs font-semibold text-slate-600">Actions</th>
-                </tr>
-              </thead>
+          <>
+            <div className="hidden overflow-x-auto md:block">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50 dark:bg-slate-900/80">
+                  <tr className="border-b border-slate-200 dark:border-slate-800">
+                    <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+                      Code
+                    </th>
+                    <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+                      Title
+                    </th>
+                    <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+                      Section
+                    </th>
+                    <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+                      Semester
+                    </th>
+                    <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+                      Year
+                    </th>
+                    <th className="px-5 py-4 text-right text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
 
-              <tbody className="divide-y divide-slate-100">
-                {filteredCourses.map((c) => {
-                  const type = (c.courseType || "theory").toLowerCase();
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {filteredCourses.map((c) => (
+                    <DesktopCourseRow
+                      key={c.id}
+                      course={c}
+                      viewMode={viewMode}
+                      openCourse={openCourse}
+                      handleArchive={handleArchive}
+                      handleUnarchive={handleUnarchive}
+                      handleDelete={handleDelete}
+                      deletingId={deletingId}
+                      archivingId={archivingId}
+                      unarchivingId={unarchivingId}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-                  const badge =
-                    type === "lab"
-                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                      : type === "hybrid"
-                        ? "bg-purple-50 text-purple-700 border border-purple-200"
-                        : "bg-sky-50 text-sky-700 border border-sky-200";
-
-                  const label = type === "lab" ? "Lab" : type === "hybrid" ? "Hybrid" : "Theory";
-
-                  return (
-                    <tr key={c.id} className="hover:bg-slate-50 transition">
-                      <td className="px-5 py-4 whitespace-nowrap font-semibold text-slate-900">
-                        {c.code}
-                      </td>
-
-                      <td className="px-5 py-4">
-                        <button
-                          type="button"
-                          onClick={() => openCourse(c)}
-                          className="text-left w-full"
-                          title="Open course"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-slate-900 hover:text-primary-700 transition">
-                              {c.title}
-                            </span>
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${badge}`}>
-                              {label}
-                            </span>
-                          </div>
-                          <div className="mt-0.5 text-xs text-slate-500">
-                            {c.semester || "-"} • {c.year || "-"} • Section {c.section || "-"}
-                          </div>
-                        </button>
-                      </td>
-
-                      <td className="px-5 py-4 whitespace-nowrap text-slate-600">{c.section || "-"}</td>
-                      <td className="px-5 py-4 whitespace-nowrap text-slate-600">{c.semester || "-"}</td>
-                      <td className="px-5 py-4 whitespace-nowrap text-slate-600">{c.year || "-"}</td>
-
-                      <td className="px-5 py-4 whitespace-nowrap text-right space-x-2">
-                        <button
-                          type="button"
-                          onClick={() => openCourse(c)}
-                          className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-primary-700 border border-primary-200 hover:bg-primary-50"
-                        >
-                          <ArrowRightIcon />
-                          Open
-                        </button>
-
-                        {viewMode === "active" ? (
-                          <button
-                            type="button"
-                            onClick={() => handleArchive(c)}
-                            disabled={archivingId === c.id}
-                            className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-700 border border-slate-200 hover:bg-slate-50 disabled:opacity-60"
-                          >
-                            {archivingId === c.id ? (
-                              <>
-                                <SpinnerIcon />
-                                Archiving…
-                              </>
-                            ) : (
-                              <>
-                                <ArchiveIcon />
-                                Archive
-                              </>
-                            )}
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleUnarchive(c)}
-                            disabled={unarchivingId === c.id}
-                            className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-emerald-700 border border-emerald-200 hover:bg-emerald-50 disabled:opacity-60"
-                          >
-                            {unarchivingId === c.id ? (
-                              <>
-                                <SpinnerIcon />
-                                Restoring…
-                              </>
-                            ) : (
-                              <>
-                                <RestoreIcon />
-                                Unarchive
-                              </>
-                            )}
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(c)}
-                          disabled={deletingId === c.id}
-                          className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-60"
-                        >
-                          {deletingId === c.id ? (
-                            <>
-                              <SpinnerIcon />
-                              Deleting…
-                            </>
-                          ) : (
-                            <>
-                              <TrashIcon />
-                              Delete
-                            </>
-                          )}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+            <div className="grid gap-4 p-4 md:hidden">
+              {filteredCourses.map((c) => (
+                <MobileCourseCard
+                  key={c.id}
+                  course={c}
+                  viewMode={viewMode}
+                  openCourse={openCourse}
+                  handleArchive={handleArchive}
+                  handleUnarchive={handleUnarchive}
+                  handleDelete={handleDelete}
+                  deletingId={deletingId}
+                  archivingId={archivingId}
+                  unarchivingId={unarchivingId}
+                />
+              ))}
+            </div>
+          </>
         )}
       </section>
     </div>
   );
 }
 
-/* ---------------- Small UI helpers ---------------- */
+function DesktopCourseRow({
+  course,
+  viewMode,
+  openCourse,
+  handleArchive,
+  handleUnarchive,
+  handleDelete,
+  deletingId,
+  archivingId,
+  unarchivingId,
+}) {
+  const { badgeClass, label } = getCourseTypeMeta(course.courseType);
 
-function Pill({ label }) {
   return (
-    <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-      {label}
-    </span>
+    <tr className="transition hover:bg-slate-50 dark:hover:bg-slate-900/60">
+      <td className="whitespace-nowrap px-5 py-4 font-semibold text-slate-900 dark:text-slate-100">
+        {course.code}
+      </td>
+
+      <td className="px-5 py-4">
+        <button
+          type="button"
+          onClick={() => openCourse(course)}
+          className="w-full text-left"
+          title="Open course"
+        >
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-slate-900 transition hover:text-primary-700 dark:text-slate-100 dark:hover:text-primary-300">
+              {course.title}
+            </span>
+            <span
+              className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold ${badgeClass}`}
+            >
+              {label}
+            </span>
+          </div>
+          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            {course.semester || "-"} • {course.year || "-"} • Section {course.section || "-"}
+          </div>
+        </button>
+      </td>
+
+      <td className="whitespace-nowrap px-5 py-4 text-slate-600 dark:text-slate-300">
+        {course.section || "-"}
+      </td>
+      <td className="whitespace-nowrap px-5 py-4 text-slate-600 dark:text-slate-300">
+        {course.semester || "-"}
+      </td>
+      <td className="whitespace-nowrap px-5 py-4 text-slate-600 dark:text-slate-300">
+        {course.year || "-"}
+      </td>
+
+      <td className="whitespace-nowrap px-5 py-4 text-right">
+        <div className="flex justify-end gap-2">
+          <ActionButton
+            onClick={() => openCourse(course)}
+            className="border-primary-200 text-primary-700 hover:bg-primary-50 dark:border-primary-900/60 dark:text-primary-300 dark:hover:bg-primary-950/40"
+          >
+            <ArrowRightIcon />
+            Open
+          </ActionButton>
+
+          {viewMode === "active" ? (
+            <ActionButton
+              onClick={() => handleArchive(course)}
+              disabled={archivingId === course.id}
+              className="border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-900"
+            >
+              {archivingId === course.id ? (
+                <>
+                  <SpinnerIcon />
+                  Archiving...
+                </>
+              ) : (
+                <>
+                  <ArchiveIcon />
+                  Archive
+                </>
+              )}
+            </ActionButton>
+          ) : (
+            <ActionButton
+              onClick={() => handleUnarchive(course)}
+              disabled={unarchivingId === course.id}
+              className="border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900/50 dark:text-emerald-300 dark:hover:bg-emerald-950/30"
+            >
+              {unarchivingId === course.id ? (
+                <>
+                  <SpinnerIcon />
+                  Restoring...
+                </>
+              ) : (
+                <>
+                  <RestoreIcon />
+                  Unarchive
+                </>
+              )}
+            </ActionButton>
+          )}
+
+          <ActionButton
+            onClick={() => handleDelete(course)}
+            disabled={deletingId === course.id}
+            className="border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/30"
+          >
+            {deletingId === course.id ? (
+              <>
+                <SpinnerIcon />
+                Deleting...
+              </>
+            ) : (
+              <>
+                <TrashIcon />
+                Delete
+              </>
+            )}
+          </ActionButton>
+        </div>
+      </td>
+    </tr>
   );
 }
 
-function SkeletonRow() {
+function MobileCourseCard({
+  course,
+  viewMode,
+  openCourse,
+  handleArchive,
+  handleUnarchive,
+  handleDelete,
+  deletingId,
+  archivingId,
+  unarchivingId,
+}) {
+  const { badgeClass, label } = getCourseTypeMeta(course.courseType);
+
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-      <div className="h-3 w-24 rounded bg-slate-200" />
-      <div className="mt-2 h-3 w-64 rounded bg-slate-200" />
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            {course.code}
+          </div>
+          <button
+            type="button"
+            onClick={() => openCourse(course)}
+            className="mt-1 block text-left text-base font-semibold leading-6 text-slate-900 dark:text-white"
+          >
+            {course.title}
+          </button>
+        </div>
+        <span
+          className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold ${badgeClass}`}
+        >
+          {label}
+        </span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 gap-3 rounded-2xl bg-slate-50 p-3 text-center dark:bg-slate-950/80">
+        <InfoTile label="Section" value={course.section || "-"} />
+        <InfoTile label="Semester" value={course.semester || "-"} />
+        <InfoTile label="Year" value={course.year || "-"} />
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => openCourse(course)}
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-700"
+        >
+          <ArrowRightIcon />
+          Open
+        </button>
+
+        {viewMode === "active" ? (
+          <button
+            type="button"
+            onClick={() => handleArchive(course)}
+            disabled={archivingId === course.id}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            {archivingId === course.id ? (
+              <>
+                <SpinnerIcon />
+                Archiving...
+              </>
+            ) : (
+              <>
+                <ArchiveIcon />
+                Archive
+              </>
+            )}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => handleUnarchive(course)}
+            disabled={unarchivingId === course.id}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-3 py-2.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-60 dark:border-emerald-900/50 dark:bg-slate-950 dark:text-emerald-300 dark:hover:bg-emerald-950/30"
+          >
+            {unarchivingId === course.id ? (
+              <>
+                <SpinnerIcon />
+                Restoring...
+              </>
+            ) : (
+              <>
+                <RestoreIcon />
+                Unarchive
+              </>
+            )}
+          </button>
+        )}
+      </div>
+
+      <button
+        type="button"
+        onClick={() => handleDelete(course)}
+        disabled={deletingId === course.id}
+        className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-3 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60 dark:border-red-900/50 dark:bg-slate-950 dark:text-red-300 dark:hover:bg-red-950/30"
+      >
+        {deletingId === course.id ? (
+          <>
+            <SpinnerIcon />
+            Deleting...
+          </>
+        ) : (
+          <>
+            <TrashIcon />
+            Delete Course
+          </>
+        )}
+      </button>
     </div>
   );
 }
 
-/* ---------------- Icons (inline SVG) ---------------- */
+function StatCard({ label, value }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-950/60">
+      <div className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        {label}
+      </div>
+      <div className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function InfoTile({ label, value }) {
+  return (
+    <div>
+      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        {label}
+      </div>
+      <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function ActionButton({ children, className = "", ...props }) {
+  return (
+    <button
+      type="button"
+      className={`inline-flex items-center gap-2 rounded-xl border bg-white px-3 py-2 text-xs font-semibold transition disabled:opacity-60 dark:bg-slate-950 ${className}`}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
+function getCourseTypeMeta(courseType) {
+  const type = (courseType || "theory").toLowerCase();
+
+  if (type === "lab") {
+    return {
+      label: "Lab",
+      badgeClass:
+        "border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300",
+    };
+  }
+
+  if (type === "hybrid") {
+    return {
+      label: "Hybrid",
+      badgeClass:
+        "border border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900/50 dark:bg-violet-950/30 dark:text-violet-300",
+    };
+  }
+
+  return {
+    label: "Theory",
+    badgeClass:
+      "border border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-300",
+  };
+}
+
+function SkeletonRow() {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+      <div className="h-3 w-24 rounded bg-slate-200 dark:bg-slate-700" />
+      <div className="mt-3 h-3 w-64 max-w-full rounded bg-slate-200 dark:bg-slate-700" />
+    </div>
+  );
+}
 
 function BookIcon() {
   return (
-    <svg className="h-4 w-4 text-primary-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M4 19a2 2 0 0 0 2 2h14V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2z" />
       <path d="M4 7h16" />
     </svg>
@@ -562,12 +879,15 @@ function RestoreIcon() {
 function SpinnerIcon() {
   return (
     <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path
-        className="opacity-75"
-        fill="currentColor"
-        d="M4 12a8 8 0 0 1 8-8v3a5 5 0 0 0-5 5H4z"
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
       />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v3a5 5 0 0 0-5 5H4z" />
     </svg>
   );
 }

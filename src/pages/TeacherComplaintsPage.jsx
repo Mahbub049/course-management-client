@@ -5,18 +5,22 @@ import { useNavigate } from "react-router-dom";
 import {
   fetchTeacherComplaints,
   replyTeacherComplaint,
+  resolveAttendanceComplaint,
 } from "../services/complaintService";
+import Swal from "sweetalert2";
 
 const STATUS_BADGE_CLASSES = {
   open: "bg-rose-50 text-rose-700 border-rose-200",
   in_review: "bg-amber-50 text-amber-700 border-amber-200",
   resolved: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  rejected: "bg-slate-100 text-slate-700 border-slate-300", // ✅ new
 };
 
 const STATUS_LABEL = {
   open: "Open",
   in_review: "In Review",
   resolved: "Resolved",
+  rejected: "Rejected", // ✅ new
 };
 
 // ✅ NEW: Category badge classes
@@ -45,6 +49,10 @@ function formatDate(iso) {
 
 function safeLower(x) {
   return (x || "").toString().toLowerCase();
+}
+
+function getStudentRoll(student) {
+  return student?.roll || student?.username || "—";
 }
 
 // ✅ NEW: Determine component text based on category
@@ -108,15 +116,44 @@ export default function TeacherComplaintsPage() {
     load();
   }, [role]);
 
+  const handleResolveAttendance = async () => {
+    if (!selected) return;
+
+    setSaving(true);
+    try {
+      const res = await resolveAttendanceComplaint(selected._id, replyDraft);
+      const updated = res.complaint;
+
+      setComplaints((prev) => prev.map((c) => (c._id === updated._id ? updated : c)));
+      setSelected(updated);
+      setReplyDraft(updated.reply || "");
+      Swal.fire({
+        icon: "success",
+        title: "Done",
+        text: "Attendance updated and complaint resolved.",
+        timer: 1800,
+        showConfirmButton: false,
+      });
+    } catch (err) {
+      console.error(err);
+      Swal.fire({
+        icon: "error",
+        title: "Failed",
+        text: err?.response?.data?.message || "Failed to resolve attendance complaint.",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // build course filter options
   const courseOptions = useMemo(() => {
     const map = new Map();
     complaints.forEach((c) => {
       if (c.course) {
         const key = c.course._id || c.course.code;
-        const label = `${c.course.code || ""}${
-          c.course.title ? " – " + c.course.title : ""
-        }`;
+        const label = `${c.course.code || ""}${c.course.title ? " – " + c.course.title : ""
+          }`;
         if (!map.has(key)) map.set(key, label);
       }
     });
@@ -145,6 +182,7 @@ export default function TeacherComplaintsPage() {
         const text = [
           c.student?.name,
           c.student?.roll,
+          c.student?.username,
           c.course?.code,
           c.course?.title,
           c.category,
@@ -192,7 +230,11 @@ export default function TeacherComplaintsPage() {
       setSelected(updated);
     } catch (err) {
       console.error(err);
-      alert(err?.response?.data?.message || "Failed to save reply. Please try again.");
+      Swal.fire({
+        icon: "error",
+        title: "Failed",
+        text: err?.response?.data?.message || "Failed to save reply. Please try again.",
+      });
     } finally {
       setSaving(false);
     }
@@ -207,9 +249,31 @@ export default function TeacherComplaintsPage() {
       setSelected(updated);
     } catch (err) {
       console.error(err);
-      alert(err?.response?.data?.message || "Failed to update complaint. Please try again.");
+      Swal.fire({
+        icon: "error",
+        title: "Failed",
+        text: err?.response?.data?.message || "Failed to update complaint. Please try again.",
+      });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const confirmReject = async () => {
+    if (!selected) return;
+
+    const result = await Swal.fire({
+      title: "Reject complaint?",
+      text: "This will mark the complaint as rejected.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Yes, reject it",
+      cancelButtonText: "Cancel",
+      reverseButtons: true,
+    });
+
+    if (result.isConfirmed) {
+      handleUpdateStatus("rejected");
     }
   };
 
@@ -399,7 +463,7 @@ export default function TeacherComplaintsPage() {
 
                         <td className="px-6 py-4">
                           <div className="font-semibold text-slate-900">{c.student?.name || "Unknown"}</div>
-                          <div className="text-xs text-slate-500">{c.student?.roll || ""}</div>
+                          <div className="text-xs text-slate-500">Roll: {getStudentRoll(c.student)}</div>
                         </td>
 
                         {/* ✅ UPDATED: Component cell shows component + category badge */}
@@ -482,7 +546,7 @@ export default function TeacherComplaintsPage() {
                     </div>
                     <div className="mt-1 text-sm text-slate-600">
                       <span className="font-semibold">{selected.student?.name}</span>{" "}
-                      <span className="text-slate-500">({selected.student?.roll})</span>
+                      <span className="text-slate-500">(Roll: {getStudentRoll(selected.student)})</span>
                     </div>
 
                     {/* ✅ UPDATED: pills include category + component + attendance session */}
@@ -523,8 +587,8 @@ export default function TeacherComplaintsPage() {
                       selectedCategory === "attendance"
                         ? "Write a clear response (e.g., checked attendance sheet for that date/period and updated)."
                         : selectedCategory === "general"
-                        ? "Write a clear response (e.g., where to check / what will be updated)."
-                        : "Write a clear response about the marks / decision."
+                          ? "Write a clear response (e.g., where to check / what will be updated)."
+                          : "Write a clear response about the marks / decision."
                     }
                     value={replyDraft}
                     onChange={(e) => setReplyDraft(e.target.value)}
@@ -551,7 +615,8 @@ export default function TeacherComplaintsPage() {
                     )}
                   </button>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-3">
+                    {/* In Review */}
                     <button
                       onClick={() => handleUpdateStatus("in_review")}
                       disabled={saving || selected.status === "in_review"}
@@ -560,12 +625,43 @@ export default function TeacherComplaintsPage() {
                       <EyeIcon /> Mark In Review
                     </button>
 
+                    {/* Attendance */}
+                    {selectedCategory === "attendance" && (
+                      <button
+                        onClick={handleResolveAttendance}
+                        disabled={saving || selected.status === "resolved"}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+                      >
+                        <CheckIcon /> Resolve & Update Attendance
+                      </button>
+                    )}
+
+                    {/* Marks */}
+                    {selectedCategory === "marks" && (
+                      <button
+                        onClick={() => navigate(`/teacher/courses/${selected.course?._id}`)}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-semibold text-indigo-800 hover:bg-indigo-100"
+                      >
+                        <ChevronIcon /> Open Marks Entry
+                      </button>
+                    )}
+
+                    {/* Manual Resolve */}
                     <button
-                      onClick={() => handleUpdateStatus("resolved")}
+                      onClick={confirmReject}
                       disabled={saving || selected.status === "resolved"}
                       className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
                     >
                       <CheckIcon /> Mark Resolved
+                    </button>
+
+                    {/* ✅ NEW Reject Button */}
+                    <button
+                      onClick={confirmReject}
+                      disabled={saving || selected.status === "rejected"}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-200 disabled:opacity-60"
+                    >
+                      ✕ Reject Complaint
                     </button>
                   </div>
                 </div>
@@ -593,10 +689,10 @@ function StatChip({ label, value, tone }) {
     tone === "open"
       ? "bg-rose-50 text-rose-700 border-rose-200"
       : tone === "in_review"
-      ? "bg-amber-50 text-amber-700 border-amber-200"
-      : tone === "resolved"
-      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-      : "bg-slate-50 text-slate-700 border-slate-200";
+        ? "bg-amber-50 text-amber-700 border-amber-200"
+        : tone === "resolved"
+          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+          : "bg-slate-50 text-slate-700 border-slate-200";
 
   return (
     <span

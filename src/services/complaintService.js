@@ -31,3 +31,10 @@ export const deleteCourseRequest = async (courseId) => {
   const res = await api.delete(`/courses/${courseId}`);
   return res.data;
 };
+
+export const resolveAttendanceComplaint = async (complaintId, reply = "") => {
+  const res = await api.post(`/complaints/teacher/${complaintId}/resolve-attendance`, {
+    reply,
+  });
+  return res.data;
+};

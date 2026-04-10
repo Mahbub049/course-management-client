@@ -21,11 +21,13 @@ function getCourseTypeLabel(c) {
 }
 
 function getTypeBadgeClass(label) {
-  if (label === "Lab")
-    return "bg-emerald-50 text-emerald-700 border-emerald-200";
-  if (label === "Hybrid")
-    return "bg-purple-50 text-purple-700 border-purple-200";
-  return "bg-sky-50 text-sky-700 border-sky-200";
+  if (label === "Lab") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300";
+  }
+  if (label === "Hybrid") {
+    return "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300";
+  }
+  return "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300";
 }
 
 function StudentCoursesPage() {
@@ -77,35 +79,40 @@ function StudentCoursesPage() {
 
   return (
     <div className="mx-auto w-full space-y-5 px-4 pb-10 pt-4 sm:space-y-6 sm:px-6 sm:pt-6 lg:px-8">
-      {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div className="min-w-0">
-          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-            <CapIcon />
-            Student Portal
+      {/* Hero Header */}
+      <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-indigo-50 p-5 shadow-sm dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/30 sm:p-6 lg:p-7">
+        <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-indigo-200/40 blur-3xl dark:bg-indigo-600/20" />
+        <div className="absolute -left-10 bottom-0 h-32 w-32 rounded-full bg-sky-200/40 blur-3xl dark:bg-sky-600/20" />
+
+        <div className="relative flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+          <div className="min-w-0">
+            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs font-semibold text-slate-700 backdrop-blur dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200">
+              <CapIcon />
+              Student Portal
+            </div>
+
+            <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+              My Courses
+            </h1>
+
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
+              Open any course to view your marks, current total, grade, and submit
+              complaints when needed.
+            </p>
           </div>
 
-          <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-            My Courses
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm text-slate-500">
-            Open any course to view your marks, running total, grade, and raise
-            complaints if needed.
-          </p>
+          <div className="grid w-full grid-cols-2 gap-3 sm:grid-cols-4 xl:w-auto xl:min-w-[540px]">
+            <StatCard label="Total" value={stats.total} icon={<GridIcon />} />
+            <StatCard label="Theory" value={stats.theory} icon={<BookIcon />} />
+            <StatCard label="Lab" value={stats.lab} icon={<FlaskIcon />} />
+            <StatCard label="Hybrid" value={stats.hybrid} icon={<MergeIcon />} />
+          </div>
         </div>
-
-        {/* Quick stats */}
-        <div className="grid w-full grid-cols-2 gap-3 sm:grid-cols-4 md:w-auto">
-          <StatCard label="Total" value={stats.total} icon={<GridIcon />} />
-          <StatCard label="Theory" value={stats.theory} icon={<BookIcon />} />
-          <StatCard label="Lab" value={stats.lab} icon={<FlaskIcon />} />
-          <StatCard label="Hybrid" value={stats.hybrid} icon={<MergeIcon />} />
-        </div>
-      </div>
+      </section>
 
       {/* Error */}
       {error && (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700 sm:px-5">
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300 sm:px-5">
           <div className="font-semibold">Could not load courses</div>
           <div className="opacity-90">{error}</div>
         </div>
@@ -113,18 +120,20 @@ function StudentCoursesPage() {
 
       {/* Body */}
       {loading ? (
-        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-6 text-sm text-slate-500 shadow-sm sm:px-5">
-          Loading courses…
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <CourseSkeleton />
+          <CourseSkeleton />
+          <CourseSkeleton />
         </div>
       ) : courses.length === 0 ? (
-        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-10 text-center shadow-sm sm:px-6">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50">
+        <div className="rounded-3xl border border-slate-200 bg-white px-5 py-10 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:px-6">
+          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
             <EmptyIcon />
           </div>
-          <div className="text-sm font-semibold text-slate-900">
+          <div className="text-sm font-semibold text-slate-900 dark:text-white">
             No courses found
           </div>
-          <div className="mt-1 text-sm text-slate-500">
+          <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             You are not enrolled in any courses yet.
           </div>
         </div>
@@ -132,7 +141,6 @@ function StudentCoursesPage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {courses.map((c, idx) => {
             const key = c?._id || c?.id || idx;
-
             const typeLabel = getCourseTypeLabel(c);
             const badge = getTypeBadgeClass(typeLabel);
 
@@ -140,14 +148,15 @@ function StudentCoursesPage() {
               <button
                 key={key}
                 onClick={() => openCourse(c)}
-                className="group w-full rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition
-                           hover:border-indigo-200 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500/30 sm:p-5"
+                className="group relative w-full overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-indigo-500/40 dark:hover:shadow-black/20 sm:p-5"
               >
+                <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-indigo-500 via-sky-500 to-violet-500 opacity-70" />
+
                 {/* top row */}
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                      <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
                         <HashIcon />
                         {c?.code || "—"}
                       </span>
@@ -159,61 +168,71 @@ function StudentCoursesPage() {
                       </span>
                     </div>
 
-                    <div className="mt-2 line-clamp-2 text-base font-bold text-slate-900 group-hover:text-indigo-700 sm:text-[17px]">
+                    <div className="mt-3 line-clamp-2 text-base font-bold leading-6 text-slate-900 transition group-hover:text-indigo-700 dark:text-white dark:group-hover:text-indigo-300 sm:text-[17px]">
                       {c?.title || "Untitled Course"}
                     </div>
 
-                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
                       <span className="inline-flex items-center gap-1">
-                        <TagIcon /> Section{" "}
-                        <span className="font-semibold text-slate-700">
+                        <TagIcon />
+                        Section{" "}
+                        <span className="font-semibold text-slate-700 dark:text-slate-200">
                           {c?.section || "—"}
                         </span>
                       </span>
                       <span className="inline-flex items-center gap-1">
-                        <CalendarIcon /> {c?.semester || "—"} {c?.year || ""}
+                        <CalendarIcon />
+                        {c?.semester || "—"} {c?.year || ""}
                       </span>
                     </div>
                   </div>
 
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-700
-                                  group-hover:border-indigo-200 group-hover:bg-indigo-50 group-hover:text-indigo-700">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-700 transition group-hover:border-indigo-200 group-hover:bg-indigo-50 group-hover:text-indigo-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:group-hover:border-indigo-500/40 dark:group-hover:bg-indigo-500/10 dark:group-hover:text-indigo-300">
                     <ChevronIcon />
                   </div>
                 </div>
 
                 {/* summary */}
-                <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-800/80">
                   {c.summaryStatus === "published" ? (
                     <div className="flex items-center justify-between gap-6">
-                      <div className="text-xs text-slate-600">
+                      <div className="text-xs text-slate-600 dark:text-slate-400">
                         Current Total
-                        <div className="mt-0.5 text-sm font-extrabold text-slate-900">
-                          {c.summary?.total}/100
+                        <div className="mt-1 text-lg font-extrabold text-slate-900 dark:text-white">
+                          {c.summary?.total ?? 0}/100
                         </div>
                       </div>
-                      <div className="text-right text-xs text-slate-600">
+                      <div className="text-right text-xs text-slate-600 dark:text-slate-400">
                         Grade
-                        <div className="mt-0.5 text-sm font-extrabold text-emerald-700">
-                          {c.summary?.grade}
+                        <div className="mt-1 text-lg font-extrabold text-emerald-700 dark:text-emerald-400">
+                          {c.summary?.grade || "—"}
                         </div>
                       </div>
                     </div>
                   ) : c.summaryStatus === "in_progress" ? (
-                    <div className="text-xs text-amber-700">
+                    <div className="text-xs text-amber-700 dark:text-amber-300">
                       Marks are being updated
-                      <div className="mt-0.5 text-[11px] text-amber-600">
-                        Some assessments are pending.
+                      <div className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+                        Some assessments are still pending.
                       </div>
                     </div>
                   ) : (
-                    <div className="text-xs text-slate-600">
+                    <div className="text-xs text-slate-600 dark:text-slate-400">
                       Marks not published yet
-                      <div className="mt-0.5 text-[11px] text-slate-500">
-                        Assessment structure not finalized.
+                      <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-500">
+                        Assessment structure has not been finalized.
                       </div>
                     </div>
                   )}
+                </div>
+
+                <div className="mt-4 flex items-center justify-between text-xs">
+                  <span className="font-medium text-slate-500 dark:text-slate-400">
+                    Tap to open course
+                  </span>
+                  <span className="font-semibold text-indigo-600 group-hover:text-indigo-700 dark:text-indigo-300 dark:group-hover:text-indigo-200">
+                    View Details
+                  </span>
                 </div>
               </button>
             );
@@ -230,15 +249,39 @@ export default StudentCoursesPage;
 
 function StatCard({ label, value, icon }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3 shadow-sm sm:px-4">
+    <div className="rounded-2xl border border-white/70 bg-white/90 px-3 py-3 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-900/80 sm:px-4">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-[11px] font-semibold text-slate-500 sm:text-xs">
+        <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 sm:text-xs">
           {label}
         </div>
-        <div className="text-slate-600">{icon}</div>
+        <div className="text-slate-600 dark:text-slate-300">{icon}</div>
       </div>
-      <div className="mt-1 text-lg font-extrabold text-slate-900 sm:text-xl">
+      <div className="mt-1 text-lg font-extrabold text-slate-900 dark:text-white sm:text-xl">
         {value}
+      </div>
+    </div>
+  );
+}
+
+function CourseSkeleton() {
+  return (
+    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="h-1 w-full rounded-full bg-slate-200 dark:bg-slate-800" />
+      <div className="mt-4 flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex gap-2">
+            <div className="h-7 w-24 rounded-full bg-slate-200 dark:bg-slate-800" />
+            <div className="h-7 w-16 rounded-full bg-slate-200 dark:bg-slate-800" />
+          </div>
+          <div className="mt-4 h-4 w-3/4 rounded bg-slate-200 dark:bg-slate-800" />
+          <div className="mt-2 h-4 w-1/2 rounded bg-slate-200 dark:bg-slate-800" />
+          <div className="mt-3 h-3 w-2/3 rounded bg-slate-200 dark:bg-slate-800" />
+        </div>
+        <div className="h-11 w-11 rounded-2xl bg-slate-200 dark:bg-slate-800" />
+      </div>
+      <div className="mt-5 rounded-2xl bg-slate-100 px-4 py-4 dark:bg-slate-800">
+        <div className="h-3 w-28 rounded bg-slate-200 dark:bg-slate-700" />
+        <div className="mt-2 h-4 w-20 rounded bg-slate-200 dark:bg-slate-700" />
       </div>
     </div>
   );
@@ -375,7 +418,7 @@ function CalendarIcon() {
 function EmptyIcon() {
   return (
     <svg
-      className="h-6 w-6 text-slate-500"
+      className="h-6 w-6 text-slate-500 dark:text-slate-400"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -388,5 +431,5 @@ function EmptyIcon() {
   );
 }
 
-// optional named export (keep if you use it elsewhere)
+// optional named export
 export { StudentCoursesPage };
