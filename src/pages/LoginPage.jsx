@@ -33,6 +33,12 @@ function LoginPage() {
         localStorage.removeItem("marksPortalUsername");
       }
 
+      if (data.profileImage) {
+        localStorage.setItem("marksPortalProfileImage", data.profileImage);
+      } else {
+        localStorage.removeItem("marksPortalProfileImage");
+      }
+
       if (data.role === "teacher") {
         navigate("/teacher/dashboard");
       } else if (data.role === "student") {

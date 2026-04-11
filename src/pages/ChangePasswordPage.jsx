@@ -29,6 +29,34 @@ function ChangePasswordPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  const [profileImage, setProfileImage] = useState(
+    localStorage.getItem("marksPortalProfileImage") || ""
+  );
+  const [profileImageBase64, setProfileImageBase64] = useState("");
+
+
+  const handleProfileImageChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setProfileError("Please select a valid image file.");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setProfileError("Please select an image smaller than 5MB.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setProfileImage(reader.result); // preview
+      setProfileImageBase64(reader.result); // send to server
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -72,24 +100,33 @@ function ChangePasswordPage() {
     setProfileError("");
     setProfileSuccess("");
 
-    if (!username && !displayName) {
-      setProfileError("Please enter at least a username or name to update.");
-      return;
-    }
-
     try {
       setProfileLoading(true);
 
       const data = await updateProfileRequest({
         username: username || undefined,
         name: displayName || undefined,
+        profileImageBase64: profileImageBase64 || undefined,
       });
 
       setProfileSuccess("Profile updated successfully.");
 
-      if (data.username)
+      // ✅ update localStorage
+      if (data.username) {
         localStorage.setItem("marksPortalUsername", data.username);
-      if (data.name) localStorage.setItem("marksPortalName", data.name);
+      }
+
+      if (data.name) {
+        localStorage.setItem("marksPortalName", data.name);
+      }
+
+      if (data.profileImage) {
+        localStorage.setItem("marksPortalProfileImage", data.profileImage);
+      }
+
+      // 🔥 THIS LINE (very important)
+      window.dispatchEvent(new Event("marksPortalProfileUpdated"));
+
     } catch (err) {
       console.error(err);
       const msg = err.response?.data?.message || "Failed to update profile.";
@@ -135,9 +172,8 @@ function ChangePasswordPage() {
 
       {/* Cards */}
       <div
-        className={`grid grid-cols-1 gap-5 ${
-          role === "teacher" ? "xl:grid-cols-2" : ""
-        }`}
+        className={`grid grid-cols-1 gap-5 ${role === "teacher" ? "xl:grid-cols-2" : ""
+          }`}
       >
         {/* Change Password */}
         <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -239,6 +275,40 @@ function ChangePasswordPage() {
                   </h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     Update your teacher username and display name.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/60">
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
+                Profile Picture
+              </label>
+
+              <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-center">
+                <div className="h-24 w-24 overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+                  {profileImage ? (
+                    <img
+                      src={profileImage}
+                      alt="Profile preview"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
+                      No image
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex-1">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleProfileImageChange}
+                    className="block w-full cursor-pointer text-sm text-slate-600 file:mr-4 file:cursor-pointer file:rounded-xl file:border-0 file:bg-indigo-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-indigo-700 dark:text-slate-300"
+                  />
+                  <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    JPG, PNG, WEBP supported. Keep image under 5MB.
                   </p>
                 </div>
               </div>

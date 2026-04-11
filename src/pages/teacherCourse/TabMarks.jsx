@@ -43,25 +43,9 @@ function pct(obt, full) {
   const o = Number(obt ?? 0);
   const f = Number(full ?? 0);
   if (f <= 0) return 0;
-  return clamp(o, 0, f) / f; // 0..1
+  return clamp(o, 0, f) / f;
 }
 
-/**
- * ✅ Total /100:
- *  - THEORY:
- *      CT: best 2 -> average -> /15
- *      Mid: /30
- *      Final: /40
- *      Presentation/Assignment:
- *        if both exist -> 5 + 5
- *        else whichever exists -> /10
- *      Attendance: /5 from attendance summary
- *  - LAB:
- *      All non-mid/final/att assessments: avg -> /25
- *      Mid: /30
- *      Final: /40
- *      Attendance: /5 from attendance summary
- */
 function computeTotal100(courseType, assessments, rowMarks, attendanceMarks5 = 0) {
   const list = Array.isArray(assessments) ? assessments : [];
   const name = (a) => String(a?.name || "").toLowerCase();
@@ -87,29 +71,21 @@ function computeTotal100(courseType, assessments, rowMarks, attendanceMarks5 = 0
     const finalScore40 = final ? pct(rowMarks?.[final._id], final.fullMarks) * 40 : 0;
 
     const total = labScore25 + midScore30 + finalScore40 + attScore5;
-    // Round to nearest 0.5 using your custom rule
-    const rounded =
-      total % 1 === 0
-        ? total
-        : total % 1 <= 0.5
-          ? Math.floor(total) + 0.5
-          : Math.ceil(total);
-
-    return rounded;
+    return total % 1 === 0
+      ? total
+      : total % 1 <= 0.5
+      ? Math.floor(total) + 0.5
+      : Math.ceil(total);
   }
 
-  // ✅ CT detection: supports ct, class test, quiz, test (any format)
   const isCT = (nRaw) => {
     const n = String(nRaw || "").toLowerCase().trim();
 
-    // Exclude other known components
     if (n.includes("mid") || n.includes("final") || n.includes("att")) return false;
     if (n.includes("assign") || n.includes("present")) return false;
 
-    // Normalize spaces/dashes
     const compact = n.replace(/[\s\-_]+/g, "");
 
-    // Accept: ct, ct1/ct-2, class test, classtest, quiz, test
     if (compact.startsWith("ct")) return true;
     if (compact.includes("classtest")) return true;
     if (n.includes("class test")) return true;
@@ -120,7 +96,6 @@ function computeTotal100(courseType, assessments, rowMarks, attendanceMarks5 = 0
   };
 
   const ctList = list.filter((a) => isCT(a?.name));
-
   const mid = list.find((a) => name(a).includes("mid"));
   const final = list.find((a) => name(a).includes("final"));
   const presentation = list.find((a) => name(a).includes("present"));
@@ -154,33 +129,29 @@ function computeTotal100(courseType, assessments, rowMarks, attendanceMarks5 = 0
   }
 
   const total = ctScore15 + midScore30 + finalScore40 + paScore10 + attScore5;
-  const rounded =
-    total % 1 === 0
-      ? total
-      : total % 1 <= 0.5
-        ? Math.floor(total) + 0.5
-        : Math.ceil(total);
-
-  return rounded;
+  return total % 1 === 0
+    ? total
+    : total % 1 <= 0.5
+    ? Math.floor(total) + 0.5
+    : Math.ceil(total);
 }
 
 export default function TabMarks({ courseId, course }) {
   const [students, setStudents] = useState([]);
   const [assessments, setAssessments] = useState([]);
   const [marksMap, setMarksMap] = useState({});
-  const [attMarksMap, setAttMarksMap] = useState({}); // { [studentId]: marksOutOf5 }
+  const [attMarksMap, setAttMarksMap] = useState({});
 
   const [loading, setLoading] = useState(true);
   const [marksError, setMarksError] = useState("");
   const [saving, setSaving] = useState(false);
   const [publishingAssessmentId, setPublishingAssessmentId] = useState(null);
 
-  const [tabMode, setTabMode] = useState("row"); // row | col
-  const inputRefs = useRef([]);
+  const [tabMode, setTabMode] = useState("row");
+  const [sortMode, setSortMode] = useState("entered");
 
-  // ✅ NEW: Sort modes
-  const [sortMode, setSortMode] = useState("entered"); // entered | roll-asc | roll-desc
-  const originalStudentsRef = useRef([]); // preserve entered order
+  const inputRefs = useRef([]);
+  const originalStudentsRef = useRef([]);
 
   const loadAllData = async () => {
     setLoading(true);
@@ -189,7 +160,6 @@ export default function TabMarks({ courseId, course }) {
     let studentsData = [];
     let assessmentsData = [];
 
-    // Load students + assessments first
     try {
       const res = await Promise.all([
         getCourseStudents(courseId),
@@ -216,7 +186,6 @@ export default function TabMarks({ courseId, course }) {
       return;
     }
 
-    // Load marks + attendance summary
     try {
       const [marksData, attSummary] = await Promise.allSettled([
         fetchMarksForCourse(courseId),
@@ -225,7 +194,6 @@ export default function TabMarks({ courseId, course }) {
 
       const map = {};
 
-      // marks from Mark collection
       if (marksData.status === "fulfilled") {
         (marksData.value || []).forEach((m) => {
           const sid = m.student;
@@ -236,7 +204,6 @@ export default function TabMarks({ courseId, course }) {
         console.warn("Marks load failed:", marksData.reason);
       }
 
-      // attendance summary (/5)
       if (attSummary.status === "fulfilled") {
         const attRows = attSummary.value || [];
 
@@ -278,6 +245,55 @@ export default function TabMarks({ courseId, course }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [courseId]);
 
+  const sortedStudents = useMemo(() => {
+    if (sortMode === "entered") return originalStudentsRef.current || [];
+
+    const copy = [...students];
+    copy.sort((a, b) => {
+      const ra = String(a.roll ?? "");
+      const rb = String(b.roll ?? "");
+      if (sortMode === "roll-asc") {
+        return ra.localeCompare(rb, undefined, { numeric: true });
+      }
+      if (sortMode === "roll-desc") {
+        return rb.localeCompare(ra, undefined, { numeric: true });
+      }
+      return 0;
+    });
+    return copy;
+  }, [students, sortMode]);
+
+  const totalsPerStudent = useMemo(() => {
+    const totals = {};
+    students.forEach((s) => {
+      const row = marksMap[s.id] || {};
+      const att5 = Number(attMarksMap?.[s.id] ?? 0);
+      totals[s.id] = computeTotal100(
+        getCourseType(course),
+        assessments,
+        row,
+        att5
+      );
+    });
+    return totals;
+  }, [students, marksMap, attMarksMap, assessments, course]);
+
+  const courseType = getCourseType(course);
+  const courseTypeLabel = courseType === "lab" ? "Lab Course" : "Theory Course";
+
+  const stats = useMemo(() => {
+    const n = sortedStudents.length;
+    if (!n) return { avg: 0, top: 0, pass: 0 };
+
+    const totals = sortedStudents.map((s) => Number(totalsPerStudent[s.id] ?? 0));
+    const sum = totals.reduce((a, b) => a + b, 0);
+    const avg = sum / n;
+    const top = Math.max(...totals);
+    const pass = totals.filter((t) => t >= 40).length;
+
+    return { avg, top, pass };
+  }, [sortedStudents, totalsPerStudent]);
+
   const handleMarkChange = (studentId, assessmentId, value) => {
     setMarksMap((prev) => ({
       ...prev,
@@ -302,7 +318,7 @@ export default function TabMarks({ courseId, course }) {
 
     e.preventDefault();
 
-    const maxR = sortedStudents.length - 1; // ✅ use sorted list
+    const maxR = sortedStudents.length - 1;
     const maxC = assessments.length - 1;
 
     let nextR = r;
@@ -332,11 +348,9 @@ export default function TabMarks({ courseId, course }) {
     try {
       const payload = [];
 
-      // ✅ payload order does not matter, but use sortedStudents for consistency
       sortedStudents.forEach((s) => {
         const row = marksMap[s.id] || {};
         assessments.forEach((a) => {
-          // ✅ attendance is saved in Attendance tab, not here
           if (String(a.name || "").toLowerCase().includes("att")) return;
 
           const raw = row[a._id];
@@ -354,6 +368,7 @@ export default function TabMarks({ courseId, course }) {
       });
 
       await saveMarksForCourseRequest(courseId, payload);
+
       Swal.fire({
         title: "Marks Saved!",
         text: "Marks saved successfully!",
@@ -408,42 +423,14 @@ export default function TabMarks({ courseId, course }) {
       setPublishingAssessmentId(null);
     }
   };
-  const courseType = getCourseType(course);
-
-  const totalsPerStudent = useMemo(() => {
-    const totals = {};
-    students.forEach((s) => {
-      const row = marksMap[s.id] || {};
-      const att5 = Number(attMarksMap?.[s.id] ?? 0);
-      totals[s.id] = computeTotal100(courseType, assessments, row, att5);
-    });
-    return totals;
-  }, [courseType, students, assessments, marksMap, attMarksMap]);
-
-  // ✅ NEW: Sorting result list
-  const sortedStudents = useMemo(() => {
-    if (sortMode === "entered") {
-      return originalStudentsRef.current || [];
-    }
-
-    const copy = [...students];
-
-    copy.sort((a, b) => {
-      const ra = String(a.roll ?? "");
-      const rb = String(b.roll ?? "");
-      if (sortMode === "roll-asc")
-        return ra.localeCompare(rb, undefined, { numeric: true });
-      if (sortMode === "roll-desc")
-        return rb.localeCompare(ra, undefined, { numeric: true });
-      return 0;
-    });
-
-    return copy;
-  }, [students, sortMode]);
 
   const handleExportExcel = () => {
     if (!sortedStudents.length || !assessments.length) {
-      alert("Nothing to export.");
+      Swal.fire({
+        icon: "info",
+        title: "Nothing to export",
+        text: "There are no students or assessments to export.",
+      });
       return;
     }
 
@@ -460,16 +447,17 @@ export default function TabMarks({ courseId, course }) {
 
       obj["Total (100)"] = total;
       obj["Grade"] = gradeFromTotal(total);
+
       return obj;
     });
 
     const ws = XLSX.utils.json_to_sheet(rows);
     ws["!cols"] = [
       { wch: 14 },
-      { wch: 22 },
+      { wch: 24 },
       ...assessments.map(() => ({ wch: 14 })),
       { wch: 12 },
-      { wch: 8 },
+      { wch: 10 },
     ];
 
     const wb = XLSX.utils.book_new();
@@ -482,7 +470,9 @@ export default function TabMarks({ courseId, course }) {
     const safeSemester = (course?.semester || "")
       .toString()
       .replace(/[^\w-]+/g, "_");
-    const safeYear = (course?.year || "").toString().replace(/[^\w-]+/g, "_");
+    const safeYear = (course?.year || "")
+      .toString()
+      .replace(/[^\w-]+/g, "_");
 
     const fileName = `${safeCode}_Sec${safeSection}_${safeSemester}_${safeYear}_Marksheet.xlsx`;
 
@@ -494,117 +484,83 @@ export default function TabMarks({ courseId, course }) {
     saveAs(blob, fileName);
   };
 
-  const courseTypeLabel = courseType === "lab" ? "Lab Course" : "Theory Course";
-
-  const stats = useMemo(() => {
-    const n = sortedStudents.length;
-    if (!n) return { avg: 0, top: 0, pass: 0 };
-    const totals = sortedStudents.map((s) => Number(totalsPerStudent[s.id] ?? 0));
-    const sum = totals.reduce((a, b) => a + b, 0);
-    const avg = sum / n;
-    const top = Math.max(...totals);
-    const pass = totals.filter((t) => t >= 40).length;
-    return { avg, top, pass };
-  }, [sortedStudents, totalsPerStudent]);
-
-  const badgeClass =
+  const courseBadgeClass =
     courseType === "lab"
-      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-      : "bg-sky-50 text-sky-700 border border-sky-200";
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+      : "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300";
 
   return (
     <div className="space-y-6">
-      {/* Header / Summary */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="px-6 py-5 border-b border-slate-100">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50 via-white to-indigo-50/70 px-6 py-6 dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/40">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
                   Marks Entry
                 </span>
+
                 <span
-                  className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${badgeClass}`}
+                  className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${courseBadgeClass}`}
                 >
                   {courseTypeLabel}
                 </span>
               </div>
 
-              <h3 className="mt-2 text-lg font-semibold text-slate-900">
-                Enter marks quickly and export a clean Excel marksheet
+              <h3 className="mt-3 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+                Enter, review, publish, and export marks in one place
               </h3>
-              <p className="mt-1 text-sm text-slate-500">
-                Attendance is read from the Attendance tab (out of 5) and included in total /100.
+
+              <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+                Attendance marks are pulled automatically from the Attendance tab
+                and included in the final total out of 100.
               </p>
 
-              <div className="mt-3 flex flex-wrap gap-2">
-                <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">
-                  Students:{" "}
-                  <span className="ml-1 font-semibold">{sortedStudents.length}</span>
-                </span>
-                <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">
-                  Assessments:{" "}
-                  <span className="ml-1 font-semibold">{assessments.length}</span>
-                </span>
-                <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">
-                  Avg:{" "}
-                  <span className="ml-1 font-semibold">{stats.avg.toFixed(1)}</span>
-                </span>
-                <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">
-                  Top:{" "}
-                  <span className="ml-1 font-semibold">{stats.top.toFixed(1)}</span>
-                </span>
-                <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">
-                  Pass: <span className="ml-1 font-semibold">{stats.pass}</span>
-                </span>
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+                <MiniStat label="Students" value={sortedStudents.length} />
+                <MiniStat label="Assessments" value={assessments.length} />
+                <MiniStat label="Average" value={stats.avg.toFixed(1)} />
+                <MiniStat label="Top" value={stats.top.toFixed(1)} />
+                <MiniStat label="Pass" value={stats.pass} />
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 lg:items-end">
-              {/* ✅ Controls row */}
-              <div className="flex flex-wrap items-center gap-3 justify-end">
-                {/* Sort */}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-slate-600">Sort by</span>
-                  <select
-                    value={sortMode}
-                    onChange={(e) => setSortMode(e.target.value)}
-                    className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                  >
-                    <option value="entered">Entered order</option>
-                    <option value="roll-asc">Roll (Ascending)</option>
-                    <option value="roll-desc">Roll (Descending)</option>
-                  </select>
-                </div>
+            <div className="flex w-full flex-col gap-3 xl:w-auto xl:min-w-[420px]">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <ControlSelect
+                  label="Sort students"
+                  value={sortMode}
+                  onChange={(e) => setSortMode(e.target.value)}
+                  options={[
+                    { value: "entered", label: "Entered order" },
+                    { value: "roll-asc", label: "Roll ascending" },
+                    { value: "roll-desc", label: "Roll descending" },
+                  ]}
+                />
 
-                {/* Tab navigation */}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-slate-600">
-                    Tab navigation
-                  </span>
-                  <select
-                    value={tabMode}
-                    onChange={(e) => setTabMode(e.target.value)}
-                    className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                  >
-                    <option value="row">Row-wise (CT1 → CT2)</option>
-                    <option value="col">Column-wise (downwards)</option>
-                  </select>
-                </div>
+                <ControlSelect
+                  label="Tab navigation"
+                  value={tabMode}
+                  onChange={(e) => setTabMode(e.target.value)}
+                  options={[
+                    { value: "row", label: "Row-wise" },
+                    { value: "col", label: "Column-wise" },
+                  ]}
+                />
               </div>
 
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-3 xl:justify-end">
                 <button
                   onClick={handleSave}
                   disabled={saving}
-                  className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60"
+                  className="inline-flex items-center justify-center rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {saving ? "Saving..." : "Save Marks"}
                 </button>
 
                 <button
                   onClick={handleExportExcel}
-                  className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+                  className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
                 >
                   Export Excel
                 </button>
@@ -614,70 +570,77 @@ export default function TabMarks({ courseId, course }) {
         </div>
 
         {marksError && (
-          <div className="px-6 py-3 bg-red-50 border-t border-red-100 text-sm text-red-700">
+          <div className="border-t border-red-100 bg-red-50 px-6 py-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
             {marksError}
           </div>
         )}
       </div>
 
-      {/* Table Card */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex flex-col gap-3 border-b border-slate-100 px-6 py-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
           <div>
-            <h4 className="text-sm font-semibold text-slate-900">Marks Grid</h4>
-            <p className="text-xs text-slate-500">
-              Tip: press <span className="font-semibold">Tab</span> to jump across cells.
+            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              Marks Grid
+            </h4>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Use Tab to move quickly through cells. Totals and grades are calculated automatically.
             </p>
           </div>
 
-          <span className="hidden sm:inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
+          <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
             Total is auto-calculated /100
           </span>
         </div>
 
         <div className="p-6">
           {loading ? (
-            <div className="flex items-center gap-3 text-sm text-slate-500">
-              <span className="h-2.5 w-2.5 rounded-full bg-slate-300 animate-pulse" />
+            <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-400">
+              <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-indigo-400" />
               Loading marks data...
             </div>
           ) : sortedStudents.length === 0 ? (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
               No students enrolled. Add students first.
             </div>
           ) : assessments.length === 0 ? (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-              No assessments yet. Add CT/Mid/Final/Attendance in the Assessments tab.
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
+              No assessments yet. Add CT, Mid, Final, Attendance, or other assessments first.
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
               <table className="min-w-full text-sm">
-                <thead className="bg-slate-50">
-                  <tr className="border-b border-slate-200">
-                    <th className="px-3 py-3 text-left text-xs font-semibold text-slate-600 sticky left-0 bg-slate-50 z-10">
+                <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800">
+                  <tr className="border-b border-slate-200 dark:border-slate-700">
+                    <th className="sticky left-0 z-30 min-w-[110px] bg-slate-50 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                       Roll
                     </th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold text-slate-600 sticky left-24 bg-slate-50 z-10">
-                      Name
+
+                    <th className="sticky left-[110px] z-30 min-w-[220px] bg-slate-50 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      Student
                     </th>
 
                     {assessments.map((a) => (
                       <th
                         key={a._id}
-                        className="px-3 py-3 text-left text-xs font-semibold text-slate-600 min-w-[160px]"
+                        className="min-w-[180px] px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300"
                       >
-                        <div className="flex flex-col gap-2">
+                        <div className="space-y-2">
                           <div>
-                            <div className="leading-tight">{a.name}</div>
-                            <div className="text-[11px] text-slate-400">/{a.fullMarks}</div>
+                            <div className="text-sm font-semibold normal-case text-slate-800 dark:text-slate-100">
+                              {a.name}
+                            </div>
+                            <div className="mt-0.5 text-[11px] font-medium normal-case text-slate-400 dark:text-slate-500">
+                              Full marks: {a.fullMarks}
+                            </div>
                           </div>
 
                           <div className="flex flex-wrap items-center gap-2">
                             <span
-                              className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${a.isPublished
-                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                : "bg-amber-50 text-amber-700 border border-amber-200"
-                                }`}
+                              className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                                a.isPublished
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+                                  : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
+                              }`}
                             >
                               {a.isPublished ? "Published" : "Draft"}
                             </span>
@@ -686,44 +649,49 @@ export default function TabMarks({ courseId, course }) {
                               type="button"
                               onClick={() => handlePublishAssessment(a)}
                               disabled={publishingAssessmentId === a._id}
-                              className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60"
+                              className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                             >
                               {publishingAssessmentId === a._id
                                 ? "Publishing..."
                                 : a.isPublished
-                                  ? "Republish"
-                                  : "Publish"}
+                                ? "Republish"
+                                : "Publish"}
                             </button>
                           </div>
                         </div>
                       </th>
                     ))}
 
-                    <th className="px-3 py-3 text-left text-xs font-semibold text-slate-600">
+                    <th className="min-w-[130px] px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
                       Total /100
                     </th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold text-slate-600">
+
+                    <th className="min-w-[110px] px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
                       Grade
                     </th>
                   </tr>
                 </thead>
 
-                <tbody>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {sortedStudents.map((s, rowIndex) => {
                     const row = marksMap[s.id] || {};
                     const total = totalsPerStudent[s.id] ?? 0;
 
                     return (
                       <tr
-                        key={s.enrollmentId}
-                        className="border-b border-slate-100 hover:bg-slate-50/60"
+                        key={s.enrollmentId || s.id}
+                        className="group hover:bg-slate-50/70 dark:hover:bg-slate-800/40"
                       >
-                        <td className="px-3 py-2 whitespace-nowrap sticky left-0 bg-white z-10">
-                          <span className="text-slate-800 font-medium">{s.roll}</span>
+                        <td className="sticky left-0 z-10 whitespace-nowrap border-r border-slate-100 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
+                          <span className="font-semibold text-slate-800 dark:text-slate-100">
+                            {s.roll}
+                          </span>
                         </td>
 
-                        <td className="px-3 py-2 whitespace-nowrap sticky left-24 bg-white z-10">
-                          <span className="text-slate-800">{s.name}</span>
+                        <td className="sticky left-[110px] z-10 whitespace-nowrap border-r border-slate-100 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
+                          <div className="max-w-[220px] truncate font-medium text-slate-800 dark:text-slate-100">
+                            {s.name}
+                          </div>
                         </td>
 
                         {assessments.map((a, colIndex) => {
@@ -732,16 +700,16 @@ export default function TabMarks({ courseId, course }) {
                             .includes("att");
 
                           return (
-                            <td key={a._id} className="px-3 py-2">
+                            <td key={a._id} className="px-4 py-3">
                               <input
                                 type="number"
                                 disabled={isAttendanceCol}
                                 className={[
-                                  "w-24 h-9 rounded-lg border px-2 text-sm shadow-sm",
-                                  "focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500",
+                                  "h-11 w-24 rounded-xl border px-3 text-sm shadow-sm transition",
+                                  "focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500",
                                   isAttendanceCol
-                                    ? "bg-slate-100 cursor-not-allowed border-slate-200 text-slate-500"
-                                    : "bg-white border-slate-200 text-slate-900 hover:border-slate-300",
+                                    ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                                    : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
                                 ].join(" ")}
                                 value={row[a._id] ?? ""}
                                 onChange={(e) =>
@@ -751,8 +719,9 @@ export default function TabMarks({ courseId, course }) {
                                 data-row={rowIndex}
                                 data-col={colIndex}
                                 ref={(el) => {
-                                  if (!inputRefs.current[rowIndex])
+                                  if (!inputRefs.current[rowIndex]) {
                                     inputRefs.current[rowIndex] = [];
+                                  }
                                   inputRefs.current[rowIndex][colIndex] = el;
                                 }}
                               />
@@ -760,16 +729,14 @@ export default function TabMarks({ courseId, course }) {
                           );
                         })}
 
-                        <td className="px-3 py-2">
-                          <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-800">
+                        <td className="px-4 py-3">
+                          <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
                             {Number(total).toFixed(1)}
                           </span>
                         </td>
 
-                        <td className="px-3 py-2">
-                          <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                            {gradeFromTotal(total)}
-                          </span>
+                        <td className="px-4 py-3">
+                          <GradeBadge grade={gradeFromTotal(total)} />
                         </td>
                       </tr>
                     );
@@ -780,18 +747,18 @@ export default function TabMarks({ courseId, course }) {
           )}
 
           {!loading && sortedStudents.length > 0 && assessments.length > 0 && (
-            <div className="mt-5 flex flex-wrap gap-2">
+            <div className="mt-5 flex flex-wrap gap-3">
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60"
+                className="inline-flex items-center justify-center rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {saving ? "Saving..." : "Save Marks"}
               </button>
 
               <button
                 onClick={handleExportExcel}
-                className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+                className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
               >
                 Export Excel
               </button>
@@ -800,5 +767,62 @@ export default function TabMarks({ courseId, course }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function MiniStat({ label, value }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 shadow-sm backdrop-blur-sm dark:border-slate-700 dark:bg-slate-800/80">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+        {label}
+      </div>
+      <div className="mt-1 text-lg font-bold text-slate-900 dark:text-slate-100">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function ControlSelect({ label, value, onChange, options }) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        {label}
+      </span>
+      <select
+        value={value}
+        onChange={onChange}
+        className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+      >
+        {options.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function GradeBadge({ grade }) {
+  const cls =
+    grade === "A+"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+      : grade === "A" || grade === "A-"
+      ? "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300"
+      : grade === "B+" || grade === "B" || grade === "B-"
+      ? "border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300"
+      : grade === "C+" || grade === "C"
+      ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
+      : grade === "D"
+      ? "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300"
+      : "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300";
+
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-bold ${cls}`}
+    >
+      {grade}
+    </span>
   );
 }

@@ -14,16 +14,37 @@ function AppLayout() {
     return localStorage.getItem("marksPortalSidebarCollapsed") === "true";
   });
 
+  const [profileImage, setProfileImage] = useState("");
+
   useEffect(() => {
     const r = localStorage.getItem("marksPortalRole");
     const n = localStorage.getItem("marksPortalName") || "";
     setRole(r);
     setUserName(n);
 
+    const img = localStorage.getItem("marksPortalProfileImage") || "";
+    setProfileImage(img);
+
     if (!r) {
       navigate("/login", { replace: true });
     }
   }, [navigate]);
+
+  useEffect(() => {
+    const syncProfileData = () => {
+      const n = localStorage.getItem("marksPortalName") || "";
+      const img = localStorage.getItem("marksPortalProfileImage") || "";
+
+      setUserName(n);
+      setProfileImage(img);
+    };
+
+    window.addEventListener("marksPortalProfileUpdated", syncProfileData);
+
+    return () => {
+      window.removeEventListener("marksPortalProfileUpdated", syncProfileData);
+    };
+  }, []);
 
   useEffect(() => {
     setMobileOpen(false);
@@ -45,6 +66,7 @@ function AppLayout() {
     localStorage.removeItem("marksPortalToken");
     localStorage.removeItem("marksPortalRole");
     localStorage.removeItem("marksPortalName");
+    localStorage.removeItem("marksPortalProfileImage");
     navigate("/login", { replace: true });
   };
 
@@ -90,11 +112,17 @@ function AppLayout() {
           collapsed && !isMobile ? "px-3" : "sm:px-5",
         ].join(" ")}
       >
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-sm dark:bg-violet-600">
+        <div
+          className={[
+            "flex gap-3",
+            collapsed && !isMobile
+              ? "flex-col items-center"
+              : "items-center",
+          ].join(" ")}
+        >
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-sm dark:bg-violet-600">
             <CapIcon />
           </div>
-
           {!(collapsed && !isMobile) && (
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold text-slate-900 dark:text-white">
@@ -120,7 +148,10 @@ function AppLayout() {
           {!isMobile && (
             <button
               onClick={() => setCollapsed((v) => !v)}
-              className="ml-auto hidden h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 md:inline-flex"
+              className={[
+                "hidden h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 md:inline-flex",
+                collapsed && !isMobile ? "ml-0" : "ml-auto",
+              ].join(" ")}
               title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
               type="button"
             >
@@ -191,12 +222,27 @@ function AppLayout() {
         <div
           className={[
             "rounded-3xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/90",
-            collapsed && !isMobile ? "p-2" : "",
+            collapsed && !isMobile
+              ? "flex flex-col items-center rounded-2xl p-2"
+              : "",
           ].join(" ")}
         >
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-              <UserCircleIcon />
+          <div
+            className={[
+              "flex items-center gap-3",
+              collapsed && !isMobile ? "justify-center" : "",
+            ].join(" ")}
+          >
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+              {profileImage ? (
+                <img
+                  src={profileImage}
+                  alt="User"
+                  className="h-full w-full shrink-0 object-cover"
+                />
+              ) : (
+                <UserCircleIcon />
+              )}
             </div>
 
             {!(collapsed && !isMobile) && (
@@ -211,14 +257,16 @@ function AppLayout() {
             )}
           </div>
 
-          <button
-            onClick={handleLogout}
-            className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-            type="button"
-          >
-            <LogoutIcon />
-            {!(collapsed && !isMobile) && <span>Logout</span>}
-          </button>
+          {!(collapsed && !isMobile) && (
+            <button
+              onClick={handleLogout}
+              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+              type="button"
+            >
+              <LogoutIcon />
+              <span>Logout</span>
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -277,7 +325,7 @@ function AppLayout() {
                 </button>
 
                 <div className="flex min-w-0 items-center gap-2 md:hidden">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white dark:bg-violet-600">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-sm dark:bg-violet-600">
                     <CapIcon />
                   </div>
                   <div className="min-w-0 leading-tight">
@@ -521,7 +569,7 @@ function UserIcon() {
 function UserCircleIcon() {
   return (
     <svg
-      className="h-5 w-5 text-slate-700 dark:text-slate-200"
+      className="h-6 w-6 text-slate-700 dark:text-slate-200"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"

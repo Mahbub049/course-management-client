@@ -15,10 +15,9 @@ export default function TabSettings({ courseId, course, onCourseUpdated }) {
     section: "",
     semester: "Spring",
     year: "",
-    courseType: "theory", // theory | lab | hybrid
+    courseType: "theory",
   });
 
-  // keep local copy for showing latest after save (even if parent doesn't refresh)
   const [localCourse, setLocalCourse] = useState(course);
 
   useEffect(() => {
@@ -34,6 +33,7 @@ export default function TabSettings({ courseId, course, onCourseUpdated }) {
 
   const hasChanges = useMemo(() => {
     if (!localCourse) return false;
+
     return (
       (form.title || "").trim() !== (localCourse.title || "").trim() ||
       (form.section || "").trim() !== (localCourse.section || "").trim() ||
@@ -51,6 +51,7 @@ export default function TabSettings({ courseId, course, onCourseUpdated }) {
   const handleCancel = () => {
     setEditMode(false);
     if (!localCourse) return;
+
     setForm({
       title: localCourse.title || "",
       section: localCourse.section || "",
@@ -62,15 +63,20 @@ export default function TabSettings({ courseId, course, onCourseUpdated }) {
 
   const handleSave = async () => {
     const title = (form.title || "").trim();
+
     if (!title) {
-      Swal.fire({ icon: "warning", title: "Title is required" });
+      Swal.fire({
+        icon: "warning",
+        title: "Title is required",
+        confirmButtonColor: "#4f46e5",
+      });
       return;
     }
 
     const confirm = await Swal.fire({
       icon: "question",
       title: "Save changes?",
-      text: "This will update course info for this course.",
+      text: "This will update course information.",
       showCancelButton: true,
       confirmButtonText: "Save",
       cancelButtonText: "Cancel",
@@ -92,20 +98,18 @@ export default function TabSettings({ courseId, course, onCourseUpdated }) {
 
       const updated = await updateCourseRequest(courseId, payload);
 
-      // Option 1: update local (this tab)
       setLocalCourse(updated);
       setEditMode(false);
 
-      // Option 2 (recommended): update parent course state so header updates too
       if (typeof onCourseUpdated === "function") {
         onCourseUpdated(updated);
       } else {
-        // fallback: refetch (so layout/header updates if parent uses same object reference)
-        // if parent doesn't re-render, at least this tab stays updated.
         try {
           const fresh = await fetchCourseById(courseId);
           setLocalCourse(fresh);
-        } catch {}
+        } catch {
+          // ignore fallback fetch error
+        }
       }
 
       Swal.fire({
@@ -128,172 +132,329 @@ export default function TabSettings({ courseId, course, onCourseUpdated }) {
 
   if (!localCourse) return null;
 
+  const typeBadgeClass =
+    (localCourse.courseType || "theory").toLowerCase() === "lab"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+      : (localCourse.courseType || "theory").toLowerCase() === "hybrid"
+      ? "border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-500/20 dark:bg-purple-500/10 dark:text-purple-300"
+      : "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300";
+
+  const courseTypeLabel =
+    (localCourse.courseType || "theory").toLowerCase() === "lab"
+      ? "Lab"
+      : (localCourse.courseType || "theory").toLowerCase() === "hybrid"
+      ? "Hybrid"
+      : "Theory";
+
   return (
     <div className="space-y-6">
-      {/* Card */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-5 md:p-6 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h3 className="text-base font-semibold text-slate-900">Course Settings</h3>
-            <p className="text-sm text-slate-500 mt-1">
-              View and update course information.
-            </p>
-          </div>
+      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="bg-gradient-to-r from-slate-50 via-white to-indigo-50/70 px-6 py-5 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/40">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                <SettingsIcon />
+                Course Settings
+              </div>
 
-          <div className="flex gap-2">
-            {!editMode ? (
-              <button
-                type="button"
-                onClick={() => setEditMode(true)}
-                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-              >
-                Edit
-              </button>
-            ) : (
-              <>
+              <h3 className="mt-3 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+                View and update course information
+              </h3>
+
+              <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
+                Edit essential course details such as title, section, semester, year,
+                and course type.
+              </p>
+
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <InfoPill label="Code" value={localCourse.code || "—"} />
+                <InfoPill label="Semester" value={localCourse.semester || "—"} />
+                <InfoPill label="Year" value={localCourse.year || "—"} />
+                <span
+                  className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${typeBadgeClass}`}
+                >
+                  {courseTypeLabel}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              {!editMode ? (
                 <button
                   type="button"
-                  onClick={handleCancel}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  onClick={() => setEditMode(true)}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-700"
                 >
-                  Cancel
+                  <EditIcon />
+                  Edit
                 </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleCancel}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                  >
+                    <XIcon />
+                    Cancel
+                  </button>
 
-                <button
-                  type="button"
-                  disabled={saving || !hasChanges}
-                  onClick={handleSave}
-                  className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
-                >
-                  {saving ? "Saving..." : "Save Changes"}
-                </button>
-              </>
-            )}
+                  <button
+                    type="button"
+                    disabled={saving || !hasChanges}
+                    onClick={handleSave}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {saving ? (
+                      <>
+                        <SpinnerIcon />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <SaveIcon />
+                        Save Changes
+                      </>
+                    )}
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Info */}
-        <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Field label="Course Code">
-            <div className="text-sm font-semibold text-slate-900">
-              {localCourse.code}
-            </div>
-            <div className="text-xs text-slate-500 mt-1">
-              Course code is locked (cannot be edited).
-            </div>
-          </Field>
-
-          <Field label="Course Type">
-            {!editMode ? (
-              <div className="text-sm font-medium text-slate-800">
-                {(localCourse.courseType || "theory").toUpperCase()}
+        <div className="p-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Field label="Course Code" locked>
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                {localCourse.code}
               </div>
-            ) : (
-              <select
-                value={form.courseType}
-                onChange={(e) => handleChange("courseType", e.target.value)}
-                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-              >
-                <option value="theory">Theory</option>
-                <option value="lab">Lab</option>
-                <option value="hybrid">Hybrid</option>
-              </select>
-            )}
-          </Field>
-
-          <Field label="Title">
-            {!editMode ? (
-              <div className="text-sm font-medium text-slate-800">
-                {localCourse.title}
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Course code is locked and cannot be edited.
               </div>
-            ) : (
-              <input
-                value={form.title}
-                onChange={(e) => handleChange("title", e.target.value)}
-                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                placeholder="Course title"
-              />
-            )}
-          </Field>
+            </Field>
 
-          <Field label="Section">
-            {!editMode ? (
-              <div className="text-sm font-medium text-slate-800">
-                {localCourse.section || "—"}
-              </div>
-            ) : (
-              <input
-                value={form.section}
-                onChange={(e) => handleChange("section", e.target.value)}
-                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                placeholder="e.g., 54/5"
-              />
-            )}
-          </Field>
+            <Field label="Course Type">
+              {!editMode ? (
+                <DisplayValue value={(localCourse.courseType || "theory").toUpperCase()} />
+              ) : (
+                <select
+                  value={form.courseType}
+                  onChange={(e) => handleChange("courseType", e.target.value)}
+                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                >
+                  <option value="theory">Theory</option>
+                  <option value="lab">Lab</option>
+                  <option value="hybrid">Hybrid</option>
+                </select>
+              )}
+            </Field>
 
-          <Field label="Semester">
-            {!editMode ? (
-              <div className="text-sm font-medium text-slate-800">
-                {localCourse.semester || "—"}
-              </div>
-            ) : (
-              <select
-                value={form.semester}
-                onChange={(e) => handleChange("semester", e.target.value)}
-                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-              >
-                {SEMESTERS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            )}
-          </Field>
+            <Field label="Title">
+              {!editMode ? (
+                <DisplayValue value={localCourse.title || "—"} />
+              ) : (
+                <input
+                  value={form.title}
+                  onChange={(e) => handleChange("title", e.target.value)}
+                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-800 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  placeholder="Course title"
+                />
+              )}
+            </Field>
 
-          <Field label="Year">
-            {!editMode ? (
-              <div className="text-sm font-medium text-slate-800">
-                {localCourse.year || "—"}
-              </div>
-            ) : (
-              <input
-                type="number"
-                value={form.year}
-                onChange={(e) => handleChange("year", e.target.value)}
-                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                min={2000}
-                max={2100}
-              />
-            )}
-          </Field>
-        </div>
+            <Field label="Section">
+              {!editMode ? (
+                <DisplayValue value={localCourse.section || "—"} />
+              ) : (
+                <input
+                  value={form.section}
+                  onChange={(e) => handleChange("section", e.target.value)}
+                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-800 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  placeholder="e.g. 54/5"
+                />
+              )}
+            </Field>
 
-        {editMode && !hasChanges && (
-          <div className="mt-4 text-xs text-slate-500">
-            Make a change to enable <span className="font-semibold">Save</span>.
+            <Field label="Semester">
+              {!editMode ? (
+                <DisplayValue value={localCourse.semester || "—"} />
+              ) : (
+                <select
+                  value={form.semester}
+                  onChange={(e) => handleChange("semester", e.target.value)}
+                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                >
+                  {SEMESTERS.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </Field>
+
+            <Field label="Year">
+              {!editMode ? (
+                <DisplayValue value={localCourse.year || "—"} />
+              ) : (
+                <input
+                  type="number"
+                  value={form.year}
+                  onChange={(e) => handleChange("year", e.target.value)}
+                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-800 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  min={2000}
+                  max={2100}
+                />
+              )}
+            </Field>
           </div>
-        )}
+
+          {editMode && !hasChanges && (
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-400">
+              Make a change to enable <span className="font-semibold">Save Changes</span>.
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Optional future box */}
-      <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-5 text-sm text-slate-500">
-        <h4 className="font-semibold text-slate-700 mb-1">
-          Future Settings (optional)
-        </h4>
-        <p>
-          Later you can add options like locking marks, exporting PDFs, closing attendance, etc.
-        </p>
+      <div className="overflow-hidden rounded-3xl border border-dashed border-slate-300 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <div className="p-6">
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+              <FutureIcon />
+            </div>
+
+            <div>
+              <h4 className="text-base font-semibold text-slate-800 dark:text-slate-100">
+                Future Settings
+              </h4>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Later you can add controls like locking marks, closing attendance,
+                enabling exports, publishing rules, or archive options here.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function Field({ label, children }) {
+function Field({ label, children, locked = false }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50/40 p-4">
-      <div className="text-xs font-semibold text-slate-600">{label}</div>
-      <div className="mt-2">{children}</div>
+    <div
+      className={`rounded-2xl border p-4 ${
+        locked
+          ? "border-slate-200 bg-slate-50/80 dark:border-slate-700 dark:bg-slate-800/50"
+          : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
+      }`}
+    >
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        {label}
+      </div>
+      <div className="mt-3">{children}</div>
     </div>
+  );
+}
+
+function DisplayValue({ value }) {
+  return <div className="text-sm font-medium text-slate-800 dark:text-slate-200">{value}</div>;
+}
+
+function InfoPill({ label, value }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+      <span className="text-slate-500 dark:text-slate-400">{label}:</span>
+      <span>{value}</span>
+    </span>
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" />
+      <path d="M19.4 15a7.9 7.9 0 0 0 .1-2l2-1.5-2-3.5-2.4 1a8 8 0 0 0-1.7-1L15 3H9l-.4 2.5a8 8 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a7.9 7.9 0 0 0 0 2l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 1.7 1L9 21h6l.4-2.5a8 8 0 0 0 1.7-1l2.4 1 2-3.5-2-1.5z" />
+    </svg>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  );
+}
+
+function XIcon() {
+  return (
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
+  );
+}
+
+function SaveIcon() {
+  return (
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+      <path d="M17 21v-8H7v8" />
+      <path d="M7 3v5h8" />
+    </svg>
+  );
+}
+
+function FutureIcon() {
+  return (
+    <svg
+      className="h-5 w-5 text-slate-600 dark:text-slate-300"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M13 3 4 14h7l-1 7 9-11h-7l1-7Z" />
+    </svg>
+  );
+}
+
+function SpinnerIcon() {
+  return (
+    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 0 1 8-8v3a5 5 0 0 0-5 5H4z"
+      />
+    </svg>
   );
 }

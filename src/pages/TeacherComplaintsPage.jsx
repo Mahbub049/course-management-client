@@ -1,5 +1,3 @@
-// client/src/pages/TeacherComplaintsPage.jsx
-
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -10,27 +8,31 @@ import {
 import Swal from "sweetalert2";
 
 const STATUS_BADGE_CLASSES = {
-  open: "bg-rose-50 text-rose-700 border-rose-200",
-  in_review: "bg-amber-50 text-amber-700 border-amber-200",
-  resolved: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  rejected: "bg-slate-100 text-slate-700 border-slate-300", // ✅ new
+  open: "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/20",
+  in_review:
+    "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20",
+  resolved:
+    "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/20",
+  rejected:
+    "bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-700/40 dark:text-slate-300 dark:border-slate-600",
 };
 
 const STATUS_LABEL = {
   open: "Open",
   in_review: "In Review",
   resolved: "Resolved",
-  rejected: "Rejected", // ✅ new
+  rejected: "Rejected",
 };
 
-// ✅ NEW: Category badge classes
 const CATEGORY_BADGE_CLASSES = {
-  marks: "bg-indigo-50 text-indigo-700 border-indigo-200",
-  attendance: "bg-amber-50 text-amber-700 border-amber-200",
-  general: "bg-slate-50 text-slate-700 border-slate-200",
+  marks:
+    "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-300 dark:border-indigo-500/20",
+  attendance:
+    "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20",
+  general:
+    "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
 };
 
-// ✅ NEW: Category label
 const CATEGORY_LABEL = {
   marks: "Marks",
   attendance: "Attendance",
@@ -47,15 +49,10 @@ function formatDate(iso) {
   });
 }
 
-function safeLower(x) {
-  return (x || "").toString().toLowerCase();
-}
-
 function getStudentRoll(student) {
   return student?.roll || student?.username || "—";
 }
 
-// ✅ NEW: Determine component text based on category
 function getComponentText(c) {
   const cat = c?.category || "marks";
 
@@ -70,7 +67,6 @@ function getComponentText(c) {
     return "General Issue";
   }
 
-  // marks
   return c?.assessment?.name || "Whole course";
 }
 
@@ -90,12 +86,10 @@ export default function TeacherComplaintsPage() {
   const [replyDraft, setReplyDraft] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // redirect if not teacher
   useEffect(() => {
     if (role !== "teacher") navigate("/login");
   }, [role, navigate]);
 
-  // load complaints
   useEffect(() => {
     if (role !== "teacher") return;
 
@@ -127,6 +121,7 @@ export default function TeacherComplaintsPage() {
       setComplaints((prev) => prev.map((c) => (c._id === updated._id ? updated : c)));
       setSelected(updated);
       setReplyDraft(updated.reply || "");
+
       Swal.fire({
         icon: "success",
         title: "Done",
@@ -146,21 +141,20 @@ export default function TeacherComplaintsPage() {
     }
   };
 
-  // build course filter options
   const courseOptions = useMemo(() => {
     const map = new Map();
+
     complaints.forEach((c) => {
       if (c.course) {
         const key = c.course._id || c.course.code;
-        const label = `${c.course.code || ""}${c.course.title ? " – " + c.course.title : ""
-          }`;
+        const label = `${c.course.code || ""}${c.course.title ? " – " + c.course.title : ""}`;
         if (!map.has(key)) map.set(key, label);
       }
     });
+
     return Array.from(map.entries());
   }, [complaints]);
 
-  // filter list
   const filteredComplaints = useMemo(() => {
     return complaints.filter((c) => {
       if (statusFilter !== "all" && c.status !== statusFilter) return false;
@@ -173,7 +167,6 @@ export default function TeacherComplaintsPage() {
       if (search.trim()) {
         const q = search.trim().toLowerCase();
 
-        // ✅ NEW: include attendanceRef in search string
         const attendanceText =
           c.category === "attendance" && c.attendanceRef
             ? `${c.attendanceRef.date} period ${c.attendanceRef.period}`
@@ -203,7 +196,6 @@ export default function TeacherComplaintsPage() {
     });
   }, [complaints, statusFilter, courseFilter, search]);
 
-  // stats chips
   const stats = useMemo(() => {
     const total = complaints.length;
     const open = complaints.filter((c) => c.status === "open").length;
@@ -219,15 +211,20 @@ export default function TeacherComplaintsPage() {
 
   const handleSaveReplyOnly = async () => {
     if (!selected) return;
+
     setSaving(true);
     try {
-      const updated = await replyTeacherComplaint(
-        selected._id,
-        replyDraft,
-        selected.status
-      );
+      const updated = await replyTeacherComplaint(selected._id, replyDraft, selected.status);
       setComplaints((prev) => prev.map((c) => (c._id === updated._id ? updated : c)));
       setSelected(updated);
+
+      Swal.fire({
+        icon: "success",
+        title: "Saved",
+        text: "Reply saved successfully.",
+        timer: 1400,
+        showConfirmButton: false,
+      });
     } catch (err) {
       console.error(err);
       Swal.fire({
@@ -242,11 +239,20 @@ export default function TeacherComplaintsPage() {
 
   const handleUpdateStatus = async (newStatus) => {
     if (!selected) return;
+
     setSaving(true);
     try {
       const updated = await replyTeacherComplaint(selected._id, replyDraft, newStatus);
       setComplaints((prev) => prev.map((c) => (c._id === updated._id ? updated : c)));
       setSelected(updated);
+
+      Swal.fire({
+        icon: "success",
+        title: "Updated",
+        text: `Complaint marked as ${STATUS_LABEL[newStatus] || newStatus}.`,
+        timer: 1500,
+        showConfirmButton: false,
+      });
     } catch (err) {
       console.error(err);
       Swal.fire({
@@ -277,34 +283,52 @@ export default function TeacherComplaintsPage() {
     }
   };
 
+  const confirmResolve = async () => {
+    if (!selected) return;
+
+    const result = await Swal.fire({
+      title: "Mark resolved?",
+      text: "This will mark the complaint as resolved.",
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Yes, mark resolved",
+      cancelButtonText: "Cancel",
+      reverseButtons: true,
+    });
+
+    if (result.isConfirmed) {
+      handleUpdateStatus("resolved");
+    }
+  };
+
   const selectedBadge =
     STATUS_BADGE_CLASSES[selected?.status] ||
-    "bg-slate-50 text-slate-700 border-slate-200";
+    "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700";
 
-  // ✅ NEW: selected category badge
   const selectedCategory = selected?.category || "marks";
   const selectedCategoryBadge =
     CATEGORY_BADGE_CLASSES[selectedCategory] ||
-    "bg-slate-50 text-slate-700 border-slate-200";
+    "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700";
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+    <div className="mx-auto space-y-8 px-4 py-1 md:px-6">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div className="min-w-0">
+          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
             <ChatIcon />
             Complaints Center
           </div>
-          <h1 className="mt-2 text-2xl md:text-3xl font-bold tracking-tight text-slate-900">
+
+          <h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
             Review & Reply
           </h1>
-          <p className="mt-1 text-sm text-slate-500 max-w-2xl">
-            Track student complaints by course and component, reply clearly, and update status.
+
+          <p className="mt-2 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
+            Review student complaints, reply clearly, and update complaint status from one place.
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <StatChip label="Total" value={stats.total} />
           <StatChip label="Open" value={stats.open} tone="open" />
           <StatChip label="In Review" value={stats.inReview} tone="in_review" />
@@ -312,7 +336,7 @@ export default function TeacherComplaintsPage() {
 
           <button
             onClick={() => navigate("/teacher/dashboard")}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
           >
             <ArrowLeftIcon />
             Dashboard
@@ -320,10 +344,15 @@ export default function TeacherComplaintsPage() {
         </div>
       </div>
 
-      {/* Filters Toolbar */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-          <div className="text-sm font-semibold text-slate-900">Filters</div>
+      <div className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+          <div>
+            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Filters</div>
+            <div className="text-xs text-slate-500 dark:text-slate-400">
+              Narrow down by status, course, or keywords
+            </div>
+          </div>
+
           <button
             type="button"
             onClick={() => {
@@ -331,17 +360,19 @@ export default function TeacherComplaintsPage() {
               setCourseFilter("all");
               setSearch("");
             }}
-            className="text-xs font-semibold text-slate-600 hover:text-slate-800"
+            className="rounded-lg px-2 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
           >
             Reset
           </button>
         </div>
 
-        <div className="p-6 grid grid-cols-1 md:grid-cols-12 gap-4">
+        <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-12">
           <div className="md:col-span-3">
-            <label className="block text-sm font-semibold text-slate-700">Status</label>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+              Status
+            </label>
             <select
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
             >
@@ -349,13 +380,16 @@ export default function TeacherComplaintsPage() {
               <option value="open">Open</option>
               <option value="in_review">In review</option>
               <option value="resolved">Resolved</option>
+              <option value="rejected">Rejected</option>
             </select>
           </div>
 
-          <div className="md:col-span-5">
-            <label className="block text-sm font-semibold text-slate-700">Course</label>
+          <div className="md:col-span-4">
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+              Course
+            </label>
             <select
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
               value={courseFilter}
               onChange={(e) => setCourseFilter(e.target.value)}
             >
@@ -368,16 +402,18 @@ export default function TeacherComplaintsPage() {
             </select>
           </div>
 
-          <div className="md:col-span-4">
-            <label className="block text-sm font-semibold text-slate-700">Search</label>
-            <div className="relative mt-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+          <div className="md:col-span-5">
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+              Search
+            </label>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
                 <SearchIcon />
               </span>
               <input
                 type="text"
-                className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-                placeholder="Student, roll, course, component, attendance date/period..."
+                className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                placeholder="Search by student, roll, course, component, date, period..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -386,135 +422,147 @@ export default function TeacherComplaintsPage() {
         </div>
       </div>
 
-      {loading && <p className="text-sm text-slate-500">Loading…</p>}
-      {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          <div className="font-semibold">Could not load</div>
-          <div className="opacity-90">{error}</div>
+      {loading && (
+        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+          Loading complaints...
         </div>
       )}
 
-      {/* Main layout: list + details */}
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr),minmax(0,1.4fr)] gap-6">
-        {/* List */}
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+      {error && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
+          <div className="font-semibold">Could not load complaints</div>
+          <div>{error}</div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.7fr),minmax(380px,1fr)]">
+        <div className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
             <div>
-              <div className="text-sm font-semibold text-slate-900">Complaints</div>
-              <div className="text-xs text-slate-500">
-                Showing <span className="font-semibold">{filteredComplaints.length}</span> results
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                Complaints
+              </div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                Showing {filteredComplaints.length} result
+                {filteredComplaints.length === 1 ? "" : "s"}
               </div>
             </div>
           </div>
 
-          <div className="max-h-[520px] overflow-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs font-semibold text-slate-600 sticky top-0">
-                <tr className="border-b border-slate-200">
-                  <th className="px-6 py-3">Date</th>
-                  <th className="px-6 py-3">Course</th>
-                  <th className="px-6 py-3">Student</th>
-                  <th className="px-6 py-3">Component</th>
-                  <th className="px-6 py-3">Status</th>
-                  <th className="px-6 py-3 text-right"></th>
-                </tr>
-              </thead>
+          <div className="max-h-[70vh] overflow-y-auto p-3">
+            {filteredComplaints.length === 0 && !loading ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 px-6 py-12 text-center text-sm text-slate-400 dark:border-slate-700 dark:text-slate-500">
+                No complaints found for the current filters.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredComplaints.map((c) => {
+                  const badgeClass =
+                    STATUS_BADGE_CLASSES[c.status] ||
+                    "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700";
 
-              <tbody className="divide-y divide-slate-100">
-                {filteredComplaints.length === 0 && !loading ? (
-                  <tr>
-                    <td colSpan={6} className="px-6 py-10 text-center text-sm text-slate-400">
-                      No complaints found for the current filters.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredComplaints.map((c) => {
-                    const badgeClass =
-                      STATUS_BADGE_CLASSES[c.status] ||
-                      "bg-slate-50 text-slate-700 border-slate-200";
+                  const cat = c.category || "marks";
+                  const catBadge =
+                    CATEGORY_BADGE_CLASSES[cat] ||
+                    "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700";
 
-                    const cat = c.category || "marks";
-                    const catBadge =
-                      CATEGORY_BADGE_CLASSES[cat] ||
-                      "bg-slate-50 text-slate-700 border-slate-200";
+                  const isActive = selected?._id === c._id;
+                  const componentText = getComponentText(c);
 
-                    const isActive = selected?._id === c._id;
-
-                    const componentText = getComponentText(c);
-
-                    return (
-                      <tr
-                        key={c._id}
-                        className={[
-                          "hover:bg-slate-50 transition",
-                          isActive ? "bg-indigo-50/60" : "",
-                        ].join(" ")}
-                      >
-                        <td className="px-6 py-4 text-xs text-slate-500">
-                          {formatDate(c.createdAt)}
-                        </td>
-
-                        <td className="px-6 py-4">
-                          <div className="font-semibold text-slate-900">{c.course?.code || "—"}</div>
-                          <div className="text-xs text-slate-500 line-clamp-1">
-                            {c.course?.title || ""}
+                  return (
+                    <button
+                      key={c._id}
+                      type="button"
+                      onClick={() => handleSelectComplaint(c)}
+                      className={`w-full rounded-2xl border p-4 text-left transition ${
+                        isActive
+                          ? "border-indigo-300 bg-indigo-50/70 shadow-sm dark:border-indigo-500/30 dark:bg-indigo-500/10"
+                          : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700 dark:hover:bg-slate-800/60"
+                      }`}
+                    >
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="grid flex-1 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                          <div>
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                              Date
+                            </div>
+                            <div className="mt-1 text-sm font-medium text-slate-700 dark:text-slate-300">
+                              {formatDate(c.createdAt)}
+                            </div>
                           </div>
-                        </td>
 
-                        <td className="px-6 py-4">
-                          <div className="font-semibold text-slate-900">{c.student?.name || "Unknown"}</div>
-                          <div className="text-xs text-slate-500">Roll: {getStudentRoll(c.student)}</div>
-                        </td>
+                          <div>
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                              Course
+                            </div>
+                            <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                              {c.course?.code || "—"}
+                            </div>
+                            <div className="mt-0.5 line-clamp-1 text-xs text-slate-500 dark:text-slate-400">
+                              {c.course?.title || "No title"}
+                            </div>
+                          </div>
 
-                        {/* ✅ UPDATED: Component cell shows component + category badge */}
-                        <td className="px-6 py-4">
-                          <div className="text-sm font-semibold text-slate-800">{componentText}</div>
+                          <div>
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                              Student
+                            </div>
+                            <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                              {c.student?.name || "Unknown"}
+                            </div>
+                            <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                              Roll: {getStudentRoll(c.student)}
+                            </div>
+                          </div>
 
-                          <div className="mt-1 flex flex-wrap items-center gap-2">
-                            <span
-                              className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${catBadge}`}
-                              title="Complaint category"
-                            >
-                              {CATEGORY_LABEL[cat] || "Marks"}
-                            </span>
-
-                            {cat === "attendance" && c.attendanceRef?.date && (
-                              <span className="text-[11px] text-slate-500">
-                                Session: {c.attendanceRef.date} • P{c.attendanceRef.period}
+                          <div>
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                              Component
+                            </div>
+                            <div className="mt-1 text-sm font-semibold text-slate-800 dark:text-slate-200">
+                              {componentText}
+                            </div>
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <span
+                                className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${catBadge}`}
+                              >
+                                {CATEGORY_LABEL[cat] || "Marks"}
                               </span>
-                            )}
-                          </div>
-                        </td>
 
-                        <td className="px-6 py-4">
+                              {cat === "attendance" && c.attendanceRef?.date && (
+                                <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                                  {c.attendanceRef.date} • P{c.attendanceRef.period}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3 lg:flex-col lg:items-end">
                           <span
-                            className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${badgeClass}`}
+                            className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${badgeClass}`}
                           >
                             {STATUS_LABEL[c.status] || c.status || "Open"}
                           </span>
-                        </td>
 
-                        <td className="px-6 py-4 text-right">
-                          <button
-                            onClick={() => handleSelectComplaint(c)}
-                            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                          >
-                            View <ChevronIcon />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                          <span className="inline-flex items-center gap-1 text-sm font-semibold text-indigo-600 dark:text-indigo-300">
+                            View
+                            <ChevronIcon />
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Details panel */}
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-            <div className="text-sm font-semibold text-slate-900">Details</div>
+        <div className="h-fit rounded-3xl border border-slate-200 bg-white shadow-sm xl:sticky xl:top-4 dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Details</div>
+
             {selected ? (
               <span
                 className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${selectedBadge}`}
@@ -522,150 +570,157 @@ export default function TeacherComplaintsPage() {
                 {STATUS_LABEL[selected.status] || selected.status || "Open"}
               </span>
             ) : (
-              <span className="text-xs text-slate-400">Select a complaint</span>
+              <span className="text-xs text-slate-400 dark:text-slate-500">Select a complaint</span>
             )}
           </div>
 
-          <div className="p-6">
+          <div className="p-5">
             {!selected ? (
-              <div className="py-12 text-center">
-                <div className="mx-auto h-12 w-12 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center">
+              <div className="py-14 text-center">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
                   <ChatIcon />
                 </div>
-                <h3 className="mt-3 text-sm font-semibold text-slate-900">No complaint selected</h3>
-                <p className="mt-1 text-sm text-slate-500">
-                  Choose an item from the list to read the message and reply.
+                <h3 className="mt-4 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  No complaint selected
+                </h3>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Choose a complaint from the left panel to view its details.
                 </p>
               </div>
             ) : (
-              <>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-base font-bold text-slate-900">
-                      {selected.course?.code} – {selected.course?.title}
-                    </div>
-                    <div className="mt-1 text-sm text-slate-600">
-                      <span className="font-semibold">{selected.student?.name}</span>{" "}
-                      <span className="text-slate-500">(Roll: {getStudentRoll(selected.student)})</span>
-                    </div>
+              <div className="space-y-5">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-950/50">
+                  <div className="text-lg font-bold leading-snug text-slate-900 dark:text-slate-100">
+                    {selected.course?.code || "—"} – {selected.course?.title || "Untitled Course"}
+                  </div>
 
-                    {/* ✅ UPDATED: pills include category + component + attendance session */}
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <Pill label={`Section: ${selected.course?.section || "—"}`} />
+                  <div className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">
+                      {selected.student?.name || "Unknown"}
+                    </span>{" "}
+                    <span>(Roll: {getStudentRoll(selected.student)})</span>
+                  </div>
 
-                      <span
-                        className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${selectedCategoryBadge}`}
-                      >
-                        {CATEGORY_LABEL[selectedCategory] || "Marks"}
-                      </span>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Pill label={`Section: ${selected.course?.section || "—"}`} />
 
-                      <Pill label={`Component: ${getComponentText(selected)}`} />
+                    <span
+                      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${selectedCategoryBadge}`}
+                    >
+                      {CATEGORY_LABEL[selectedCategory] || "Marks"}
+                    </span>
 
-                      {selectedCategory === "attendance" && selected.attendanceRef?.date && (
-                        <Pill
-                          label={`Session: ${selected.attendanceRef.date} (P${selected.attendanceRef.period})`}
-                        />
-                      )}
-                    </div>
+                    <Pill label={`Component: ${getComponentText(selected)}`} />
+
+                    {selectedCategory === "attendance" && selected.attendanceRef?.date && (
+                      <Pill
+                        label={`Session: ${selected.attendanceRef.date} (P${selected.attendanceRef.period})`}
+                      />
+                    )}
                   </div>
                 </div>
 
-                <div className="mt-5">
-                  <div className="text-xs font-semibold text-slate-600 mb-2">Student message</div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 whitespace-pre-wrap">
-                    {selected.message}
+                <div>
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    Student message
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-800 shadow-sm whitespace-pre-wrap dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
+                    {selected.message || "No message provided."}
                   </div>
                 </div>
 
-                <div className="mt-5">
-                  <div className="text-xs font-semibold text-slate-600 mb-2">
-                    Your reply (visible to student)
+                <div>
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    Your reply
                   </div>
+
                   <textarea
-                    className="w-full min-h-[130px] rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                    className="min-h-[170px] w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                     placeholder={
                       selectedCategory === "attendance"
                         ? "Write a clear response (e.g., checked attendance sheet for that date/period and updated)."
                         : selectedCategory === "general"
-                          ? "Write a clear response (e.g., where to check / what will be updated)."
-                          : "Write a clear response about the marks / decision."
+                        ? "Write a clear response (e.g., where to check / what will be updated)."
+                        : "Write a clear response about the marks / decision."
                     }
                     value={replyDraft}
                     onChange={(e) => setReplyDraft(e.target.value)}
                   />
-                  <div className="mt-2 text-xs text-slate-500">
-                    Tip: keep it specific and mention the final decision (updated / not updated / reason).
+
+                  <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    Keep the reply specific and mention the decision clearly.
                   </div>
                 </div>
 
-                <div className="mt-5 flex flex-col gap-3">
+                <div className="space-y-3 border-t border-slate-100 pt-4 dark:border-slate-800">
                   <button
                     onClick={handleSaveReplyOnly}
                     disabled={saving}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {saving ? (
                       <>
-                        <SpinnerIcon /> Saving…
+                        <SpinnerIcon />
+                        Saving...
                       </>
                     ) : (
                       <>
-                        <SaveIcon /> Save Reply
+                        <SaveIcon />
+                        Save Reply
                       </>
                     )}
                   </button>
 
-                  <div className="flex flex-col gap-3">
-                    {/* In Review */}
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <button
                       onClick={() => handleUpdateStatus("in_review")}
                       disabled={saving || selected.status === "in_review"}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500/20"
                     >
-                      <EyeIcon /> Mark In Review
+                      <EyeIcon />
+                      Mark In Review
                     </button>
 
-                    {/* Attendance */}
-                    {selectedCategory === "attendance" && (
+                    {selectedCategory === "attendance" ? (
                       <button
                         onClick={handleResolveAttendance}
                         disabled={saving || selected.status === "resolved"}
-                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300 dark:hover:bg-emerald-500/20"
                       >
-                        <CheckIcon /> Resolve & Update Attendance
+                        <CheckIcon />
+                        Resolve & Update Attendance
                       </button>
-                    )}
-
-                    {/* Marks */}
-                    {selectedCategory === "marks" && (
+                    ) : (
                       <button
-                        onClick={() => navigate(`/teacher/courses/${selected.course?._id}`)}
-                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-semibold text-indigo-800 hover:bg-indigo-100"
+                        onClick={confirmResolve}
+                        disabled={saving || selected.status === "resolved"}
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300 dark:hover:bg-emerald-500/20"
                       >
-                        <ChevronIcon /> Open Marks Entry
+                        <CheckIcon />
+                        Mark Resolved
                       </button>
                     )}
-
-                    {/* Manual Resolve */}
-                    <button
-                      onClick={confirmReject}
-                      disabled={saving || selected.status === "resolved"}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
-                    >
-                      <CheckIcon /> Mark Resolved
-                    </button>
-
-                    {/* ✅ NEW Reject Button */}
-                    <button
-                      onClick={confirmReject}
-                      disabled={saving || selected.status === "rejected"}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-200 disabled:opacity-60"
-                    >
-                      ✕ Reject Complaint
-                    </button>
                   </div>
+
+                  {selectedCategory === "marks" && (
+                    <button
+                      onClick={() => navigate(`/teacher/courses/${selected.course?._id}`)}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-800 transition hover:bg-indigo-100 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
+                    >
+                      <ChevronIcon />
+                      Open Marks Entry
+                    </button>
+                  )}
+
+                  <button
+                    onClick={confirmReject}
+                    disabled={saving || selected.status === "rejected"}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                  >
+                    ✕ Reject Complaint
+                  </button>
                 </div>
-              </>
+              </div>
             )}
           </div>
         </div>
@@ -674,11 +729,9 @@ export default function TeacherComplaintsPage() {
   );
 }
 
-/* ---------------- UI bits ---------------- */
-
 function Pill({ label }) {
   return (
-    <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+    <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
       {label}
     </span>
   );
@@ -687,12 +740,12 @@ function Pill({ label }) {
 function StatChip({ label, value, tone }) {
   const cls =
     tone === "open"
-      ? "bg-rose-50 text-rose-700 border-rose-200"
+      ? "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/20"
       : tone === "in_review"
-        ? "bg-amber-50 text-amber-700 border-amber-200"
-        : tone === "resolved"
-          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-          : "bg-slate-50 text-slate-700 border-slate-200";
+      ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20"
+      : tone === "resolved"
+      ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/20"
+      : "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700";
 
   return (
     <span
@@ -703,8 +756,6 @@ function StatChip({ label, value, tone }) {
     </span>
   );
 }
-
-/* ---------------- Icons ---------------- */
 
 function SearchIcon() {
   return (
@@ -717,7 +768,13 @@ function SearchIcon() {
 
 function ChatIcon() {
   return (
-    <svg className="h-4 w-4 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-4 w-4 text-slate-700 dark:text-slate-200"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
     </svg>
   );
@@ -769,12 +826,15 @@ function CheckIcon() {
 function SpinnerIcon() {
   return (
     <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path
-        className="opacity-75"
-        fill="currentColor"
-        d="M4 12a8 8 0 0 1 8-8v3a5 5 0 0 0-5 5H4z"
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
       />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v3a5 5 0 0 0-5 5H4z" />
     </svg>
   );
 }

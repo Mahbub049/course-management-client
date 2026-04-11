@@ -258,7 +258,7 @@ export default function TeacherCoursesPage() {
           <div className="absolute bottom-0 left-1/3 h-40 w-40 rounded-full bg-cyan-200/30 blur-3xl dark:bg-cyan-500/10" />
         </div>
 
-        <div className="relative p-4 sm:p-6 md:p-8">
+        <div className="relative p-4 sm:p-5 md:p-6">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0 flex-1">
               <div className="inline-flex items-center gap-2 rounded-full border border-primary-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-primary-700 shadow-sm backdrop-blur dark:border-primary-900/50 dark:bg-slate-900/80 dark:text-primary-300">
@@ -267,7 +267,7 @@ export default function TeacherCoursesPage() {
               </div>
 
               <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                <div>
+                <div className="min-w-0">
                   <h1 className="text-2xl font-bold tracking-tight md:text-3xl xl:text-[2rem] text-slate-900 dark:text-white">
                     {viewMode === "archived"
                       ? "Archived Courses"
@@ -306,15 +306,15 @@ export default function TeacherCoursesPage() {
                 </button>
               </div>
 
-              <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {/* <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <StatCard label="Total" value={counts.all} />
                 <StatCard label="Theory" value={counts.theory} />
                 <StatCard label="Lab" value={counts.lab} />
                 <StatCard label="Hybrid" value={counts.hybrid} />
-              </div>
+              </div> */}
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:w-auto xl:min-w-[320px]">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:w-auto xl:min-w-[300px]">
               <button
                 type="button"
                 onClick={() => navigate("/teacher/create-course")}
@@ -374,9 +374,9 @@ export default function TeacherCoursesPage() {
       )}
 
       <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/80">
-        <div className="border-b border-slate-100 px-4 py-4 sm:px-6 dark:border-slate-800">
+        <div className="border-b border-slate-100 px-4 py-4 sm:px-5 dark:border-slate-800">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
+            <div className="min-w-0">
               <h2 className="text-base font-semibold text-slate-900 dark:text-white">
                 {viewMode === "archived" ? "Archived Courses" : "Your Courses"}
               </h2>
@@ -426,26 +426,35 @@ export default function TeacherCoursesPage() {
           </div>
         ) : (
           <>
-            <div className="hidden overflow-x-auto md:block">
-              <table className="min-w-full text-sm">
+            <div className="hidden w-full overflow-x-auto md:block">
+              <table className="w-full min-w-[860px] table-fixed text-sm">
+                <colgroup>
+                  <col className="w-[110px]" />
+                  <col className="w-[38%]" />
+                  <col className="w-[110px]" />
+                  <col className="w-[120px]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[220px]" />
+                </colgroup>
+
                 <thead className="bg-slate-50 dark:bg-slate-900/80">
                   <tr className="border-b border-slate-200 dark:border-slate-800">
-                    <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide whitespace-nowrap text-slate-600 dark:text-slate-400">
                       Code
                     </th>
-                    <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
                       Title
                     </th>
-                    <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide whitespace-nowrap text-slate-600 dark:text-slate-400">
                       Section
                     </th>
-                    <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide whitespace-nowrap text-slate-600 dark:text-slate-400">
                       Semester
                     </th>
-                    <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide whitespace-nowrap text-slate-600 dark:text-slate-400">
                       Year
                     </th>
-                    <th className="px-5 py-4 text-right text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide whitespace-nowrap text-slate-600 dark:text-slate-400">
                       Actions
                     </th>
                   </tr>
@@ -508,45 +517,45 @@ function DesktopCourseRow({
 
   return (
     <tr className="transition hover:bg-slate-50 dark:hover:bg-slate-900/60">
-      <td className="whitespace-nowrap px-5 py-4 font-semibold text-slate-900 dark:text-slate-100">
+      <td className="whitespace-nowrap px-4 py-4 font-semibold text-slate-900 dark:text-slate-100">
         {course.code}
       </td>
 
-      <td className="px-5 py-4">
+      <td className="px-4 py-4">
         <button
           type="button"
           onClick={() => openCourse(course)}
-          className="w-full text-left"
+          className="block w-full min-w-0 text-left"
           title="Open course"
         >
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-slate-900 transition hover:text-primary-700 dark:text-slate-100 dark:hover:text-primary-300">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate font-medium text-slate-900 transition hover:text-primary-700 dark:text-slate-100 dark:hover:text-primary-300">
               {course.title}
             </span>
             <span
-              className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold ${badgeClass}`}
+              className={`shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${badgeClass}`}
             >
               {label}
             </span>
           </div>
-          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          <div className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
             {course.semester || "-"} • {course.year || "-"} • Section {course.section || "-"}
           </div>
         </button>
       </td>
 
-      <td className="whitespace-nowrap px-5 py-4 text-slate-600 dark:text-slate-300">
+      <td className="whitespace-nowrap px-4 py-4 text-slate-600 dark:text-slate-300">
         {course.section || "-"}
       </td>
-      <td className="whitespace-nowrap px-5 py-4 text-slate-600 dark:text-slate-300">
+      <td className="whitespace-nowrap px-4 py-4 text-slate-600 dark:text-slate-300">
         {course.semester || "-"}
       </td>
-      <td className="whitespace-nowrap px-5 py-4 text-slate-600 dark:text-slate-300">
+      <td className="whitespace-nowrap px-4 py-4 text-slate-600 dark:text-slate-300">
         {course.year || "-"}
       </td>
 
-      <td className="whitespace-nowrap px-5 py-4 text-right">
-        <div className="flex justify-end gap-2">
+      <td className="px-4 py-4 text-right">
+        <div className="flex flex-wrap justify-end gap-1.5">
           <ActionButton
             onClick={() => openCourse(course)}
             className="border-primary-200 text-primary-700 hover:bg-primary-50 dark:border-primary-900/60 dark:text-primary-300 dark:hover:bg-primary-950/40"
@@ -760,7 +769,7 @@ function ActionButton({ children, className = "", ...props }) {
   return (
     <button
       type="button"
-      className={`inline-flex items-center gap-2 rounded-xl border bg-white px-3 py-2 text-xs font-semibold transition disabled:opacity-60 dark:bg-slate-950 ${className}`}
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-lg border bg-white px-2 py-1.5 text-[11px] font-semibold transition disabled:opacity-60 dark:bg-slate-950 ${className}`}
       {...props}
     >
       {children}

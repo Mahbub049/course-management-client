@@ -1,6 +1,5 @@
-// client/src/pages/teacherCourse/TabAssessments.jsx
-
 import { useEffect, useMemo, useState } from "react";
+import Swal from "sweetalert2";
 import {
   fetchAssessments,
   createAssessmentRequest,
@@ -9,12 +8,10 @@ import {
 } from "../../services/assessmentService";
 
 function getCourseType(course) {
-  // ✅ STRICT: never guess from title/code
   return (course?.courseType || "theory").toLowerCase();
 }
 
 function normalizeOrders(list) {
-  // if order missing, fallback to index for stable UI
   return (list || []).map((a, idx) => ({
     ...a,
     order: Number.isFinite(Number(a.order)) ? Number(a.order) : idx,
@@ -27,7 +24,7 @@ function sortByOrder(list) {
     const ao = Number(a.order ?? 0);
     const bo = Number(b.order ?? 0);
     if (ao !== bo) return ao - bo;
-    // tie-breaker
+
     const at = new Date(a.createdAt || 0).getTime();
     const bt = new Date(b.createdAt || 0).getTime();
     return at - bt;
@@ -41,10 +38,9 @@ function classifyForBadge(nameRaw, courseType) {
     if (name.includes("mid")) return "mid";
     if (name.includes("final")) return "final";
     if (name.includes("att") || name.includes("attendance")) return "attendance";
-    return "lab"; // everything else => lab assessment
+    return "lab";
   }
 
-  // theory
   if (name.includes("ct") || name.includes("class test") || name.includes("class-test")) return "ct";
   if (name.includes("mid")) return "mid";
   if (name.includes("final")) return "final";
@@ -66,14 +62,25 @@ function badgeLabel(type) {
 }
 
 function badgeClass(type) {
-  if (type === "final") return "bg-rose-50 text-rose-700 border-rose-200";
-  if (type === "mid") return "bg-amber-50 text-amber-700 border-amber-200";
-  if (type === "ct") return "bg-sky-50 text-sky-700 border-sky-200";
-  if (type === "attendance") return "bg-emerald-50 text-emerald-700 border-emerald-200";
-  if (type === "assignment" || type === "presentation")
-    return "bg-purple-50 text-purple-700 border-purple-200";
-  if (type === "lab") return "bg-indigo-50 text-indigo-700 border-indigo-200";
-  return "bg-slate-50 text-slate-700 border-slate-200";
+  if (type === "final") {
+    return "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300";
+  }
+  if (type === "mid") {
+    return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300";
+  }
+  if (type === "ct") {
+    return "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300";
+  }
+  if (type === "attendance") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300";
+  }
+  if (type === "assignment" || type === "presentation") {
+    return "border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-500/20 dark:bg-purple-500/10 dark:text-purple-300";
+  }
+  if (type === "lab") {
+    return "border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300";
+  }
+  return "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300";
 }
 
 function reorderArray(arr, fromIndex, toIndex) {
@@ -90,9 +97,7 @@ export default function TabAssessments({ courseId, course }) {
 
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState(null);
-
   const [dragId, setDragId] = useState(null);
-
   const [query, setQuery] = useState("");
 
   const courseType = useMemo(() => getCourseType(course), [course]);
@@ -103,7 +108,6 @@ export default function TabAssessments({ courseId, course }) {
     fullMarks: "",
   });
 
-  // keep default type in sync if user switches courseType
   useEffect(() => {
     setForm((prev) => ({
       ...prev,
@@ -113,7 +117,6 @@ export default function TabAssessments({ courseId, course }) {
 
   const canReorder = query.trim() === "";
 
-  // load
   useEffect(() => {
     const load = async () => {
       setLoading(true);
@@ -194,14 +197,23 @@ export default function TabAssessments({ courseId, course }) {
         fullMarks,
       });
 
-      // append with new order at bottom
       setAssessments((prev) => {
         const list = sortByOrder(prev);
-        const nextOrder = list.length ? Number(list[list.length - 1].order ?? list.length - 1) + 1 : 0;
+        const nextOrder = list.length
+          ? Number(list[list.length - 1].order ?? list.length - 1) + 1
+          : 0;
         return sortByOrder([...list, { ...created, order: nextOrder }]);
       });
 
       setForm((prev) => ({ ...prev, name: "", fullMarks: "" }));
+
+      Swal.fire({
+        icon: "success",
+        title: "Assessment added",
+        text: "The assessment has been created successfully.",
+        timer: 1400,
+        showConfirmButton: false,
+      });
     } catch (err) {
       console.error(err);
       setAssessmentError(err?.response?.data?.message || "Failed to create assessment");
@@ -210,18 +222,40 @@ export default function TabAssessments({ courseId, course }) {
     }
   };
 
-  const quickAdd = (name, fullMarks) => {
-    setForm((prev) => ({ ...prev, name, fullMarks: String(fullMarks) }));
+  const quickAdd = (name, fullMarks, typeValue) => {
+    setForm((prev) => ({
+      ...prev,
+      type: typeValue || prev.type,
+      name,
+      fullMarks: String(fullMarks),
+    }));
   };
 
   const removeAssessment = async (assessmentId) => {
-    const ok = window.confirm("Delete this assessment? All related marks will also be deleted.");
-    if (!ok) return;
+    const result = await Swal.fire({
+      title: "Delete this assessment?",
+      text: "All related marks for this assessment will also be deleted.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Delete",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#e11d48",
+    });
+
+    if (!result.isConfirmed) return;
 
     try {
       setBusyId(assessmentId);
       await deleteAssessmentRequest(assessmentId);
       setAssessments((prev) => prev.filter((a) => String(a._id) !== String(assessmentId)));
+
+      Swal.fire({
+        icon: "success",
+        title: "Deleted",
+        text: "Assessment removed successfully.",
+        timer: 1300,
+        showConfirmButton: false,
+      });
     } catch (err) {
       console.error(err);
       setAssessmentError(err?.response?.data?.message || "Failed to delete assessment.");
@@ -231,7 +265,6 @@ export default function TabAssessments({ courseId, course }) {
   };
 
   const persistOrders = async (nextList) => {
-    // order = 0..n-1
     const ops = nextList.map((a, idx) => updateAssessmentRequest(a._id, { order: idx }));
     await Promise.all(ops);
   };
@@ -240,14 +273,16 @@ export default function TabAssessments({ courseId, course }) {
     const fromId = dragId;
     if (!fromId || fromId === toId) return;
 
-    const full = orderedAssessments; // reorder based on full list
+    const full = orderedAssessments;
     const fromIndex = full.findIndex((x) => String(x._id) === String(fromId));
     const toIndex = full.findIndex((x) => String(x._id) === String(toId));
     if (fromIndex < 0 || toIndex < 0) return;
 
-    const next = reorderArray(full, fromIndex, toIndex).map((x, i) => ({ ...x, order: i }));
+    const next = reorderArray(full, fromIndex, toIndex).map((x, i) => ({
+      ...x,
+      order: i,
+    }));
 
-    // optimistic UI
     setAssessments(next);
 
     try {
@@ -264,123 +299,148 @@ export default function TabAssessments({ courseId, course }) {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm px-6 py-5">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h3 className="text-xl font-bold text-slate-900">Assessment Setup</h3>
-            <p className="text-sm text-slate-500 mt-1">{headerHint}</p>
+      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="bg-gradient-to-r from-slate-50 via-white to-indigo-50/70 px-6 py-5 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/40">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h3 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+                Assessment Setup
+              </h3>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                {headerHint}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
+                  courseType === "lab"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+                    : "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300"
+                }`}
+              >
+                {courseType === "lab" ? "Lab Course" : "Theory Course"}
+              </span>
+
+              <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                Total: {assessments.length}
+              </span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span
-              className={`inline-flex items-center rounded-full px-3 py-1 border text-xs font-semibold ${
-                courseType === "lab"
-                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                  : "bg-sky-50 text-sky-700 border-sky-200"
-              }`}
-            >
-              {courseType === "lab" ? "Lab Course" : "Theory Course"}
-            </span>
-
-            <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
-              Total: {assessments.length}
-            </span>
-          </div>
-        </div>
-
-        {assessmentError && (
-          <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            {assessmentError}
-          </div>
-        )}
-      </div>
-
-      {/* Add Assessment */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm px-6 py-5">
-        <h4 className="font-semibold text-slate-900 mb-3">Add Assessment</h4>
-
-        <form onSubmit={onCreate} className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
-          <div className="lg:col-span-3">
-            <label className="block text-sm font-semibold text-slate-700">Type</label>
-            <select
-              value={form.type}
-              onChange={(e) => setForm((p) => ({ ...p, type: e.target.value }))}
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
-            >
-              {typeOptions.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="lg:col-span-6">
-            <label className="block text-sm font-semibold text-slate-700">Name</label>
-            <input
-              value={form.name}
-              onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-              placeholder={courseType === "lab" ? "Lab Assessment 01 / Experiment 01" : "CT1 / Mid / Final"}
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
-            />
-          </div>
-
-          <div className="lg:col-span-2">
-            <label className="block text-sm font-semibold text-slate-700">Full Marks</label>
-            <input
-              value={form.fullMarks}
-              onChange={(e) => setForm((p) => ({ ...p, fullMarks: e.target.value }))}
-              placeholder={courseType === "lab" ? "10 / 30 / 40" : "10 / 30 / 40"}
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
-            />
-          </div>
-
-          <div className="lg:col-span-1 flex justify-end">
-            <button
-              type="submit"
-              disabled={creating}
-              className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
-            >
-              {creating ? "Adding..." : "Add"}
-            </button>
-          </div>
-        </form>
-
-        {/* Quick */}
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-slate-500 mr-1 font-semibold">Quick:</span>
-
-          {courseType === "lab" ? (
-            <>
-              <QuickPill label="Lab Assessment (10)" onClick={() => quickAdd("Lab Assessment", 10)} />
-              <QuickPill label="Mid (30)" onClick={() => quickAdd("Mid", 30)} />
-              <QuickPill label="Final (40)" onClick={() => quickAdd("Final", 40)} />
-              <QuickPill label="Attendance (5)" onClick={() => quickAdd("Attendance", 5)} />
-            </>
-          ) : (
-            <>
-              <QuickPill label="CT1 (10)" onClick={() => quickAdd("CT1", 10)} />
-              <QuickPill label="CT2 (10)" onClick={() => quickAdd("CT2", 10)} />
-              <QuickPill label="Mid (30)" onClick={() => quickAdd("Mid", 30)} />
-              <QuickPill label="Final (40)" onClick={() => quickAdd("Final", 40)} />
-              <QuickPill label="Presentation (10)" onClick={() => quickAdd("Presentation", 10)} />
-              <QuickPill label="Assignment (10)" onClick={() => quickAdd("Assignment", 10)} />
-              <QuickPill label="Attendance (5)" onClick={() => quickAdd("Attendance", 5)} />
-            </>
+          {assessmentError && (
+            <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
+              {assessmentError}
+            </div>
           )}
         </div>
       </div>
 
-      {/* Existing Assessments */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+      <div className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="border-b border-slate-100 px-6 py-4 dark:border-slate-800">
+          <h4 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+            Add Assessment
+          </h4>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            Create new assessment items for this course.
+          </p>
+        </div>
+
+        <div className="px-6 py-5">
+          <form onSubmit={onCreate} className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-end">
+            <div className="lg:col-span-3">
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                Type
+              </label>
+              <select
+                value={form.type}
+                onChange={(e) => setForm((p) => ({ ...p, type: e.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              >
+                {typeOptions.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="lg:col-span-6">
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                Name
+              </label>
+              <input
+                value={form.name}
+                onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                placeholder={
+                  courseType === "lab"
+                    ? "Lab Assessment 01 / Experiment 01"
+                    : "CT1 / Mid / Final"
+                }
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              />
+            </div>
+
+            <div className="lg:col-span-2">
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                Full Marks
+              </label>
+              <input
+                value={form.fullMarks}
+                onChange={(e) => setForm((p) => ({ ...p, fullMarks: e.target.value }))}
+                placeholder="10 / 30 / 40"
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              />
+            </div>
+
+            <div className="lg:col-span-1">
+              <button
+                type="submit"
+                disabled={creating}
+                className="inline-flex w-full items-center justify-center rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {creating ? "Adding..." : "Add"}
+              </button>
+            </div>
+          </form>
+
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            <span className="mr-1 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+              Quick add
+            </span>
+
+            {courseType === "lab" ? (
+              <>
+                <QuickPill label="Lab Assessment (10)" onClick={() => quickAdd("Lab Assessment", 10, "lab")} />
+                <QuickPill label="Mid (30)" onClick={() => quickAdd("Mid", 30, "mid")} />
+                <QuickPill label="Final (40)" onClick={() => quickAdd("Final", 40, "final")} />
+                <QuickPill label="Attendance (5)" onClick={() => quickAdd("Attendance", 5, "attendance")} />
+              </>
+            ) : (
+              <>
+                <QuickPill label="CT1 (10)" onClick={() => quickAdd("CT1", 10, "ct")} />
+                <QuickPill label="CT2 (10)" onClick={() => quickAdd("CT2", 10, "ct")} />
+                <QuickPill label="Mid (30)" onClick={() => quickAdd("Mid", 30, "mid")} />
+                <QuickPill label="Final (40)" onClick={() => quickAdd("Final", 40, "final")} />
+                <QuickPill label="Presentation (10)" onClick={() => quickAdd("Presentation", 10, "presentation")} />
+                <QuickPill label="Assignment (10)" onClick={() => quickAdd("Assignment", 10, "assignment")} />
+                <QuickPill label="Attendance (5)" onClick={() => quickAdd("Attendance", 5, "attendance")} />
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex flex-col gap-4 border-b border-slate-100 px-6 py-4 md:flex-row md:items-center md:justify-between dark:border-slate-800">
           <div>
-            <div className="font-semibold text-slate-900">Existing Assessments</div>
-            <div className="text-xs text-slate-500">
+            <div className="font-semibold text-slate-900 dark:text-slate-100">
+              Existing Assessments
+            </div>
+            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               Showing {filteredAssessments.length} of {assessments.length}
               {!canReorder && (
-                <span className="ml-2 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                <span className="ml-2 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
                   Clear search to reorder
                 </span>
               )}
@@ -392,20 +452,24 @@ export default function TabAssessments({ courseId, course }) {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search name / type / marks..."
-              className="w-[280px] rounded-xl border border-slate-200 bg-white pl-9 pr-3 py-2 text-sm"
+              className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 md:w-[300px] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
             />
-            <span className="absolute left-3 top-2.5 text-slate-400">
+            <span className="absolute left-3 top-3.5 text-slate-400 dark:text-slate-500">
               <SearchIcon />
             </span>
           </div>
         </div>
 
         {loading ? (
-          <div className="px-6 py-6 text-sm text-slate-500">Loading assessments…</div>
+          <div className="px-6 py-6 text-sm text-slate-500 dark:text-slate-400">
+            Loading assessments...
+          </div>
         ) : filteredAssessments.length === 0 ? (
-          <div className="px-6 py-10 text-center text-sm text-slate-500">No assessments found.</div>
+          <div className="px-6 py-12 text-center text-sm text-slate-500 dark:text-slate-400">
+            No assessments found.
+          </div>
         ) : (
-          <ul className="divide-y divide-slate-100">
+          <ul className="space-y-3 p-4">
             {filteredAssessments.map((a) => {
               const type = classifyForBadge(a?.name, courseType);
 
@@ -425,15 +489,22 @@ export default function TabAssessments({ courseId, course }) {
                     handleDrop(String(a._id));
                   }}
                   className={[
-                    "px-6 py-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between",
-                    canReorder ? "cursor-move" : "cursor-default",
-                    dragId === String(a._id) ? "bg-indigo-50/40" : "",
+                    "rounded-2xl border px-4 py-4 transition",
+                    "flex flex-col gap-3 md:flex-row md:items-center md:justify-between",
+                    canReorder
+                      ? "cursor-move border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700 dark:hover:bg-slate-800/60"
+                      : "cursor-default border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900",
+                    dragId === String(a._id)
+                      ? "border-indigo-300 bg-indigo-50/60 dark:border-indigo-500/30 dark:bg-indigo-500/10"
+                      : "",
                   ].join(" ")}
                   title={canReorder ? "Drag to reorder" : "Clear search to reorder"}
                 >
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <div className="font-semibold text-slate-900 truncate">{a.name}</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="truncate text-base font-semibold text-slate-900 dark:text-slate-100">
+                        {a.name}
+                      </div>
 
                       <span
                         className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${badgeClass(
@@ -444,16 +515,19 @@ export default function TabAssessments({ courseId, course }) {
                       </span>
 
                       {canReorder && (
-                        <span className="ml-1 text-slate-400" title="Drag handle">
+                        <span className="ml-1 text-slate-400 dark:text-slate-500" title="Drag handle">
                           <GripIcon />
                         </span>
                       )}
                     </div>
-                    <div className="text-xs text-slate-500">Used in marks entry table</div>
+
+                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Used in marks entry table
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <div className="text-sm text-slate-700">
+                    <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
                       Full Marks: <span className="font-semibold">{a.fullMarks}</span>
                     </div>
 
@@ -461,7 +535,7 @@ export default function TabAssessments({ courseId, course }) {
                       type="button"
                       disabled={busyId === a._id}
                       onClick={() => removeAssessment(a._id)}
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 text-rose-700 transition hover:bg-rose-100 disabled:opacity-50 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/20"
                       title="Delete"
                     >
                       <XIcon />
@@ -473,22 +547,20 @@ export default function TabAssessments({ courseId, course }) {
           </ul>
         )}
 
-        <div className="px-6 py-3 border-t border-slate-100 text-xs text-slate-500">
-          Tip: drag & drop to sort (clear search to enable).
+        <div className="border-t border-slate-100 px-6 py-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+          Tip: drag and drop to sort. Clear search first to enable reordering.
         </div>
       </div>
     </div>
   );
 }
 
-/* ------------ small components & icons ------------ */
-
 function QuickPill({ label, onClick }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+      className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
     >
       {label}
     </button>
