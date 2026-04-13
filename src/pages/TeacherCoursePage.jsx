@@ -44,13 +44,13 @@ export default function TeacherCoursePage() {
         <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-sm p-6">
           <div className="flex items-center gap-4">
             {/* Spinner */}
-            <div className="h-10 w-10 rounded-full border-4 border-slate-200 border-t-indigo-600 animate-spin" />
+            <div className="h-10 w-10 rounded-full border-4 border-slate-200 border-t-indigo-600 dark:border-slate-700 dark:border-t-indigo-400 animate-spin" />
 
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-900">
+              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                 Loading course...
               </p>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 Please wait while we fetch course details.
               </p>
             </div>
