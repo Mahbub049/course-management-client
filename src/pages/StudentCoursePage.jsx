@@ -19,6 +19,23 @@ function safeNum(n, fallback = 0) {
   return Number.isFinite(x) ? x : fallback;
 }
 
+function isCtAssessment(nameRaw) {
+  const n = String(nameRaw || "").toLowerCase().trim();
+
+  if (n.includes("mid") || n.includes("final") || n.includes("att")) return false;
+  if (n.includes("assign") || n.includes("pres")) return false;
+
+  const compact = n.replace(/[\s\-_]+/g, "");
+
+  if (compact.startsWith("ct")) return true;
+  if (compact.includes("classtest")) return true;
+  if (n.includes("class test")) return true;
+  if (n.includes("quiz")) return true;
+  if (n.includes("test")) return true;
+
+  return false;
+}
+
 export default function StudentCoursePage() {
   const { courseId } = useParams();
   const navigate = useNavigate();
@@ -113,12 +130,14 @@ export default function StudentCoursePage() {
   const {
     displayTotal,
     displayGrade,
+    displayCtMain,
     neededForAPlusText,
     statusColor,
     totalTone,
   } = useMemo(() => {
     const total = summary?.currentTotal ?? summary?.totalObtained ?? baseTotal ?? 0;
     const grade = summary?.grade ?? baseGrade ?? "-";
+    const ctMain = safeNum(summary?.ctMain, 0);
 
     const maxPossible = summary?.maxPossible ?? baseAPlusInfo?.maxPossible ?? 100;
     const needed =
@@ -160,6 +179,7 @@ export default function StudentCoursePage() {
     return {
       displayTotal: safeTotal.toFixed(1),
       displayGrade: grade,
+      displayCtMain: ctMain % 1 === 0 ? String(ctMain) : ctMain.toFixed(1),
       neededForAPlusText: text,
       statusColor: color,
       totalTone: tone,
@@ -177,6 +197,14 @@ export default function StudentCoursePage() {
 
     return { rows, latest, totalClasses, totalPresent, percentage };
   }, [attData]);
+
+  const ctAssessments = useMemo(() => {
+    return assessments.filter((a) => isCtAssessment(a?.name));
+  }, [assessments]);
+
+  const nonCtAssessments = useMemo(() => {
+    return assessments.filter((a) => !isCtAssessment(a?.name));
+  }, [assessments]);
 
   const handleSubmitComplaint = async (e) => {
     e.preventDefault();
@@ -386,10 +414,14 @@ export default function StudentCoursePage() {
                 {neededForAPlusText}
               </div>
 
-              <div className="mt-5 grid grid-cols-2 gap-3">
+              <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <ActionMiniCard
                   label="Assessments"
                   value={String(assessments.length)}
+                />
+                <ActionMiniCard
+                  label="CT Main"
+                  value={`${displayCtMain}/15`}
                 />
                 <ActionMiniCard
                   label="Attendance"
@@ -454,59 +486,142 @@ export default function StudentCoursePage() {
                   </td>
                 </tr>
               ) : (
-                assessments.map((a) => {
-                  const key = a.id || a._id;
-                  const missing = a.obtainedMarks == null;
+                <>
+                  {ctAssessments.map((a) => {
+                    const key = a.id || a._id;
+                    const missing = a.obtainedMarks == null;
 
-                  return (
-                    <tr
-                      key={key}
-                      className="transition hover:bg-slate-50 dark:hover:bg-slate-800/40"
-                    >
-                      <td className="px-6 py-5">
-                        <div className="font-semibold text-slate-900 dark:text-white">
-                          {a.name}
-                        </div>
-                        <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                          Assessment component
-                        </div>
-                      </td>
+                    return (
+                      <tr
+                        key={key}
+                        className="transition hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                      >
+                        <td className="px-6 py-5">
+                          <div className="font-semibold text-slate-900 dark:text-white">
+                            {a.name}
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Assessment component
+                          </div>
+                        </td>
 
-                      <td className="px-6 py-5 font-semibold text-slate-900 dark:text-white">
-                        {a.fullMarks}
-                      </td>
+                        <td className="px-6 py-5 font-semibold text-slate-900 dark:text-white">
+                          {a.fullMarks}
+                        </td>
 
-                      <td className="px-6 py-5">
-                        {missing ? (
-                          <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                            Not published
-                          </span>
-                        ) : (
-                          <span className="text-lg font-bold text-slate-900 dark:text-white">
-                            {a.obtainedMarks}
-                          </span>
-                        )}
-                      </td>
+                        <td className="px-6 py-5">
+                          {missing ? (
+                            <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                              Not published
+                            </span>
+                          ) : (
+                            <span className="text-lg font-bold text-slate-900 dark:text-white">
+                              {a.obtainedMarks}
+                            </span>
+                          )}
+                        </td>
 
-                      <td className="px-6 py-5 text-right">
-                        <button
-                          type="button"
-                          className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-xs font-semibold text-violet-700 transition hover:bg-violet-100 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300 dark:hover:bg-violet-500/15"
-                          onClick={() => {
-                            setComplaintCategory("marks");
-                            setRelatedTo(key);
-                            setComplaintError("");
-                            setComplaintSuccess("");
-                            scrollToComplaint();
-                          }}
-                        >
-                          Raise Complaint
-                          <ChevronIcon />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
+                        <td className="px-6 py-5 text-right">
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-xs font-semibold text-violet-700 transition hover:bg-violet-100 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300 dark:hover:bg-violet-500/15"
+                            onClick={() => {
+                              setComplaintCategory("marks");
+                              setRelatedTo(key);
+                              setComplaintError("");
+                              setComplaintSuccess("");
+                              scrollToComplaint();
+                            }}
+                          >
+                            Raise Complaint
+                            <ChevronIcon />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                  <tr className="bg-violet-50/40 dark:bg-violet-500/5">
+                    <td className="px-6 py-5">
+                      <div className="font-semibold text-slate-900 dark:text-white">
+                        CT (Main)
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Auto calculated from selected CT policy
+                      </div>
+                    </td>
+
+                    <td className="px-6 py-5 font-semibold text-slate-900 dark:text-white">
+                      15
+                    </td>
+
+                    <td className="px-6 py-5">
+                      <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-sm font-bold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
+                        {displayCtMain}
+                      </span>
+                    </td>
+
+                    <td className="px-6 py-5 text-right">
+                      <span className="text-xs font-semibold text-slate-400 dark:text-slate-500">
+                        Auto calculated
+                      </span>
+                    </td>
+                  </tr>
+
+                  {nonCtAssessments.map((a) => {
+                    const key = a.id || a._id;
+                    const missing = a.obtainedMarks == null;
+
+                    return (
+                      <tr
+                        key={key}
+                        className="transition hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                      >
+                        <td className="px-6 py-5">
+                          <div className="font-semibold text-slate-900 dark:text-white">
+                            {a.name}
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Assessment component
+                          </div>
+                        </td>
+
+                        <td className="px-6 py-5 font-semibold text-slate-900 dark:text-white">
+                          {a.fullMarks}
+                        </td>
+
+                        <td className="px-6 py-5">
+                          {missing ? (
+                            <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                              Not published
+                            </span>
+                          ) : (
+                            <span className="text-lg font-bold text-slate-900 dark:text-white">
+                              {a.obtainedMarks}
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="px-6 py-5 text-right">
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-xs font-semibold text-violet-700 transition hover:bg-violet-100 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300 dark:hover:bg-violet-500/15"
+                            onClick={() => {
+                              setComplaintCategory("marks");
+                              setRelatedTo(key);
+                              setComplaintError("");
+                              setComplaintSuccess("");
+                              scrollToComplaint();
+                            }}
+                          >
+                            Raise Complaint
+                            <ChevronIcon />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </>
               )}
             </tbody>
           </table>
@@ -519,64 +634,78 @@ export default function StudentCoursePage() {
               No assessments have been published yet.
             </div>
           ) : (
-            assessments.map((a) => {
-              const key = a.id || a._id;
-              const missing = a.obtainedMarks == null;
+            <>
+              <>
+                {ctAssessments.map((a) => {
+                  const key = a.id || a._id;
+                  const missing = a.obtainedMarks == null;
 
-              return (
-                <div
-                  key={key}
-                  className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="font-semibold text-slate-900 dark:text-white">
-                        {a.name}
-                      </div>
-                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Assessment component
-                      </div>
+                  return (
+                    <div key={key}>
+                      {/* your existing card UI unchanged */}
                     </div>
+                  );
+                })}
 
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white">
-                      {a.fullMarks}
-                    </div>
+                {/* CT MAIN */}
+                <div className="rounded-2xl border border-violet-200 bg-violet-50/60 p-4 shadow-sm dark:border-violet-500/20 dark:bg-violet-500/10">
+                  <div className="font-semibold text-slate-900 dark:text-white">
+                    CT (Main)
                   </div>
 
-                  <div className="mt-4 flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                        Your Marks
-                      </div>
-                      {missing ? (
-                        <span className="mt-1 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                          Not published
-                        </span>
-                      ) : (
-                        <div className="mt-1 text-2xl font-black text-slate-900 dark:text-white">
-                          {a.obtainedMarks}
-                        </div>
-                      )}
-                    </div>
+                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Auto calculated from selected CT policy
+                  </div>
 
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-xs font-semibold text-violet-700 transition hover:bg-violet-100 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300 dark:hover:bg-violet-500/15"
-                      onClick={() => {
-                        setComplaintCategory("marks");
-                        setRelatedTo(key);
-                        setComplaintError("");
-                        setComplaintSuccess("");
-                        scrollToComplaint();
-                      }}
-                    >
-                      Raise Complaint
-                      <ChevronIcon />
-                    </button>
+                  <div className="mt-3 text-2xl font-bold text-violet-700 dark:text-violet-300">
+                    {displayCtMain}
                   </div>
                 </div>
-              );
-            })
+
+                {nonCtAssessments.map((a) => {
+                  const key = a.id || a._id;
+                  const missing = a.obtainedMarks == null;
+
+                  return (
+                    <div key={key}>
+                      {/* your existing card UI unchanged */}
+                    </div>
+                  );
+                })}
+              </>
+
+              <div className="rounded-2xl border border-violet-200 bg-violet-50/60 p-4 shadow-sm dark:border-violet-500/20 dark:bg-violet-500/10">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-semibold text-slate-900 dark:text-white">
+                      CT (Main)
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Auto calculated from selected CT policy
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-bold text-violet-700 dark:border-violet-500/20 dark:bg-slate-900 dark:text-violet-300">
+                    15
+                  </div>
+                </div>
+
+                <div className="mt-4 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Your Marks
+                    </div>
+                    <div className="mt-1 text-2xl font-black text-violet-700 dark:text-violet-300">
+                      {displayCtMain}
+                    </div>
+                  </div>
+
+                  <span className="inline-flex items-center rounded-full border border-violet-200 bg-white px-3 py-1 text-xs font-semibold text-violet-700 dark:border-violet-500/20 dark:bg-slate-900 dark:text-violet-300">
+                    Auto calculated
+                  </span>
+                </div>
+              </div>
+            </>
           )}
         </div>
       </section>

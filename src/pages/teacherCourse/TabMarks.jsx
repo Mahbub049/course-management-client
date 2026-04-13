@@ -46,7 +46,106 @@ function pct(obt, full) {
   return clamp(o, 0, f) / f;
 }
 
-function computeTotal100(courseType, assessments, rowMarks, attendanceMarks5 = 0) {
+function normalizeCtPolicy(course) {
+  const raw = course?.classTestPolicy || {};
+
+  return {
+    mode: raw.mode || "best_n_average_scaled",
+    bestCount:
+      Number(raw.bestCount) > 0
+        ? Number(raw.bestCount)
+        : raw.mode === "best_one_scaled"
+          ? 1
+          : 2,
+    totalWeight:
+      Number(raw.totalWeight) >= 0 ? Number(raw.totalWeight) : 15,
+    manualSelectedAssessmentIds: Array.isArray(raw.manualSelectedAssessmentIds)
+      ? raw.manualSelectedAssessmentIds.map(String)
+      : [],
+  };
+}
+
+function isCtAssessment(nameRaw) {
+  const n = String(nameRaw || "").toLowerCase().trim();
+
+  if (n.includes("mid") || n.includes("final") || n.includes("att")) return false;
+  if (n.includes("assign") || n.includes("present")) return false;
+
+  const compact = n.replace(/[\s\-_]+/g, "");
+
+  if (compact.startsWith("ct")) return true;
+  if (compact.includes("classtest")) return true;
+  if (n.includes("class test")) return true;
+  if (n.includes("quiz")) return true;
+  if (n.includes("test")) return true;
+
+  return false;
+}
+
+function roundPolicyTotal(total) {
+  return total % 1 === 0
+    ? total
+    : total % 1 <= 0.5
+      ? Math.floor(total) + 0.5
+      : Math.ceil(total);
+}
+
+function computeCtScore(course, assessments, rowMarks) {
+  const policy = normalizeCtPolicy(course);
+  const totalWeight = Number(policy.totalWeight || 15);
+
+  const ctRows = (assessments || [])
+    .filter((a) => isCtAssessment(a?.name))
+    .map((a) => ({
+      assessment: a,
+      id: String(a._id),
+      percent: pct(rowMarks?.[a._id], a.fullMarks),
+    }));
+
+  if (!ctRows.length || totalWeight <= 0) return 0;
+
+  if (policy.mode === "manual_average_scaled") {
+    const selected = ctRows.filter((r) =>
+      policy.manualSelectedAssessmentIds.includes(r.id)
+    );
+
+    if (!selected.length) return 0;
+
+    const avg =
+      selected.reduce((sum, item) => sum + item.percent, 0) / selected.length;
+
+    return avg * totalWeight;
+  }
+
+  const sorted = [...ctRows].sort((a, b) => b.percent - a.percent);
+
+  if (policy.mode === "best_one_scaled") {
+    return (sorted[0]?.percent || 0) * totalWeight;
+  }
+
+  const count = Math.max(1, Number(policy.bestCount || 2));
+  const chosen = sorted.slice(0, count);
+
+  if (!chosen.length) return 0;
+
+  if (policy.mode === "best_n_individual_scaled") {
+    const eachWeight = totalWeight / chosen.length;
+    return chosen.reduce((sum, item) => sum + item.percent * eachWeight, 0);
+  }
+
+  const avg =
+    chosen.reduce((sum, item) => sum + item.percent, 0) / chosen.length;
+
+  return avg * totalWeight;
+}
+
+function getCtMain(course, assessments, rowMarks) {
+  const ctScore = computeCtScore(course, assessments, rowMarks);
+  return roundPolicyTotal(ctScore);
+}
+
+function computeTotal100(course, assessments, rowMarks, attendanceMarks5 = 0) {
+  const courseType = getCourseType(course);
   const list = Array.isArray(assessments) ? assessments : [];
   const name = (a) => String(a?.name || "").toLowerCase();
 
@@ -70,46 +169,15 @@ function computeTotal100(courseType, assessments, rowMarks, attendanceMarks5 = 0
     const midScore30 = mid ? pct(rowMarks?.[mid._id], mid.fullMarks) * 30 : 0;
     const finalScore40 = final ? pct(rowMarks?.[final._id], final.fullMarks) * 40 : 0;
 
-    const total = labScore25 + midScore30 + finalScore40 + attScore5;
-    return total % 1 === 0
-      ? total
-      : total % 1 <= 0.5
-      ? Math.floor(total) + 0.5
-      : Math.ceil(total);
+    return roundPolicyTotal(labScore25 + midScore30 + finalScore40 + attScore5);
   }
 
-  const isCT = (nRaw) => {
-    const n = String(nRaw || "").toLowerCase().trim();
-
-    if (n.includes("mid") || n.includes("final") || n.includes("att")) return false;
-    if (n.includes("assign") || n.includes("present")) return false;
-
-    const compact = n.replace(/[\s\-_]+/g, "");
-
-    if (compact.startsWith("ct")) return true;
-    if (compact.includes("classtest")) return true;
-    if (n.includes("class test")) return true;
-    if (n.includes("quiz")) return true;
-    if (n.includes("test")) return true;
-
-    return false;
-  };
-
-  const ctList = list.filter((a) => isCT(a?.name));
   const mid = list.find((a) => name(a).includes("mid"));
   const final = list.find((a) => name(a).includes("final"));
   const presentation = list.find((a) => name(a).includes("present"));
   const assignment = list.find((a) => name(a).includes("assign"));
 
-  const ctPercents = ctList
-    .map((a) => pct(rowMarks?.[a._id], a.fullMarks))
-    .sort((x, y) => y - x);
-
-  const bestTwo = ctPercents.slice(0, 2);
-  const ctAvg = bestTwo.length
-    ? bestTwo.reduce((s, v) => s + v, 0) / bestTwo.length
-    : 0;
-  const ctScore15 = ctAvg * 15;
+  const ctScore = computeCtScore(course, list, rowMarks);
 
   const midScore30 = mid ? pct(rowMarks?.[mid._id], mid.fullMarks) * 30 : 0;
   const finalScore40 = final ? pct(rowMarks?.[final._id], final.fullMarks) * 40 : 0;
@@ -128,12 +196,7 @@ function computeTotal100(courseType, assessments, rowMarks, attendanceMarks5 = 0
     paScore10 = pct(rowMarks?.[assignment._id], assignment.fullMarks) * 10;
   }
 
-  const total = ctScore15 + midScore30 + finalScore40 + paScore10 + attScore5;
-  return total % 1 === 0
-    ? total
-    : total % 1 <= 0.5
-    ? Math.floor(total) + 0.5
-    : Math.ceil(total);
+  return roundPolicyTotal(ctScore + midScore30 + finalScore40 + paScore10 + attScore5);
 }
 
 export default function TabMarks({ courseId, course }) {
@@ -269,7 +332,7 @@ export default function TabMarks({ courseId, course }) {
       const row = marksMap[s.id] || {};
       const att5 = Number(attMarksMap?.[s.id] ?? 0);
       totals[s.id] = computeTotal100(
-        getCourseType(course),
+        course,
         assessments,
         row,
         att5
@@ -280,6 +343,35 @@ export default function TabMarks({ courseId, course }) {
 
   const courseType = getCourseType(course);
   const courseTypeLabel = courseType === "lab" ? "Lab Course" : "Theory Course";
+
+  const ctAssessments = useMemo(() => {
+    return assessments.filter((a) => isCtAssessment(a?.name));
+  }, [assessments]);
+
+  const nonCtAssessments = useMemo(() => {
+    return assessments.filter((a) => !isCtAssessment(a?.name));
+  }, [assessments]);
+
+  const displayAssessments = useMemo(() => {
+    return [...ctAssessments, ...nonCtAssessments];
+  }, [ctAssessments, nonCtAssessments]);
+
+  const currentCtPolicyText =
+    courseType === "lab"
+      ? ""
+      : (() => {
+        const p = normalizeCtPolicy(course);
+        if (p.mode === "best_n_individual_scaled") {
+          return `Best ${p.bestCount} CT individually scaled to ${p.totalWeight}`;
+        }
+        if (p.mode === "best_one_scaled") {
+          return `Best 1 CT scaled to ${p.totalWeight}`;
+        }
+        if (p.mode === "manual_average_scaled") {
+          return `Average of selected CTs scaled to ${p.totalWeight}`;
+        }
+        return `Average of best ${p.bestCount} CT scaled to ${p.totalWeight}`;
+      })();
 
   const stats = useMemo(() => {
     const n = sortedStudents.length;
@@ -619,7 +711,7 @@ export default function TabMarks({ courseId, course }) {
                       Student
                     </th>
 
-                    {assessments.map((a) => (
+                    {ctAssessments.map((a) => (
                       <th
                         key={a._id}
                         className="min-w-[180px] px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300"
@@ -636,11 +728,10 @@ export default function TabMarks({ courseId, course }) {
 
                           <div className="flex flex-wrap items-center gap-2">
                             <span
-                              className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
-                                a.isPublished
-                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
-                                  : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
-                              }`}
+                              className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${a.isPublished
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+                                : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
+                                }`}
                             >
                               {a.isPublished ? "Published" : "Draft"}
                             </span>
@@ -654,8 +745,59 @@ export default function TabMarks({ courseId, course }) {
                               {publishingAssessmentId === a._id
                                 ? "Publishing..."
                                 : a.isPublished
-                                ? "Republish"
-                                : "Publish"}
+                                  ? "Republish"
+                                  : "Publish"}
+                            </button>
+                          </div>
+                        </div>
+                      </th>
+                    ))}
+
+                    <th className="min-w-[130px] px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                      <div className="space-y-1">
+                        <div>CT (Main)</div>
+                        <div className="text-[11px] font-medium normal-case text-slate-400 dark:text-slate-500">
+                          Auto /15
+                        </div>
+                      </div>
+                    </th>
+
+                    {nonCtAssessments.map((a) => (
+                      <th
+                        key={a._id}
+                        className="min-w-[180px] px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300"
+                      >
+                        <div className="space-y-2">
+                          <div>
+                            <div className="text-sm font-semibold normal-case text-slate-800 dark:text-slate-100">
+                              {a.name}
+                            </div>
+                            <div className="mt-0.5 text-[11px] font-medium normal-case text-slate-400 dark:text-slate-500">
+                              Full marks: {a.fullMarks}
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${a.isPublished
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+                                : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
+                                }`}
+                            >
+                              {a.isPublished ? "Published" : "Draft"}
+                            </span>
+
+                            <button
+                              type="button"
+                              onClick={() => handlePublishAssessment(a)}
+                              disabled={publishingAssessmentId === a._id}
+                              className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                            >
+                              {publishingAssessmentId === a._id
+                                ? "Publishing..."
+                                : a.isPublished
+                                  ? "Republish"
+                                  : "Publish"}
                             </button>
                           </div>
                         </div>
@@ -694,7 +836,7 @@ export default function TabMarks({ courseId, course }) {
                           </div>
                         </td>
 
-                        {assessments.map((a, colIndex) => {
+                        {ctAssessments.map((a, colIndex) => {
                           const isAttendanceCol = String(a.name || "")
                             .toLowerCase()
                             .includes("att");
@@ -728,6 +870,60 @@ export default function TabMarks({ courseId, course }) {
                             </td>
                           );
                         })}
+
+                        <td className="px-4 py-3">
+                          <div
+                            title="Calculated from selected CT policy"
+                            className="inline-flex min-w-[72px] items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300"
+                          >
+                            {getCtMain(course, assessments, row)}
+                          </div>
+                        </td>
+
+                        {nonCtAssessments.map((a, index) => {
+                          const actualColIndex = ctAssessments.length + index;
+                          const isAttendanceCol = String(a.name || "")
+                            .toLowerCase()
+                            .includes("att");
+
+                          return (
+                            <td key={a._id} className="px-4 py-3">
+                              <input
+                                type="number"
+                                disabled={isAttendanceCol}
+                                className={[
+                                  "h-11 w-24 rounded-xl border px-3 text-sm shadow-sm transition",
+                                  "focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500",
+                                  isAttendanceCol
+                                    ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                                    : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
+                                ].join(" ")}
+                                value={row[a._id] ?? ""}
+                                onChange={(e) =>
+                                  handleMarkChange(s.id, a._id, e.target.value)
+                                }
+                                onKeyDown={handleKeyDown}
+                                data-row={rowIndex}
+                                data-col={actualColIndex}
+                                ref={(el) => {
+                                  if (!inputRefs.current[rowIndex]) {
+                                    inputRefs.current[rowIndex] = [];
+                                  }
+                                  inputRefs.current[rowIndex][actualColIndex] = el;
+                                }}
+                              />
+                            </td>
+                          );
+                        })}
+
+                        <td className="px-4 py-3">
+                          <div
+                            title="Calculated from selected CT policy"
+                            className="inline-flex min-w-[72px] items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300"
+                          >
+                            {getCtMain(course, assessments, row)}
+                          </div>
+                        </td>
 
                         <td className="px-4 py-3">
                           <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
@@ -809,14 +1005,14 @@ function GradeBadge({ grade }) {
     grade === "A+"
       ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
       : grade === "A" || grade === "A-"
-      ? "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300"
-      : grade === "B+" || grade === "B" || grade === "B-"
-      ? "border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300"
-      : grade === "C+" || grade === "C"
-      ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
-      : grade === "D"
-      ? "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300"
-      : "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300";
+        ? "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300"
+        : grade === "B+" || grade === "B" || grade === "B-"
+          ? "border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300"
+          : grade === "C+" || grade === "C"
+            ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
+            : grade === "D"
+              ? "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300"
+              : "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300";
 
   return (
     <span

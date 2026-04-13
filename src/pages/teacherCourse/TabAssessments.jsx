@@ -6,6 +6,7 @@ import {
   updateAssessmentRequest,
   deleteAssessmentRequest,
 } from "../../services/assessmentService";
+import { updateCourseRequest } from "../../services/courseService";
 
 function getCourseType(course) {
   return (course?.courseType || "theory").toLowerCase();
@@ -90,7 +91,43 @@ function reorderArray(arr, fromIndex, toIndex) {
   return copy;
 }
 
-export default function TabAssessments({ courseId, course }) {
+function getDefaultCtPolicy(course) {
+  const raw = course?.classTestPolicy || {};
+
+  return {
+    mode: raw.mode || "best_n_average_scaled",
+    bestCount:
+      Number(raw.bestCount) > 0
+        ? Number(raw.bestCount)
+        : raw.mode === "best_one_scaled"
+          ? 1
+          : 2,
+    totalWeight:
+      Number(raw.totalWeight) >= 0 ? Number(raw.totalWeight) : 15,
+    manualSelectedAssessmentIds: Array.isArray(raw.manualSelectedAssessmentIds)
+      ? raw.manualSelectedAssessmentIds.map(String)
+      : [],
+  };
+}
+
+function getCtPolicyLabel(policy) {
+  const p = policy || {};
+  const bestCount = Number(p.bestCount || 2);
+  const totalWeight = Number(p.totalWeight || 15);
+
+  if (p.mode === "best_n_individual_scaled") {
+    return `Best ${bestCount} CT individually scaled to ${totalWeight}`;
+  }
+  if (p.mode === "best_one_scaled") {
+    return `Best 1 CT scaled to ${totalWeight}`;
+  }
+  if (p.mode === "manual_average_scaled") {
+    return `Average of manually selected CTs scaled to ${totalWeight}`;
+  }
+  return `Average of best ${bestCount} CT scaled to ${totalWeight}`;
+}
+
+export default function TabAssessments({ courseId, course, onCourseUpdated }) {
   const [assessments, setAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [assessmentError, setAssessmentError] = useState("");
@@ -99,6 +136,9 @@ export default function TabAssessments({ courseId, course }) {
   const [busyId, setBusyId] = useState(null);
   const [dragId, setDragId] = useState(null);
   const [query, setQuery] = useState("");
+
+  const [policyForm, setPolicyForm] = useState(getDefaultCtPolicy(course));
+  const [savingPolicy, setSavingPolicy] = useState(false);
 
   const courseType = useMemo(() => getCourseType(course), [course]);
 
@@ -135,6 +175,10 @@ export default function TabAssessments({ courseId, course }) {
     if (courseId) load();
   }, [courseId]);
 
+  useEffect(() => {
+    setPolicyForm(getDefaultCtPolicy(course));
+  }, [course]);
+
   const orderedAssessments = useMemo(() => sortByOrder(assessments), [assessments]);
 
   const filteredAssessments = useMemo(() => {
@@ -149,27 +193,33 @@ export default function TabAssessments({ courseId, course }) {
     });
   }, [orderedAssessments, query, courseType]);
 
+  const ctAssessments = useMemo(() => {
+    return orderedAssessments.filter(
+      (a) => classifyForBadge(a?.name, courseType) === "ct"
+    );
+  }, [orderedAssessments, courseType]);
+
   const typeOptions =
     courseType === "lab"
       ? [
-          { value: "lab", label: "Lab Assessment" },
-          { value: "mid", label: "Mid" },
-          { value: "final", label: "Final" },
-          { value: "attendance", label: "Attendance" },
-        ]
+        { value: "lab", label: "Lab Assessment" },
+        { value: "mid", label: "Mid" },
+        { value: "final", label: "Final" },
+        { value: "attendance", label: "Attendance" },
+      ]
       : [
-          { value: "ct", label: "Class Test (CT)" },
-          { value: "mid", label: "Mid" },
-          { value: "final", label: "Final" },
-          { value: "attendance", label: "Attendance" },
-          { value: "assignment", label: "Assignment" },
-          { value: "presentation", label: "Presentation" },
-        ];
+        { value: "ct", label: "Class Test (CT)" },
+        { value: "mid", label: "Mid" },
+        { value: "final", label: "Final" },
+        { value: "attendance", label: "Attendance" },
+        { value: "assignment", label: "Assignment" },
+        { value: "presentation", label: "Presentation" },
+      ];
 
   const headerHint =
     courseType === "lab"
       ? "Lab Assessments (average → 25), Mid (30), Final (40), Attendance (5)."
-      : "CT (best two → 15), Mid (30), Final (40), Assignment/Presentation (10), Attendance (5).";
+      : `${getCtPolicyLabel(policyForm)}, Mid (30), Final (40), Assignment/Presentation (10), Attendance (5).`;
 
   const onCreate = async (e) => {
     e.preventDefault();
@@ -297,6 +347,52 @@ export default function TabAssessments({ courseId, course }) {
     }
   };
 
+  const handlePolicySave = async () => {
+    if (courseType === "lab") return;
+
+    const payload = {
+      classTestPolicy: {
+        mode: policyForm.mode,
+        bestCount:
+          policyForm.mode === "best_one_scaled"
+            ? 1
+            : Math.max(1, Number(policyForm.bestCount || 2)),
+        totalWeight: Math.max(0, Number(policyForm.totalWeight || 15)),
+        manualSelectedAssessmentIds:
+          policyForm.mode === "manual_average_scaled"
+            ? (policyForm.manualSelectedAssessmentIds || []).map(String)
+            : [],
+      },
+    };
+
+    try {
+      setSavingPolicy(true);
+
+      const updated = await updateCourseRequest(courseId, payload);
+
+      if (typeof onCourseUpdated === "function") {
+        onCourseUpdated(updated);
+      }
+
+      Swal.fire({
+        icon: "success",
+        title: "CT policy updated",
+        text: "The class test calculation rule has been updated.",
+        timer: 1400,
+        showConfirmButton: false,
+      });
+    } catch (err) {
+      console.error(err);
+      Swal.fire({
+        icon: "error",
+        title: "Update failed",
+        text: err?.response?.data?.message || "Failed to update CT policy.",
+      });
+    } finally {
+      setSavingPolicy(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -313,11 +409,10 @@ export default function TabAssessments({ courseId, course }) {
 
             <div className="flex flex-wrap items-center gap-2">
               <span
-                className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
-                  courseType === "lab"
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
-                    : "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300"
-                }`}
+                className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${courseType === "lab"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+                  : "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300"
+                  }`}
               >
                 {courseType === "lab" ? "Lab Course" : "Theory Course"}
               </span>
@@ -335,6 +430,147 @@ export default function TabAssessments({ courseId, course }) {
           )}
         </div>
       </div>
+
+      {courseType !== "lab" && (
+        <div className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="border-b border-slate-100 px-6 py-4 dark:border-slate-800">
+            <h4 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+              Class Test Policy
+            </h4>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Choose how CT marks will be counted in the final total.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 p-6 md:grid-cols-3">
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200">
+                CT Calculation Method
+              </label>
+              <select
+                value={policyForm.mode}
+                onChange={(e) =>
+                  setPolicyForm((prev) => ({
+                    ...prev,
+                    mode: e.target.value,
+                    bestCount: e.target.value === "best_one_scaled" ? 1 : prev.bestCount,
+                  }))
+                }
+                className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-800 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              >
+                <option value="best_n_average_scaled">Average of best N CTs</option>
+                <option value="best_n_individual_scaled">Best N CTs individually scaled</option>
+                <option value="best_one_scaled">Best 1 CT only</option>
+                <option value="manual_average_scaled">Average of manually selected CTs</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200">
+                Number of CTs to count
+              </label>
+              <input
+                type="number"
+                min="1"
+                disabled={policyForm.mode === "best_one_scaled" || policyForm.mode === "manual_average_scaled"}
+                value={policyForm.mode === "best_one_scaled" ? 1 : policyForm.bestCount}
+                onChange={(e) =>
+                  setPolicyForm((prev) => ({
+                    ...prev,
+                    bestCount: Math.max(1, Number(e.target.value || 1)),
+                  }))
+                }
+                className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-800 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200">
+                Total CT Weight
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                value={policyForm.totalWeight}
+                onChange={(e) =>
+                  setPolicyForm((prev) => ({
+                    ...prev,
+                    totalWeight: Number(e.target.value || 0),
+                  }))
+                }
+                className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-800 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              />
+            </div>
+          </div>
+
+          {policyForm.mode === "manual_average_scaled" && (
+            <div className="border-t border-slate-100 px-6 py-5 dark:border-slate-800">
+              <div className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                Select which CTs will count
+              </div>
+
+              {ctAssessments.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-3 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                  No CT assessments found yet. Create CTs first, then select them here.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {ctAssessments.map((a) => {
+                    const checked = policyForm.manualSelectedAssessmentIds.includes(String(a._id));
+
+                    return (
+                      <label
+                        key={a._id}
+                        className="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-700 shadow-sm dark:border-slate-700 dark:text-slate-200"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            const id = String(a._id);
+
+                            setPolicyForm((prev) => {
+                              const prevIds = prev.manualSelectedAssessmentIds || [];
+
+                              return {
+                                ...prev,
+                                manualSelectedAssessmentIds: e.target.checked
+                                  ? [...prevIds, id]
+                                  : prevIds.filter((x) => x !== id),
+                              };
+                            });
+                          }}
+                          className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span className="font-medium">{a.name}</span>
+                        <span className="ml-auto text-xs text-slate-500 dark:text-slate-400">
+                          {a.fullMarks}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-6 py-4 dark:border-slate-800">
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Current rule: <span className="font-semibold text-slate-700 dark:text-slate-200">{getCtPolicyLabel(policyForm)}</span>
+            </p>
+
+            <button
+              type="button"
+              onClick={handlePolicySave}
+              disabled={savingPolicy}
+              className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {savingPolicy ? "Saving..." : "Save CT Policy"}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="border-b border-slate-100 px-6 py-4 dark:border-slate-800">

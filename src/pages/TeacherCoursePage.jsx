@@ -121,7 +121,11 @@ export default function TeacherCoursePage() {
     >
       {activeTab === "students" && <TabStudents courseId={courseId} />}
       {activeTab === "assessments" && (
-        <TabAssessments courseId={courseId} course={course} />
+        <TabAssessments
+          courseId={courseId}
+          course={course}
+          onCourseUpdated={setCourse}
+        />
       )}
 
       {activeTab === "marks" && <TabMarks courseId={courseId} course={course} />}
