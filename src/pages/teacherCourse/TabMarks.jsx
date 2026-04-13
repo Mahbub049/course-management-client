@@ -916,14 +916,14 @@ export default function TabMarks({ courseId, course }) {
                           );
                         })}
 
-                        <td className="px-4 py-3">
+                        {/* <td className="px-4 py-3">
                           <div
                             title="Calculated from selected CT policy"
                             className="inline-flex min-w-[72px] items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300"
                           >
                             {getCtMain(course, assessments, row)}
                           </div>
-                        </td>
+                        </td> */}
 
                         <td className="px-4 py-3">
                           <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
