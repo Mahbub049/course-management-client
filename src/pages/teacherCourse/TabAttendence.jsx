@@ -16,11 +16,13 @@ function calcPercentage(total, attended) {
 }
 
 function calcMarks(p) {
-  if (p > 90) return 5;
-  if (p > 80) return 4;
-  if (p > 70) return 3;
-  if (p > 60) return 2;
-  if (p > 50) return 1;
+  const percentage = Number(p || 0);
+
+  if (percentage >= 91 && percentage <= 100) return 5;
+  if (percentage >= 86 && percentage < 91) return 4;
+  if (percentage >= 81 && percentage < 86) return 3;
+  if (percentage >= 76 && percentage < 81) return 2;
+  if (percentage >= 70 && percentage < 76) return 1;
   return 0;
 }
 
@@ -201,8 +203,7 @@ export default function TabAttendance({ courseId }) {
               </h3>
 
               <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
-                Marks rule: above 90 = 5, above 80 = 4, above 70 = 3, above 60 = 2,
-                above 50 = 1, otherwise 0.
+                Marks rule: 91–100 = 5, 86–90 = 4, 81–85 = 3, 76–80 = 2, 70–75 = 1, below 70 = 0.
               </p>
 
               <div className="mt-4 flex flex-wrap gap-2">
@@ -383,14 +384,14 @@ function MarksBadge({ value }) {
     value >= 5
       ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
       : value >= 4
-      ? "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300"
-      : value >= 3
-      ? "border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300"
-      : value >= 2
-      ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
-      : value >= 1
-      ? "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300"
-      : "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300";
+        ? "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300"
+        : value >= 3
+          ? "border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300"
+          : value >= 2
+            ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
+            : value >= 1
+              ? "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300"
+              : "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300";
 
   return (
     <span
