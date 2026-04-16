@@ -8,6 +8,7 @@ import {
   getCourseStudents,
   deleteStudentFromCourseRequest,
   resetStudentPasswordRequest,
+  resetAllStudentPasswordsRequest,
   exportCourseStudentsRequest,
   sendPasswordsByEmailRequest,
   removeAllStudentsFromCourseRequest,
@@ -32,6 +33,7 @@ export default function TabStudents({ courseId }) {
   const [bulkLoading, setBulkLoading] = useState(false);
 
   const [regenLoadingId, setRegenLoadingId] = useState(null);
+  const [regenAllLoading, setRegenAllLoading] = useState(false);
   const [removingAll, setRemovingAll] = useState(false);
   const [query, setQuery] = useState("");
   const [emailLoading, setEmailLoading] = useState(false);
@@ -286,6 +288,67 @@ export default function TabStudents({ courseId }) {
       });
     } finally {
       setRegenLoadingId(null);
+    }
+  };
+
+  const handleRegenerateAll = async () => {
+    if (students.length === 0) {
+      await Swal.fire({
+        icon: "info",
+        title: "No students",
+        text: "There are no students to regenerate passwords for.",
+      });
+      return;
+    }
+
+    const result = await Swal.fire({
+      title: "Regenerate all passwords?",
+      html: `
+        <div style="text-align:left">
+          <p>This will generate new temporary passwords for <b>${students.length}</b> students.</p>
+          <p style="margin-top:10px">Previous temporary passwords shown in this table will be replaced.</p>
+        </div>
+      `,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Regenerate All",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#4f46e5",
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      setRegenAllLoading(true);
+
+      const data = await resetAllStudentPasswordsRequest(courseId);
+      const updatedMap = new Map(
+        (data.students || []).map((item) => [String(item.enrollmentId), item.temporaryPassword])
+      );
+
+      setStudents((prev) =>
+        prev.map((s) => ({
+          ...s,
+          temporaryPassword: updatedMap.get(String(s.enrollmentId)) ?? s.temporaryPassword,
+        }))
+      );
+
+      await Swal.fire({
+        icon: "success",
+        title: "Passwords regenerated",
+        text: `${data.totalUpdated || 0} student passwords updated successfully.`,
+        timer: 1500,
+        showConfirmButton: false,
+      });
+    } catch (err) {
+      console.error(err);
+      await Swal.fire({
+        icon: "error",
+        title: "Failed",
+        text: err?.response?.data?.message || "Failed to regenerate all passwords",
+      });
+    } finally {
+      setRegenAllLoading(false);
     }
   };
 
@@ -690,6 +753,23 @@ export default function TabStudents({ courseId }) {
                   </>
                 )}
               </button> */}
+
+              <button
+                onClick={handleRegenerateAll}
+                disabled={regenAllLoading || students.length === 0}
+                className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-60"
+                title="Regenerate temporary passwords for all students"
+              >
+                {regenAllLoading ? (
+                  <>
+                    <SpinnerIcon /> Regenerating...
+                  </>
+                ) : (
+                  <>
+                    <RefreshIcon /> Regenerate All
+                  </>
+                )}
+              </button>
 
               <button
                 onClick={handleExportExcel}

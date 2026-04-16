@@ -38,29 +38,44 @@ export default function TeacherCoursePage() {
     }
     load();
   }, [courseId]);
+
   if (loading) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-sm p-6">
-          <div className="flex items-center gap-4">
-            {/* Spinner */}
-            <div className="h-10 w-10 rounded-full border-4 border-slate-200 border-t-indigo-600 dark:border-slate-700 dark:border-t-indigo-400 animate-spin" />
+      <div className="mx-auto w-full max-w-7xl px-4 py-6">
+        {/* Header skeleton */}
+        <div className="mb-6 space-y-3">
+          <div className="h-8 w-72 rounded-xl bg-slate-200 dark:bg-slate-800 animate-pulse" />
+          <div className="h-4 w-96 rounded-xl bg-slate-200 dark:bg-slate-800 animate-pulse" />
+        </div>
 
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                Loading course...
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Please wait while we fetch course details.
-              </p>
-            </div>
+        {/* Tabs skeleton */}
+        <div className="mb-6 flex flex-wrap gap-3">
+          <div className="h-11 w-28 rounded-2xl bg-slate-200 dark:bg-slate-800 animate-pulse" />
+          <div className="h-11 w-32 rounded-2xl bg-slate-200 dark:bg-slate-800 animate-pulse" />
+          <div className="h-11 w-28 rounded-2xl bg-slate-200 dark:bg-slate-800 animate-pulse" />
+          <div className="h-11 w-36 rounded-2xl bg-slate-200 dark:bg-slate-800 animate-pulse" />
+        </div>
+
+        {/* Top summary row */}
+        <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="h-28 rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 animate-pulse" />
+          <div className="h-28 rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 animate-pulse" />
+          <div className="h-28 rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 animate-pulse" />
+        </div>
+
+        {/* Main content area */}
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="mb-4 flex items-center justify-between">
+            <div className="h-6 w-40 rounded-lg bg-slate-200 dark:bg-slate-800 animate-pulse" />
+            <div className="h-10 w-32 rounded-2xl bg-slate-200 dark:bg-slate-800 animate-pulse" />
           </div>
 
-          {/* Skeleton lines */}
-          <div className="mt-5 space-y-3">
-            <div className="h-3 w-3/4 rounded bg-slate-100 animate-pulse" />
-            <div className="h-3 w-5/6 rounded bg-slate-100 animate-pulse" />
-            <div className="h-3 w-2/3 rounded bg-slate-100 animate-pulse" />
+          <div className="space-y-3">
+            <div className="h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 animate-pulse" />
+            <div className="h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 animate-pulse" />
+            <div className="h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 animate-pulse" />
+            <div className="h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 animate-pulse" />
+            <div className="h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 animate-pulse" />
           </div>
         </div>
       </div>

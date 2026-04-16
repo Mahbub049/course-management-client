@@ -30,6 +30,11 @@ export const resetStudentPasswordRequest = async (courseId, studentId) => {
   return res.data;
 };
 
+export const resetAllStudentPasswordsRequest = async (courseId) => {
+  const res = await api.post(`/courses/${courseId}/students/reset-password-all`);
+  return res.data;
+};
+
 // ✅ Export students (Excel)
 export const exportCourseStudentsRequest = async (courseId) => {
   const res = await api.get(`/courses/${courseId}/students/export`);

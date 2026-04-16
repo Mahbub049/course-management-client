@@ -8,6 +8,7 @@ import {
   createAttendanceBulk,
   fetchAttendanceDay,
   updateAttendanceDay,
+  deleteAttendanceDay,
 } from "../services/attendanceService";
 import Swal from "sweetalert2";
 
@@ -18,7 +19,7 @@ export default function TeacherAttendancePage() {
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [courseError, setCourseError] = useState("");
 
-  const [mode, setMode] = useState("create"); // "create" | "update"
+  const [mode, setMode] = useState("create"); // "create" | "update" | "delete"
   const [entryMode, setEntryMode] = useState("single"); // "single" | "bulk"
 
   const [form, setForm] = useState({
@@ -113,8 +114,12 @@ export default function TeacherAttendancePage() {
       return;
     }
 
-    if (mode === "update" && !form.period) {
-      setStudentsError("Please select a period to update.");
+    if ((mode === "update" || mode === "delete") && !form.period) {
+      setStudentsError(
+        mode === "delete"
+          ? "Please select a period to delete."
+          : "Please select a period to update."
+      );
       return;
     }
 
@@ -266,13 +271,65 @@ export default function TeacherAttendancePage() {
     }
   };
 
+  const handleDeleteAttendance = async (e) => {
+    e.preventDefault();
+
+    if (!form.courseId || !form.date || !form.period) {
+      await Swal.fire({
+        icon: "warning",
+        title: "Missing Information",
+        text: "Please select course, date, and period.",
+        confirmButtonText: "OK",
+      });
+      return;
+    }
+
+    const confirm = await Swal.fire({
+      icon: "warning",
+      title: "Delete Attendance?",
+      text: `This will permanently delete attendance for Period ${Number(
+        form.period
+      )} on ${form.date}.`,
+      showCancelButton: true,
+      confirmButtonText: "Yes, Delete",
+      cancelButtonText: "Cancel",
+      reverseButtons: true,
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+      await deleteAttendanceDay(form.courseId, form.date, Number(form.period));
+
+      await Swal.fire({
+        icon: "success",
+        title: "Attendance Deleted",
+        text: `Attendance deleted for Period ${Number(form.period)}.`,
+        confirmButtonText: "OK",
+      });
+
+      resetSheet();
+    } catch (err) {
+      console.error(err);
+      await Swal.fire({
+        icon: "error",
+        title: "Delete Failed",
+        text:
+          err?.response?.data?.message || "Failed to delete attendance record.",
+        confirmButtonText: "OK",
+      });
+    }
+  };
+
   const sectionTitle =
     mode === "update"
       ? `Updating Period ${Number(form.period)}`
-      : entryMode === "single"
-        ? `Creating Period ${Number(form.period)}`
-        : `Bulk: Period ${Number(form.startPeriod)} to ${Number(form.startPeriod) + Number(form.numClasses) - 1
-        }`;
+      : mode === "delete"
+        ? `Deleting Period ${Number(form.period)}`
+        : entryMode === "single"
+          ? `Creating Period ${Number(form.period)}`
+          : `Bulk: Period ${Number(form.startPeriod)} to ${Number(form.startPeriod) + Number(form.numClasses) - 1
+          }`;
 
   const commonInputClass =
     "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-indigo-400 dark:focus:ring-indigo-400/10";
@@ -310,7 +367,7 @@ export default function TeacherAttendancePage() {
                   Mode
                 </div>
                 <div className="mt-1 text-sm font-semibold capitalize text-slate-900 dark:text-white">
-                  {mode}
+                  {mode === "create" ? "Create" : mode === "update" ? "Update" : "Delete"}
                 </div>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/80">
@@ -340,8 +397,8 @@ export default function TeacherAttendancePage() {
               type="button"
               onClick={() => setMode("create")}
               className={`inline-flex items-center rounded-2xl px-5 py-2.5 text-sm font-semibold transition ${mode === "create"
-                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20"
-                  : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20"
+                : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                 }`}
             >
               Create Attendance
@@ -351,11 +408,28 @@ export default function TeacherAttendancePage() {
               type="button"
               onClick={() => setMode("update")}
               className={`inline-flex items-center rounded-2xl px-5 py-2.5 text-sm font-semibold transition ${mode === "update"
-                  ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20"
-                  : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20"
+                : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                 }`}
             >
               Update Attendance
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setMode("delete");
+                setShowSheet(false);
+                setStudents([]);
+                setAttendance({});
+                setStudentsError("");
+              }}
+              className={`inline-flex items-center rounded-2xl px-5 py-2.5 text-sm font-semibold transition ${mode === "delete"
+                ? "bg-rose-600 text-white shadow-lg shadow-rose-600/20"
+                : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                }`}
+            >
+              Delete Attendance
             </button>
           </div>
 
@@ -435,11 +509,11 @@ export default function TeacherAttendancePage() {
               </div>
             )}
 
-            {mode === "update" && (
+            {(mode === "update" || mode === "delete") && (
               <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div>
                   <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    Period for Update
+                    {mode === "delete" ? "Period for Delete" : "Period for Update"}
                   </label>
                   <select
                     name="period"
@@ -508,7 +582,13 @@ export default function TeacherAttendancePage() {
                   disabled={loadingCourses || !courses.length || loadingStudents}
                   className="inline-flex w-full items-center justify-center rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {loadingStudents ? "Loading Students..." : "Load Students"}
+                  {loadingStudents
+                    ? mode === "delete"
+                      ? "Loading Attendance..."
+                      : "Loading Students..."
+                    : mode === "delete"
+                      ? "Load Attendance"
+                      : "Load Students"}
                 </button>
               </div>
             </form>
@@ -562,44 +642,46 @@ export default function TeacherAttendancePage() {
               {!loadingStudents && students.length > 0 && (
                 <form onSubmit={handleSubmitAttendance}>
                   {/* Summary bar */}
-                  <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-                    <div className="rounded-2xl border border-slate-200 bg-emerald-50 px-4 py-4 dark:border-emerald-500/20 dark:bg-emerald-500/10">
-                      <div className="text-xs text-emerald-700 dark:text-emerald-300">
-                        Present
+                  {mode !== "delete" && (
+                    <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                      <div className="rounded-2xl border border-slate-200 bg-emerald-50 px-4 py-4 dark:border-emerald-500/20 dark:bg-emerald-500/10">
+                        <div className="text-xs text-emerald-700 dark:text-emerald-300">
+                          Present
+                        </div>
+                        <div className="mt-1 text-2xl font-bold text-emerald-800 dark:text-emerald-200">
+                          {presentCount}
+                        </div>
                       </div>
-                      <div className="mt-1 text-2xl font-bold text-emerald-800 dark:text-emerald-200">
-                        {presentCount}
-                      </div>
-                    </div>
 
-                    <div className="rounded-2xl border border-slate-200 bg-rose-50 px-4 py-4 dark:border-rose-500/20 dark:bg-rose-500/10">
-                      <div className="text-xs text-rose-700 dark:text-rose-300">
-                        Absent
+                      <div className="rounded-2xl border border-slate-200 bg-rose-50 px-4 py-4 dark:border-rose-500/20 dark:bg-rose-500/10">
+                        <div className="text-xs text-rose-700 dark:text-rose-300">
+                          Absent
+                        </div>
+                        <div className="mt-1 text-2xl font-bold text-rose-800 dark:text-rose-200">
+                          {absentCount}
+                        </div>
                       </div>
-                      <div className="mt-1 text-2xl font-bold text-rose-800 dark:text-rose-200">
-                        {absentCount}
-                      </div>
-                    </div>
 
-                    <div className="rounded-2xl border border-slate-200 bg-blue-50 px-4 py-4 dark:border-blue-500/20 dark:bg-blue-500/10">
-                      <div className="text-xs text-blue-700 dark:text-blue-300">
-                        Total Students
+                      <div className="rounded-2xl border border-slate-200 bg-blue-50 px-4 py-4 dark:border-blue-500/20 dark:bg-blue-500/10">
+                        <div className="text-xs text-blue-700 dark:text-blue-300">
+                          Total Students
+                        </div>
+                        <div className="mt-1 text-2xl font-bold text-blue-800 dark:text-blue-200">
+                          {students.length}
+                        </div>
                       </div>
-                      <div className="mt-1 text-2xl font-bold text-blue-800 dark:text-blue-200">
-                        {students.length}
-                      </div>
-                    </div>
 
-                    <div className="flex items-center">
-                      <button
-                        type="button"
-                        onClick={toggleAllStudents}
-                        className="inline-flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                      >
-                        {areAllChecked ? "Uncheck All" : "Check All"}
-                      </button>
+                      <div className="flex items-center">
+                        <button
+                          type="button"
+                          onClick={toggleAllStudents}
+                          className="inline-flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                        >
+                          {areAllChecked ? "Uncheck All" : "Check All"}
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Mobile cards */}
                   <div className="space-y-3 md:hidden">
@@ -607,8 +689,11 @@ export default function TeacherAttendancePage() {
                       <button
                         key={s.roll}
                         type="button"
-                        onClick={() => toggleStudent(s.roll)}
-                        className={`w-full rounded-2xl border p-4 text-left transition ${attendance[s.roll]
+                        onClick={() => {
+                          if (mode !== "delete") toggleStudent(s.roll);
+                        }}
+                        className={`w-full rounded-2xl border p-4 text-left transition ${mode !== "delete" ? "cursor-pointer" : "cursor-default"
+                          } ${attendance[s.roll]
                             ? "border-emerald-200 bg-emerald-50 dark:border-emerald-500/20 dark:bg-emerald-500/10"
                             : "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
                           }`}
@@ -629,8 +714,8 @@ export default function TeacherAttendancePage() {
                           <div className="shrink-0">
                             <div
                               className={`rounded-full px-3 py-1 text-xs font-semibold ${attendance[s.roll]
-                                  ? "bg-emerald-600 text-white"
-                                  : "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200"
+                                ? "bg-emerald-600 text-white"
+                                : "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200"
                                 }`}
                             >
                               {attendance[s.roll] ? "Present" : "Absent"}
@@ -672,8 +757,11 @@ export default function TeacherAttendancePage() {
                             return (
                               <tr
                                 key={s.roll}
-                                onClick={() => toggleStudent(s.roll)}
-                                className={`cursor-pointer border-b transition last:border-0 dark:border-slate-800 ${isPresent
+                                onClick={() => {
+                                  if (mode !== "delete") toggleStudent(s.roll);
+                                }}
+                                className={`border-b transition last:border-0 dark:border-slate-800 ${mode !== "delete" ? "cursor-pointer" : "cursor-default"
+                                  } ${isPresent
                                     ? "bg-emerald-50/60 hover:bg-emerald-50 dark:bg-emerald-500/5 dark:hover:bg-emerald-500/10"
                                     : "hover:bg-slate-50 dark:hover:bg-slate-800/60"
                                   }`}
@@ -686,12 +774,13 @@ export default function TeacherAttendancePage() {
                                   <input
                                     type="checkbox"
                                     checked={isPresent}
+                                    disabled={mode === "delete"}
                                     onChange={(e) => {
                                       e.stopPropagation();
-                                      toggleStudent(s.roll);
+                                      if (mode !== "delete") toggleStudent(s.roll);
                                     }}
                                     onClick={(e) => e.stopPropagation()}
-                                    className="h-5 w-5 cursor-pointer rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 dark:border-slate-600 dark:bg-slate-800"
+                                    className="h-5 w-5 cursor-pointer rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800"
                                   />
                                 </td>
 
@@ -706,8 +795,8 @@ export default function TeacherAttendancePage() {
                                 <td className="px-5 py-4 text-center">
                                   <span
                                     className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${isPresent
-                                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
-                                        : "bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300"
+                                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
+                                      : "bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300"
                                       }`}
                                   >
                                     {isPresent ? "Present" : "Absent"}
@@ -726,26 +815,38 @@ export default function TeacherAttendancePage() {
                     <div className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white/95 p-4 shadow-xl backdrop-blur sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:bg-slate-950/95">
                       <div>
                         <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                          Ready to save attendance?
+                          {mode === "delete" ? "Ready to delete attendance?" : "Ready to save attendance?"}
                         </div>
                         <div className="text-xs text-slate-500 dark:text-slate-400">
-                          Review the student status and submit when finished.
+                          {mode === "delete"
+                            ? "Review the loaded attendance carefully before deleting."
+                            : "Review the student status and submit when finished."}
                         </div>
                       </div>
 
-                      <button
-                        type="submit"
-                        disabled={saving}
-                        className="inline-flex items-center justify-center rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-600/20 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {saving
-                          ? "Saving..."
-                          : mode === "create"
-                            ? entryMode === "single"
-                              ? "Submit Attendance"
-                              : "Submit Bulk Attendance"
-                            : "Update Attendance"}
-                      </button>
+                      {mode === "delete" ? (
+                        <button
+                          type="button"
+                          onClick={handleDeleteAttendance}
+                          className="inline-flex items-center justify-center rounded-2xl bg-rose-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-rose-600/20 transition hover:bg-rose-700"
+                        >
+                          Delete Attendance
+                        </button>
+                      ) : (
+                        <button
+                          type="submit"
+                          disabled={saving}
+                          className="inline-flex items-center justify-center rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-600/20 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {saving
+                            ? "Saving..."
+                            : mode === "create"
+                              ? entryMode === "single"
+                                ? "Submit Attendance"
+                                : "Submit Bulk Attendance"
+                              : "Update Attendance"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </form>

@@ -462,7 +462,15 @@ export default function TeacherAttendanceSheetPage() {
                   onScroll={syncTableToTop}
                   className="overflow-x-auto overflow-y-visible"
                 >
-                  <table className="min-w-max border-separate border-spacing-0 text-sm">
+                  <table
+                    className="w-full border-separate border-spacing-0 text-sm"
+                    style={{
+                      minWidth:
+                        computed.sessions.length > 0
+                          ? `${120 + 240 + 120 + 115 + 95 + computed.sessions.length * 88}px`
+                          : "100%",
+                    }}
+                  >
                     <thead className="bg-slate-50 dark:bg-slate-950/60">
                       <tr>
                         <th className="sticky left-0 z-30 min-w-[120px] border-b border-slate-200 bg-slate-50 px-4 py-3 text-left font-semibold text-slate-700 shadow-[6px_0_12px_-8px_rgba(0,0,0,0.35)] dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">

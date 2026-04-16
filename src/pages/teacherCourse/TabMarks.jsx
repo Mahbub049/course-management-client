@@ -578,7 +578,69 @@ export default function TabMarks({ courseId, course }) {
   const inputRefs = useRef([]);
   const originalStudentsRef = useRef([]);
 
+  const topScrollbarRef = useRef(null);
+  const bottomScrollRef = useRef(null);
+  const tableRef = useRef(null);
+
+  const [topScrollbarWidth, setTopScrollbarWidth] = useState(1400);
+
   const courseType = getCourseType(course);
+
+  useEffect(() => {
+    const topEl = topScrollbarRef.current;
+    const bottomEl = bottomScrollRef.current;
+
+    if (!topEl || !bottomEl) return;
+
+    let syncingFrom = null;
+
+    const handleTopScroll = () => {
+      if (syncingFrom === "bottom") return;
+      syncingFrom = "top";
+      bottomEl.scrollLeft = topEl.scrollLeft;
+      syncingFrom = null;
+    };
+
+    const handleBottomScroll = () => {
+      if (syncingFrom === "top") return;
+      syncingFrom = "bottom";
+      topEl.scrollLeft = bottomEl.scrollLeft;
+      syncingFrom = null;
+    };
+
+    topEl.addEventListener("scroll", handleTopScroll);
+    bottomEl.addEventListener("scroll", handleBottomScroll);
+
+    return () => {
+      topEl.removeEventListener("scroll", handleTopScroll);
+      bottomEl.removeEventListener("scroll", handleBottomScroll);
+    };
+  }, []);
+
+  useEffect(() => {
+    const updateWidth = () => {
+      const width =
+        tableRef.current?.scrollWidth ||
+        bottomScrollRef.current?.scrollWidth ||
+        1400;
+
+      setTopScrollbarWidth(width);
+    };
+
+    updateWidth();
+
+    const observer = new ResizeObserver(() => updateWidth());
+
+    if (tableRef.current) observer.observe(tableRef.current);
+    if (bottomScrollRef.current) observer.observe(bottomScrollRef.current);
+
+    window.addEventListener("resize", updateWidth);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateWidth);
+    };
+  }, [students.length, assessments.length]);
 
   const loadAllData = async () => {
     setLoading(true);
@@ -928,7 +990,7 @@ export default function TabMarks({ courseId, course }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [advancedModal.open, sortedStudents.length]);
-  
+
   const handleSave = async () => {
     try {
       setSaving(true);
@@ -976,7 +1038,10 @@ export default function TabMarks({ courseId, course }) {
     }
   };
 
-  const handlePublish = async (assessmentId) => {
+  const handlePublish = async (assessment) => {
+    const assessmentId = assessment?._id;
+    const wasPublished = Boolean(assessment?.isPublished);
+
     try {
       setPublishingAssessmentId(assessmentId);
       await publishAssessmentRequest(courseId, assessmentId);
@@ -991,8 +1056,10 @@ export default function TabMarks({ courseId, course }) {
 
       Swal.fire({
         icon: "success",
-        title: "Published",
-        text: "Assessment published successfully.",
+        title: wasPublished ? "Republished" : "Published",
+        text: wasPublished
+          ? "Assessment republished successfully."
+          : "Assessment published successfully.",
         timer: 1300,
         showConfirmButton: false,
       });
@@ -1000,7 +1067,7 @@ export default function TabMarks({ courseId, course }) {
       console.error(e);
       Swal.fire({
         icon: "error",
-        title: "Publish failed",
+        title: wasPublished ? "Republish failed" : "Publish failed",
         text: e?.response?.data?.message || "Failed to publish assessment",
       });
     } finally {
@@ -1150,21 +1217,22 @@ export default function TabMarks({ courseId, course }) {
         </div>
 
         <div className="p-4 md:p-6">
-          {loading ? (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
-              Loading marks data...
+          <div className="space-y-3">
+            <div
+              ref={topScrollbarRef}
+              className="overflow-x-auto rounded-xl border border-slate-300 bg-slate-100 dark:border-slate-600 dark:bg-slate-800"
+            >
+              <div
+                style={{ width: `${topScrollbarWidth}px`, height: "18px" }}
+                className="min-w-full"
+              />
             </div>
-          ) : sortedStudents.length === 0 ? (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
-              No students found. Add students first.
-            </div>
-          ) : assessments.length === 0 ? (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
-              No assessments yet. Add assessments first.
-            </div>
-          ) : (
-            <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
-              <table className="min-w-full text-sm">
+
+            <div
+              ref={bottomScrollRef}
+              className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700"
+            >
+              <table ref={tableRef} className="min-w-full text-sm">
                 <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800">
                   <tr className="border-b border-slate-200 dark:border-slate-700">
                     <th className="sticky left-0 z-30 min-w-[110px] bg-slate-50 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
@@ -1189,14 +1257,16 @@ export default function TabMarks({ courseId, course }) {
                               Full marks: {a.fullMarks}
                             </div>
                             <button
-                              onClick={() => handlePublish(a._id)}
-                              disabled={publishingAssessmentId === a._id || a.isPublished}
+                              onClick={() => handlePublish(a)}
+                              disabled={publishingAssessmentId === a._id}
                               className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
                             >
-                              {a.isPublished
-                                ? "Published"
-                                : publishingAssessmentId === a._id
-                                  ? "Publishing..."
+                              {publishingAssessmentId === a._id
+                                ? a.isPublished
+                                  ? "Republishing..."
+                                  : "Publishing..."
+                                : a.isPublished
+                                  ? "Republish"
                                   : "Publish"}
                             </button>
                           </div>
@@ -1226,14 +1296,16 @@ export default function TabMarks({ courseId, course }) {
                             </div>
                           )}
                           <button
-                            onClick={() => handlePublish(a._id)}
-                            disabled={publishingAssessmentId === a._id || a.isPublished}
+                            onClick={() => handlePublish(a)}
+                            disabled={publishingAssessmentId === a._id}
                             className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
                           >
-                            {a.isPublished
-                              ? "Published"
-                              : publishingAssessmentId === a._id
-                                ? "Publishing..."
+                            {publishingAssessmentId === a._id
+                              ? a.isPublished
+                                ? "Republishing..."
+                                : "Publishing..."
+                              : a.isPublished
+                                ? "Republish"
                                 : "Publish"}
                           </button>
                         </div>
@@ -1406,6 +1478,7 @@ export default function TabMarks({ courseId, course }) {
                 </tbody>
               </table>
             </div>
+          </div>
           )}
 
           {!loading && sortedStudents.length > 0 && assessments.length > 0 && (

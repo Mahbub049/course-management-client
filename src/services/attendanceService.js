@@ -34,6 +34,13 @@ export const updateAttendanceDay = async (payload) => {
   return res.data;
 };
 
+export const deleteAttendanceDay = async (courseId, date, period) => {
+  const res = await api.delete("/attendance/day", {
+    params: { courseId, date, period },
+  });
+  return res.data;
+};
+
 // ---------------- STUDENT ----------------
 
 // ✅ Student attendance sheet (period-wise)
