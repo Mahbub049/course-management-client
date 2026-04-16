@@ -144,6 +144,25 @@ function getCtMain(course, assessments, rowMarks) {
   return roundPolicyTotal(ctScore);
 }
 
+function getLabMain(assessments, rowMarks) {
+  const list = Array.isArray(assessments) ? assessments : [];
+
+  const regularLabAssessments = list.filter((a) => {
+    const n = String(a?.name || "").toLowerCase();
+    return !n.includes("mid") && !n.includes("final") && !n.includes("att");
+  });
+
+  if (!regularLabAssessments.length) return 0;
+
+  const avgPercent =
+    regularLabAssessments.reduce(
+      (sum, a) => sum + pct(rowMarks?.[a._id], a.fullMarks),
+      0
+    ) / regularLabAssessments.length;
+
+  return roundPolicyTotal(avgPercent * 25);
+}
+
 function computeTotal100(course, assessments, rowMarks, attendanceMarks5 = 0) {
   const courseType = getCourseType(course);
   const list = Array.isArray(assessments) ? assessments : [];
@@ -348,13 +367,24 @@ export default function TabMarks({ courseId, course }) {
     return assessments.filter((a) => isCtAssessment(a?.name));
   }, [assessments]);
 
-  const nonCtAssessments = useMemo(() => {
-    return assessments.filter((a) => !isCtAssessment(a?.name));
-  }, [assessments]);
+  const labRegularAssessments = useMemo(() => {
+    if (courseType !== "lab") return [];
+    return assessments.filter((a) => {
+      const n = String(a?.name || "").toLowerCase();
+      return !n.includes("mid") && !n.includes("final") && !n.includes("att");
+    });
+  }, [assessments, courseType]);
 
-  const displayAssessments = useMemo(() => {
-    return [...ctAssessments, ...nonCtAssessments];
-  }, [ctAssessments, nonCtAssessments]);
+  const nonCtAssessments = useMemo(() => {
+    if (courseType === "lab") {
+      return assessments.filter((a) => {
+        const n = String(a?.name || "").toLowerCase();
+        return n.includes("mid") || n.includes("final") || n.includes("att");
+      });
+    }
+
+    return assessments.filter((a) => !isCtAssessment(a?.name));
+  }, [assessments, courseType]);
 
   const currentCtPolicyText =
     courseType === "lab"
@@ -711,53 +741,95 @@ export default function TabMarks({ courseId, course }) {
                       Student
                     </th>
 
-                    {ctAssessments.map((a) => (
-                      <th
-                        key={a._id}
-                        className="min-w-[180px] px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300"
-                      >
-                        <div className="space-y-2">
-                          <div>
-                            <div className="text-sm font-semibold normal-case text-slate-800 dark:text-slate-100">
-                              {a.name}
+                    {courseType === "lab"
+                      ? labRegularAssessments.map((a) => (
+                        <th
+                          key={a._id}
+                          className="min-w-[180px] px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300"
+                        >
+                          <div className="space-y-2">
+                            <div>
+                              <div className="text-sm font-semibold normal-case text-slate-800 dark:text-slate-100">
+                                {a.name}
+                              </div>
+                              <div className="mt-0.5 text-[11px] font-medium normal-case text-slate-400 dark:text-slate-500">
+                                Full marks: {a.fullMarks}
+                              </div>
                             </div>
-                            <div className="mt-0.5 text-[11px] font-medium normal-case text-slate-400 dark:text-slate-500">
-                              Full marks: {a.fullMarks}
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span
+                                className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${a.isPublished
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+                                  : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
+                                  }`}
+                              >
+                                {a.isPublished ? "Published" : "Draft"}
+                              </span>
+
+                              <button
+                                type="button"
+                                onClick={() => handlePublishAssessment(a)}
+                                disabled={publishingAssessmentId === a._id}
+                                className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                              >
+                                {publishingAssessmentId === a._id
+                                  ? "Publishing..."
+                                  : a.isPublished
+                                    ? "Republish"
+                                    : "Publish"}
+                              </button>
                             </div>
                           </div>
+                        </th>
+                      ))
+                      : ctAssessments.map((a) => (
+                        <th
+                          key={a._id}
+                          className="min-w-[180px] px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300"
+                        >
+                          <div className="space-y-2">
+                            <div>
+                              <div className="text-sm font-semibold normal-case text-slate-800 dark:text-slate-100">
+                                {a.name}
+                              </div>
+                              <div className="mt-0.5 text-[11px] font-medium normal-case text-slate-400 dark:text-slate-500">
+                                Full marks: {a.fullMarks}
+                              </div>
+                            </div>
 
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span
-                              className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${a.isPublished
-                                ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
-                                : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
-                                }`}
-                            >
-                              {a.isPublished ? "Published" : "Draft"}
-                            </span>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span
+                                className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${a.isPublished
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+                                  : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
+                                  }`}
+                              >
+                                {a.isPublished ? "Published" : "Draft"}
+                              </span>
 
-                            <button
-                              type="button"
-                              onClick={() => handlePublishAssessment(a)}
-                              disabled={publishingAssessmentId === a._id}
-                              className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                            >
-                              {publishingAssessmentId === a._id
-                                ? "Publishing..."
-                                : a.isPublished
-                                  ? "Republish"
-                                  : "Publish"}
-                            </button>
+                              <button
+                                type="button"
+                                onClick={() => handlePublishAssessment(a)}
+                                disabled={publishingAssessmentId === a._id}
+                                className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                              >
+                                {publishingAssessmentId === a._id
+                                  ? "Publishing..."
+                                  : a.isPublished
+                                    ? "Republish"
+                                    : "Publish"}
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      </th>
-                    ))}
+                        </th>
+                      ))}
 
-                    <th className="min-w-[130px] px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                    <th className="min-w-[150px] px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
                       <div className="space-y-1">
-                        <div>CT (Main)</div>
+                        <div>{courseType === "lab" ? "Lab Assessment (Main)" : "CT (Main)"}</div>
                         <div className="text-[11px] font-medium normal-case text-slate-400 dark:text-slate-500">
-                          Auto /15
+                          {courseType === "lab" ? "Auto /25" : "Auto /15"}
                         </div>
                       </div>
                     </th>
@@ -836,52 +908,66 @@ export default function TabMarks({ courseId, course }) {
                           </div>
                         </td>
 
-                        {ctAssessments.map((a, colIndex) => {
-                          const isAttendanceCol = String(a.name || "")
-                            .toLowerCase()
-                            .includes("att");
+                        {(courseType === "lab" ? labRegularAssessments : ctAssessments).map(
+                          (a, colIndex) => {
+                            const isAttendanceCol = String(a.name || "")
+                              .toLowerCase()
+                              .includes("att");
 
-                          return (
-                            <td key={a._id} className="px-4 py-3">
-                              <input
-                                type="number"
-                                disabled={isAttendanceCol}
-                                className={[
-                                  "h-11 w-24 rounded-xl border px-3 text-sm shadow-sm transition",
-                                  "focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500",
-                                  isAttendanceCol
-                                    ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
-                                    : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
-                                ].join(" ")}
-                                value={row[a._id] ?? ""}
-                                onChange={(e) =>
-                                  handleMarkChange(s.id, a._id, e.target.value)
-                                }
-                                onKeyDown={handleKeyDown}
-                                data-row={rowIndex}
-                                data-col={colIndex}
-                                ref={(el) => {
-                                  if (!inputRefs.current[rowIndex]) {
-                                    inputRefs.current[rowIndex] = [];
+                            return (
+                              <td key={a._id} className="px-4 py-3">
+                                <input
+                                  type="number"
+                                  disabled={isAttendanceCol}
+                                  className={[
+                                    "h-11 w-24 rounded-xl border px-3 text-sm shadow-sm transition",
+                                    "focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500",
+                                    isAttendanceCol
+                                      ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                                      : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
+                                  ].join(" ")}
+                                  value={row[a._id] ?? ""}
+                                  onChange={(e) =>
+                                    handleMarkChange(s.id, a._id, e.target.value)
                                   }
-                                  inputRefs.current[rowIndex][colIndex] = el;
-                                }}
-                              />
-                            </td>
-                          );
-                        })}
+                                  onKeyDown={handleKeyDown}
+                                  data-row={rowIndex}
+                                  data-col={colIndex}
+                                  ref={(el) => {
+                                    if (!inputRefs.current[rowIndex]) {
+                                      inputRefs.current[rowIndex] = [];
+                                    }
+                                    inputRefs.current[rowIndex][colIndex] = el;
+                                  }}
+                                />
+                              </td>
+                            );
+                          }
+                        )}
 
                         <td className="px-4 py-3">
                           <div
-                            title="Calculated from selected CT policy"
+                            title={
+                              courseType === "lab"
+                                ? "Calculated from average of all lab assessments and converted to 25"
+                                : "Calculated from selected CT policy"
+                            }
                             className="inline-flex min-w-[72px] items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300"
                           >
-                            {getCtMain(course, assessments, row)}
+                            {courseType === "lab"
+                              ? getLabMain(assessments, row)
+                              : getCtMain(course, assessments, row)}
                           </div>
                         </td>
 
                         {nonCtAssessments.map((a, index) => {
-                          const actualColIndex = ctAssessments.length + index;
+                          const firstPartCount =
+                            courseType === "lab"
+                              ? labRegularAssessments.length
+                              : ctAssessments.length;
+
+                          const actualColIndex = firstPartCount + index;
+
                           const isAttendanceCol = String(a.name || "")
                             .toLowerCase()
                             .includes("att");
@@ -904,12 +990,12 @@ export default function TabMarks({ courseId, course }) {
                                 }
                                 onKeyDown={handleKeyDown}
                                 data-row={rowIndex}
-                                data-col={actualColIndex}
+                                data-col={actualColIndex + 1}
                                 ref={(el) => {
                                   if (!inputRefs.current[rowIndex]) {
                                     inputRefs.current[rowIndex] = [];
                                   }
-                                  inputRefs.current[rowIndex][actualColIndex] = el;
+                                  inputRefs.current[rowIndex][actualColIndex + 1] = el;
                                 }}
                               />
                             </td>
