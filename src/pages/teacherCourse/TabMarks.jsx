@@ -926,27 +926,99 @@ export default function TabMarks({ courseId, course }) {
     }));
   };
 
+  const getFocusableCells = () => {
+    const cells = [];
+
+    inputRefs.current.forEach((rowRefs, rowIndex) => {
+      if (!Array.isArray(rowRefs)) return;
+
+      rowRefs.forEach((el, colIndex) => {
+        if (!el || el.disabled) return;
+        cells.push({ row: rowIndex, col: colIndex, el });
+      });
+    });
+
+    return cells;
+  };
+
+  const focusCellByPosition = (row, col) => {
+    const target = inputRefs.current?.[row]?.[col];
+    if (!target || target.disabled) return false;
+
+    target.focus();
+    target.select?.();
+    return true;
+  };
+
+  const moveTabFocus = (row, col, reverse = false) => {
+    const focusableCells = getFocusableCells();
+
+    if (!focusableCells.length) return;
+
+    const orderedCells = [...focusableCells].sort((a, b) => {
+      if (tabMode === "column") {
+        if (a.col !== b.col) return a.col - b.col;
+        return a.row - b.row;
+      }
+
+      if (a.row !== b.row) return a.row - b.row;
+      return a.col - b.col;
+    });
+
+    const currentIndex = orderedCells.findIndex(
+      (cell) => cell.row === row && cell.col === col
+    );
+
+    if (currentIndex === -1) return;
+
+    const nextIndex = reverse ? currentIndex - 1 : currentIndex + 1;
+    const nextCell = orderedCells[nextIndex];
+
+    if (!nextCell) return;
+
+    nextCell.el.focus();
+    nextCell.el.select?.();
+  };
+
   const handleKeyDown = (e) => {
     const row = Number(e.currentTarget.dataset.row);
     const col = Number(e.currentTarget.dataset.col);
 
     if (Number.isNaN(row) || Number.isNaN(col)) return;
 
+    if (e.key === "Tab") {
+      e.preventDefault();
+      moveTabFocus(row, col, e.shiftKey);
+      return;
+    }
+
+    if (e.key === "Enter") {
+      e.preventDefault();
+      moveTabFocus(row, col, e.shiftKey);
+      return;
+    }
+
     if (e.key === "ArrowRight") {
       e.preventDefault();
-      inputRefs.current?.[row]?.[col + 1]?.focus();
+      focusCellByPosition(row, col + 1);
+      return;
     }
+
     if (e.key === "ArrowLeft") {
       e.preventDefault();
-      inputRefs.current?.[row]?.[col - 1]?.focus();
+      focusCellByPosition(row, col - 1);
+      return;
     }
+
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      inputRefs.current?.[row + 1]?.[col]?.focus();
+      focusCellByPosition(row + 1, col);
+      return;
     }
+
     if (e.key === "ArrowUp") {
       e.preventDefault();
-      inputRefs.current?.[row - 1]?.[col]?.focus();
+      focusCellByPosition(row - 1, col);
     }
   };
 
