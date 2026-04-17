@@ -1551,7 +1551,7 @@ export default function TabMarks({ courseId, course }) {
               </table>
             </div>
           </div>
-          )}
+
 
           {!loading && sortedStudents.length > 0 && assessments.length > 0 && (
             <div className="mt-5 flex flex-wrap gap-3">
