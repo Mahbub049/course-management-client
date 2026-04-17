@@ -1439,7 +1439,7 @@ export default function TabMarks({ courseId, course }) {
                                       ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
                                       : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
                                   ].join(" ")}
-                                  value={getMainMarkValue(cell) || ""}
+                                  value={cell == null ? "" : getMainMarkValue(cell)}
                                   onChange={(e) =>
                                     handleMarkChange(s.id, a._id, e.target.value)
                                   }
@@ -1517,7 +1517,7 @@ export default function TabMarks({ courseId, course }) {
                                     ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
                                     : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
                                 ].join(" ")}
-                                value={getMainMarkValue(cell) || ""}
+                                value={cell == null ? "" : getMainMarkValue(cell)}
                                 onChange={(e) =>
                                   handleMarkChange(s.id, a._id, e.target.value)
                                 }
