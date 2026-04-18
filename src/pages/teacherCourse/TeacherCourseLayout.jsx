@@ -20,13 +20,14 @@ export default function TeacherCourseLayout({
   const typeLabel =
     type === "lab" ? "Lab" : type === "hybrid" ? "Hybrid" : "Theory";
 
-  const tabs = [
-    { id: "marks", label: "Marks Entry", icon: <MarksIcon /> },
-    { id: "assessments", label: "Assessments", icon: <ClipboardIcon /> },
-    { id: "students", label: "Students", icon: <UsersIcon /> },
-    { id: "attendance", label: "Attendance", icon: <CalendarIcon /> },
-    { id: "settings", label: "Settings", icon: <SettingsIcon /> },
-  ];
+const tabs = [
+  { id: "marks", label: "Marks Entry", icon: <MarksIcon /> },
+  { id: "assessments", label: "Assessments", icon: <ClipboardIcon /> },
+  { id: "materials", label: "Materials", icon: <FolderIcon /> },
+  { id: "students", label: "Students", icon: <UsersIcon /> },
+  { id: "attendance", label: "Attendance", icon: <CalendarIcon /> },
+  { id: "settings", label: "Settings", icon: <SettingsIcon /> },
+];
 
   return (
     <div className="mx-auto space-y-6">
@@ -270,6 +271,20 @@ function SettingsIcon() {
     >
       <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" />
       <path d="M19.4 15a7.9 7.9 0 0 0 .1-2l2-1.5-2-3.5-2.4 1a8 8 0 0 0-1.7-1L15 3H9l-.4 2.5a8 8 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a7.9 7.9 0 0 0 0 2l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 1.7 1L9 21h6l.4-2.5a8 8 0 0 0 1.7-1l2.4 1 2-3.5-2-1.5z" />
+    </svg>
+  );
+}
+
+function FolderIcon() {
+  return (
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
     </svg>
   );
 }

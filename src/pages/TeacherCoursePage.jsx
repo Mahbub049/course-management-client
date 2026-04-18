@@ -7,6 +7,7 @@ import TabAssessments from "./teacherCourse/TabAssessments";
 import TabMarks from "./teacherCourse/TabMarks";
 import TabSettings from "./teacherCourse/TabSettings";
 import TabAttendance from "./teacherCourse/TabAttendence"; // ✅ NEW (match your filename)
+import TabMaterials from "./teacherCourse/TabMaterials";
 
 import { fetchCourseById } from "../services/courseService";
 
@@ -145,6 +146,7 @@ export default function TeacherCoursePage() {
 
       {activeTab === "marks" && <TabMarks courseId={courseId} course={course} />}
       {activeTab === "attendance" && <TabAttendance courseId={courseId} />}
+      {activeTab === "materials" && <TabMaterials courseId={courseId} />}
       {activeTab === "settings" && (
         <TabSettings
           courseId={courseId}
