@@ -3,7 +3,8 @@ import api from "./api";
 // get assessments for a course
 export const fetchAssessments = async (courseId) => {
   const res = await api.get(`/courses/${courseId}/assessments`);
-  return res.data;
+  const rows = Array.isArray(res.data) ? res.data : [];
+  return rows.filter((item) => item?.structureType !== "lab_submission");
 };
 
 // alias

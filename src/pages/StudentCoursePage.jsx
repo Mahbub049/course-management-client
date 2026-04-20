@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { fetchStudentCourseMarks } from "../services/studentService";
 import { createStudentComplaint } from "../services/complaintService";
 import { fetchStudentAttendanceSheet } from "../services/attendanceService";
 import { fetchStudentCourseMaterials } from "../services/materialService";
+import StudentProjectGroups from "./studentCourse/StudentProjectGroups";
+import StudentProjectPhases from "./studentCourse/StudentProjectPhases";
+import StudentProjectSubmissions from "./studentCourse/StudentProjectSubmissions";
+import StudentProjectMarks from "./studentCourse/StudentProjectMarks";
+import StudentProjectTotalSummary from "./studentCourse/StudentProjectTotalSummary";
+import StudentLabSubmissions from "./studentCourse/StudentLabSubmissions";
 
 const STATUS_COLORS = {
   APlus: "text-emerald-700 dark:text-emerald-300",
@@ -129,6 +135,7 @@ function getAssessmentHint(assessment, courseType) {
 export default function StudentCoursePage() {
   const { courseId } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -158,7 +165,22 @@ export default function StudentCoursePage() {
   const [materialsError, setMaterialsError] = useState("");
   const [materials, setMaterials] = useState([]);
 
-  const [activeTab, setActiveTab] = useState("assessment");
+  const [activeTab, setActiveTab] = useState(searchParams.get("tab") || "assessment");
+
+  useEffect(() => {
+    const showProjectTab =
+      course?.projectFeature?.mode === "project" &&
+      course?.projectFeature?.visibleToStudents !== false;
+
+    if (!showProjectTab && activeTab === "project") {
+      setActiveTab("assessment");
+    }
+  }, [course, activeTab]);
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    next.set("tab", activeTab);
+    setSearchParams(next, { replace: true });
+  }, [activeTab, setSearchParams]);
 
   const complaintRef = useRef(null);
 
@@ -415,10 +437,16 @@ export default function StudentCoursePage() {
     }, 50);
   };
 
-  const courseTabs = [
+  const showProjectTab =
+    course?.projectFeature?.mode === "project" &&
+    course?.projectFeature?.visibleToStudents !== false;
+
+  const tabs = [
     { key: "assessment", label: "Assessment" },
     { key: "attendance", label: "Attendance" },
     { key: "materials", label: "Materials" },
+    { key: "submissions", label: "Submissions" },
+    ...(showProjectTab ? [{ key: "project", label: "Project" }] : []),
     { key: "complaint", label: "Raise Complaint" },
   ];
 
@@ -588,7 +616,7 @@ export default function StudentCoursePage() {
       </section>
 
       <CourseSectionTabs
-        tabs={courseTabs}
+        tabs={tabs}
         activeTab={activeTab}
         onChange={setActiveTab}
       />
@@ -998,6 +1026,19 @@ export default function StudentCoursePage() {
           </div>
         </section>
       )}
+
+
+      {activeTab === "project" && (
+        <div className="space-y-6">
+          <StudentProjectGroups course={course} />
+          <StudentProjectPhases course={course} />
+          <StudentProjectSubmissions course={course} />
+          <StudentProjectMarks course={course} />
+          <StudentProjectTotalSummary course={course} />
+        </div>
+      )}
+
+      {activeTab === "submissions" && <StudentLabSubmissions courseId={courseId} />}
 
       {activeTab === "materials" && (
         <section className="rounded-[28px] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">

@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchStudentCourses } from "../services/studentService";
+import { fetchStudentSubmissionAssessments } from "../services/labSubmissionService";
 
 function StudentDashboard() {
   const navigate = useNavigate();
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [pendingSubmissionItems, setPendingSubmissionItems] = useState([]);
 
   const studentName = localStorage.getItem("marksPortalName") || "Student";
+
+
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
@@ -21,9 +25,24 @@ function StudentDashboard() {
     const load = async () => {
       setLoading(true);
       setError("");
+
       try {
-        const data = await fetchStudentCourses();
-        setCourses(data || []);
+        const [courseData, submissionData] = await Promise.all([
+          fetchStudentCourses(),
+          fetchStudentSubmissionAssessments(),
+        ]);
+
+        setCourses(courseData || []);
+
+        const pendingItems = Array.isArray(submissionData)
+          ? submissionData.filter(
+            (item) =>
+              item?.isVisibleToStudents === true &&
+              !item?.submission
+          )
+          : [];
+
+        setPendingSubmissionItems(pendingItems.slice(0, 6));
       } catch (err) {
         console.error(err);
         setError(err?.response?.data?.message || "Failed to load dashboard data");
@@ -51,6 +70,27 @@ function StudentDashboard() {
   }, [courses]);
 
   const recent = useMemo(() => (courses || []).slice(0, 4), [courses]);
+
+  const showPendingSection = pendingSubmissionItems.length > 0;
+  const showProgressQuickActions = pendingSubmissionItems.length === 0;
+
+  // const pendingSubmissionItems = useMemo(() => {
+  //   const rows = [];
+  //   (courses || []).forEach((course) => {
+  //     (course.pendingSubmissionAssessments || []).forEach((task) => {
+  //       if (task.status !== 'checked' && task.status !== 'submitted') {
+  //         rows.push({
+  //           ...task,
+  //           courseId: course.id,
+  //           courseCode: course.code,
+  //           courseTitle: course.title,
+  //           section: course.section,
+  //         });
+  //       }
+  //     });
+  //   });
+  //   return rows.slice(0, 6);
+  // }, [courses]);
 
   return (
     <div className="space-y-5 sm:space-y-6">
@@ -101,52 +141,56 @@ function StudentDashboard() {
         </div>
       </section>
 
-      {/* Hero overview */}
-      <section className="relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-gradient-to-br from-white via-violet-50/60 to-sky-50/70 shadow-sm dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-slate-950">
-        <div className="pointer-events-none absolute -top-16 right-0 h-44 w-44 rounded-full bg-violet-300/20 blur-3xl dark:bg-violet-500/10" />
-        <div className="pointer-events-none absolute -bottom-16 left-0 h-44 w-44 rounded-full bg-sky-300/20 blur-3xl dark:bg-sky-500/10" />
+      {showProgressQuickActions && (
+        <>
+          {/* Hero overview */}
+          <section className="relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-gradient-to-br from-white via-violet-50/60 to-sky-50/70 shadow-sm dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-slate-950">
+            <div className="pointer-events-none absolute -top-16 right-0 h-44 w-44 rounded-full bg-violet-300/20 blur-3xl dark:bg-violet-500/10" />
+            <div className="pointer-events-none absolute -bottom-16 left-0 h-44 w-44 rounded-full bg-sky-300/20 blur-3xl dark:bg-sky-500/10" />
 
-        <div className="relative p-4 sm:p-6 lg:p-8">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="min-w-0">
-              <div className="inline-flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-[11px] font-semibold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
-                <CapIcon />
-                BUBT Marks Portal • Student Panel
+            <div className="relative p-4 sm:p-6 lg:p-8">
+              <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-[11px] font-semibold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
+                    <CapIcon />
+                    BUBT Marks Portal • Student Panel
+                  </div>
+
+                  <h2 className="mt-4 text-xl font-semibold text-slate-900 dark:text-white sm:text-2xl">
+                    Progress & Quick Actions
+                  </h2>
+
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
+                    Review your course progress, check published marks, visit your
+                    complaints section, and navigate to important pages faster.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                  <MiniActionButton
+                    label="Open Courses"
+                    primary
+                    onClick={() => navigate("/student/courses")}
+                  />
+                  <MiniActionButton
+                    label="Complaints"
+                    onClick={() => navigate("/student/complaints")}
+                  />
+                  <MiniActionButton
+                    label="Attendance"
+                    onClick={() => navigate("/student/attendance")}
+                  />
+                  <MiniActionButton
+                    label="Password"
+                    onClick={() => navigate("/change-password")}
+                  />
+                </div>
               </div>
-
-              <h2 className="mt-4 text-xl font-semibold text-slate-900 dark:text-white sm:text-2xl">
-                Progress & Quick Actions
-              </h2>
-
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-                Review your course progress, check published marks, visit your
-                complaints section, and navigate to important pages faster.
-              </p>
             </div>
+          </section>
 
-            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-              <MiniActionButton
-                label="Open Courses"
-                primary
-                onClick={() => navigate("/student/courses")}
-              />
-              <MiniActionButton
-                label="Complaints"
-                onClick={() => navigate("/student/complaints")}
-              />
-              <MiniActionButton
-                label="Attendance"
-                onClick={() => navigate("/student/attendance")}
-              />
-              <MiniActionButton
-                label="Password"
-                onClick={() => navigate("/change-password")}
-              />
-            </div>
-          </div>
-        </div>
-      </section>
-
+        </>
+      )}
       {/* Error */}
       {error && (
         <section className="rounded-[24px] border border-rose-200 bg-rose-50 p-4 shadow-sm dark:border-rose-500/20 dark:bg-rose-500/10">
@@ -165,6 +209,7 @@ function StudentDashboard() {
           </div>
         </section>
       )}
+
 
       {/* Stats */}
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -200,6 +245,78 @@ function StudentDashboard() {
           accent="slate"
         />
       </section>
+
+
+      {pendingSubmissionItems.length > 0 && (
+        <section className="rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                Pending Assessments
+              </h3>
+
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Submission tasks created by your teachers appear here.
+              </p>
+            </div>
+
+            <div className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">
+              {loading ? "..." : `${pendingSubmissionItems.length} pending`}
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="mt-5 text-sm text-slate-500 dark:text-slate-400">
+              Loading pending assessments...
+            </div>
+          ) : (
+            <div className="mt-5 grid gap-4 xl:grid-cols-2">
+              {pendingSubmissionItems.map((item) => (
+                <div
+                  key={`${item.course?.id}-${item.id}`}
+                  className="rounded-[24px] border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-800/50"
+                >
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <div className="text-base font-semibold text-slate-900 dark:text-white">
+                        {item.name}
+                      </div>
+
+                      <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                        {item.course?.code} • Section {item.course?.section}
+                      </div>
+
+                      <div className="mt-3 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+                        You have an assessment
+                      </div>
+
+                      <div className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                        Due:{" "}
+                        {item.dueDate
+                          ? new Date(item.dueDate).toLocaleString()
+                          : "No deadline set"}{" "}
+                        • Max {item.maxFileSizeMB || 10} MB
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        navigate(
+                          `/student/courses/${item.course?.id}?tab=submissions`
+                        )
+                      }
+                      className="inline-flex items-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-700"
+                    >
+                      Go to Submission Page
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Recent Courses */}
       <section className="rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">

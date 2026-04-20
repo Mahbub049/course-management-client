@@ -9,6 +9,7 @@ export default function TeacherCourseLayout({
   const navigate = useNavigate();
 
   const type = (course?.courseType || "theory").toLowerCase();
+  const isProjectMode = course?.projectFeature?.mode === "project";
 
   const typeBadge =
     type === "lab"
@@ -20,14 +21,18 @@ export default function TeacherCourseLayout({
   const typeLabel =
     type === "lab" ? "Lab" : type === "hybrid" ? "Hybrid" : "Theory";
 
-const tabs = [
-  { id: "marks", label: "Marks Entry", icon: <MarksIcon /> },
-  { id: "assessments", label: "Assessments", icon: <ClipboardIcon /> },
-  { id: "materials", label: "Materials", icon: <FolderIcon /> },
-  { id: "students", label: "Students", icon: <UsersIcon /> },
-  { id: "attendance", label: "Attendance", icon: <CalendarIcon /> },
-  { id: "settings", label: "Settings", icon: <SettingsIcon /> },
-];
+  const tabs = [
+    { id: "marks", label: "Marks Entry", icon: <MarksIcon /> },
+    { id: "assessments", label: "Assessments", icon: <ClipboardIcon /> },
+    ...(isProjectMode
+      ? [{ id: "projects", label: "Projects", icon: <ProjectIcon /> }]
+      : []),
+    { id: "materials", label: "Materials", icon: <FolderIcon /> },
+    { id: "submissions", label: "Submissions", icon: <UploadIcon /> },
+    { id: "students", label: "Students", icon: <UsersIcon /> },
+    { id: "attendance", label: "Attendance", icon: <CalendarIcon /> },
+    { id: "settings", label: "Settings", icon: <SettingsIcon /> },
+  ];
 
   return (
     <div className="mx-auto space-y-6">
@@ -59,11 +64,15 @@ const tabs = [
                 >
                   {typeLabel}
                 </span>
+                {isProjectMode && (
+                  <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
+                    Project Workflow Active
+                  </span>
+                )}
               </div>
 
               <p className="mt-4 text-sm leading-6 text-slate-500 dark:text-slate-400">
-                Manage course marks, assessments, students, attendance, and settings
-                from one organized workspace.
+                Manage course marks, assessments, students, attendance, materials, and project workflow from one organized workspace.
               </p>
             </div>
 
@@ -139,8 +148,6 @@ const tabs = [
   );
 }
 
-/* ---------------- Small UI helpers ---------------- */
-
 function Pill({ label }) {
   return (
     <span className="inline-flex items-center rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
@@ -149,17 +156,9 @@ function Pill({ label }) {
   );
 }
 
-/* ---------------- Icons (inline SVG) ---------------- */
-
 function ArrowLeftIcon() {
   return (
-    <svg
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M15 18l-6-6 6-6" />
     </svg>
   );
@@ -167,13 +166,7 @@ function ArrowLeftIcon() {
 
 function HomeIcon() {
   return (
-    <svg
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M3 10l9-7 9 7" />
       <path d="M9 22V12h6v10" />
     </svg>
@@ -182,13 +175,7 @@ function HomeIcon() {
 
 function BookIcon() {
   return (
-    <svg
-      className="h-4 w-4 text-primary-700 dark:text-indigo-300"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
+    <svg className="h-4 w-4 text-primary-700 dark:text-indigo-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M4 19a2 2 0 0 0 2 2h14V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2z" />
       <path d="M4 7h16" />
     </svg>
@@ -197,13 +184,7 @@ function BookIcon() {
 
 function UsersIcon() {
   return (
-    <svg
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M17 21a7 7 0 0 0-14 0" />
       <path d="M10 11a4 4 0 1 0-4-4 4 4 0 0 0 4 4z" />
       <path d="M21 21a6 6 0 0 0-9-5" />
@@ -214,13 +195,7 @@ function UsersIcon() {
 
 function ClipboardIcon() {
   return (
-    <svg
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M9 5h6" />
       <path d="M9 3h6v4H9z" />
       <path d="M7 7h10v14H7z" />
@@ -230,61 +205,58 @@ function ClipboardIcon() {
 
 function MarksIcon() {
   return (
-    <svg
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M4 19V5" />
-      <path d="M4 19h16" />
-      <path d="M8 15l3-3 3 2 4-5" />
+      <path d="M10 19V9" />
+      <path d="M16 19v-6" />
+      <path d="M22 19V3" />
     </svg>
   );
 }
 
-function CalendarIcon() {
+function UploadIcon() {
   return (
-    <svg
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M8 3v3M16 3v3" />
-      <path d="M4 7h16" />
-      <path d="M5 21h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2z" />
-    </svg>
-  );
-}
-
-function SettingsIcon() {
-  return (
-    <svg
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" />
-      <path d="M19.4 15a7.9 7.9 0 0 0 .1-2l2-1.5-2-3.5-2.4 1a8 8 0 0 0-1.7-1L15 3H9l-.4 2.5a8 8 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a7.9 7.9 0 0 0 0 2l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 1.7 1L9 21h6l.4-2.5a8 8 0 0 0 1.7-1l2.4 1 2-3.5-2-1.5z" />
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 16V4" />
+      <path d="m7 9-5-5-5 5" />
+      <path d="M4 20h16" />
     </svg>
   );
 }
 
 function FolderIcon() {
   return (
-    <svg
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M3 7h5l2 2h11v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+    </svg>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M16 3v4M8 3v4M3 10h18" />
+    </svg>
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7z" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 .6 1.65 1.65 0 0 1-2 0 1.65 1.65 0 0 0-1-.6 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-.6-1 1.65 1.65 0 0 1 0-2 1.65 1.65 0 0 0 .6-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-.6 1.65 1.65 0 0 1 2 0 1.65 1.65 0 0 0 1 .6 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.24.3.43.64.6 1a1.65 1.65 0 0 1 0 2c-.17.36-.36.7-.6 1z" />
+    </svg>
+  );
+}
+
+function ProjectIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M8 6h8" />
+      <path d="M8 12h8" />
+      <path d="M8 18h5" />
+      <path d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
     </svg>
   );
 }

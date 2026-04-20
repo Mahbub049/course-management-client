@@ -822,6 +822,38 @@ export default function TabMarks({ courseId, course }) {
     return [...originalStudentsRef.current];
   }, [students, sortMode]);
 
+  const gradeCounts = useMemo(() => {
+    const counts = {
+      "A+": 0,
+      A: 0,
+      "A-": 0,
+      "B+": 0,
+      B: 0,
+      "B-": 0,
+      "C+": 0,
+      C: 0,
+      D: 0,
+      F: 0,
+    };
+
+    sortedStudents.forEach((s) => {
+      const row = marksMap[s.id] || {};
+      const total = computeTotal100(
+        course,
+        assessments,
+        row,
+        Number(attMarksMap[s.id] || 0)
+      );
+      const grade = gradeFromTotal(total);
+
+      if (counts[grade] !== undefined) {
+        counts[grade] += 1;
+      }
+    });
+
+    return counts;
+  }, [sortedStudents, marksMap, attMarksMap, course, assessments]);
+
   const activeAdvancedAssessment = useMemo(() => {
     if (!advancedModal.assessmentId) return null;
     return assessments.find(
@@ -1225,26 +1257,55 @@ export default function TabMarks({ courseId, course }) {
     <div className="space-y-6">
       <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="bg-gradient-to-r from-slate-50 via-white to-indigo-50/70 px-6 py-5 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/40">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h3 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-                Marks Entry
-              </h3>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                {courseType === "lab"
-                  ? "Lab Assessment Main is calculated from regular lab assessments only. Advanced Lab Final now has a faster student-to-student entry flow."
-                  : "Theory course marks entry with CT policy, Mid, Final, Assignment, Presentation, and Attendance."}
-              </p>
+          <div className="space-y-4">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div className="max-w-2xl">
+                <h3 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+                  Marks Entry
+                </h3>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  {courseType === "lab"
+                    ? "Lab Assessment Main is calculated from regular lab assessments only. Advanced Lab Final now has a faster student-to-student entry flow."
+                    : "Theory course marks entry with CT policy, Mid, Final, Assignment, Presentation, and Attendance."}
+                </p>
+              </div>
+
+              <div className="grid w-full grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:max-w-[620px]">
+                <MiniStat label="Students" value={students.length} />
+                <MiniStat label="Assessments" value={assessments.length} />
+                <MiniStat label="Entered Cells" value={enteredCount} />
+                <MiniStat
+                  label="Advanced Finals"
+                  value={advancedLabFinalAssessments.length}
+                />
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <MiniStat label="Students" value={students.length} />
-              <MiniStat label="Assessments" value={assessments.length} />
-              <MiniStat label="Entered Cells" value={enteredCount} />
-              <MiniStat
-                label="Advanced Finals"
-                value={advancedLabFinalAssessments.length}
-              />
+            <div className="rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-800/60">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  Grade Count Summary
+                </div>
+                <div className="text-xs text-slate-400 dark:text-slate-500">
+                  Total: {students.length}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-10">
+                {["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "D", "F"].map((grade) => (
+                  <div
+                    key={grade}
+                    className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-center dark:border-slate-700 dark:bg-slate-900"
+                  >
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      {grade}
+                    </div>
+                    <div className="mt-1 text-base font-bold text-slate-900 dark:text-slate-100">
+                      {gradeCounts[grade]}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -1281,7 +1342,7 @@ export default function TabMarks({ courseId, course }) {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="border-b border-slate-100 px-6 py-4 dark:border-slate-800">
           <h4 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
             Marks Table
@@ -1289,7 +1350,7 @@ export default function TabMarks({ courseId, course }) {
         </div>
 
         <div className="p-4 md:p-6">
-          <div className="space-y-3">
+          <div className="space-y-3 overflow-visible">
             <div
               ref={topScrollbarRef}
               className="overflow-x-auto rounded-xl border border-slate-300 bg-slate-100 dark:border-slate-600 dark:bg-slate-800"
@@ -1300,26 +1361,61 @@ export default function TabMarks({ courseId, course }) {
               />
             </div>
 
-            <div
-              ref={bottomScrollRef}
-              className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700"
-            >
-              <table ref={tableRef} className="min-w-full text-sm">
-                <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800">
-                  <tr className="border-b border-slate-200 dark:border-slate-700">
-                    <th className="sticky left-0 z-30 min-w-[110px] bg-slate-50 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                      Roll
-                    </th>
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-700">
+              <div
+                ref={bottomScrollRef}
+                className="overflow-x-auto overflow-y-visible"
+              >
+                <table ref={tableRef} className="min-w-full text-sm">
+                  <thead className="bg-slate-50 dark:bg-slate-800 relative z-30">
+                    <tr className="border-b border-slate-200 dark:border-slate-700">
+                      <th className="sticky top-0 left-0 z-30 min-w-[110px] bg-slate-50 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                        Roll
+                      </th>
 
-                    <th className="sticky left-[110px] z-30 min-w-[220px] bg-slate-50 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                      Student
-                    </th>
+                      <th className="sticky top-0 left-[110px] z-30 min-w-[220px] bg-slate-50 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                        Student
+                      </th>
 
-                    {(courseType === "lab" ? labRegularAssessments : ctAssessments).map(
-                      (a) => (
+                      {(courseType === "lab" ? labRegularAssessments : ctAssessments).map(
+                        (a) => (
+                          <th
+                            key={a._id}
+                            className="sticky top-0 z-20 min-w-[140px] bg-slate-50 dark:bg-slate-800 px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300"
+                          >
+                            <div className="space-y-2">
+                              <div className="text-sm font-semibold normal-case text-slate-800 dark:text-slate-100">
+                                {a.name}
+                              </div>
+                              <div className="text-[11px] font-medium normal-case text-slate-400 dark:text-slate-500">
+                                Full marks: {a.fullMarks}
+                              </div>
+                              <button
+                                onClick={() => handlePublish(a)}
+                                disabled={publishingAssessmentId === a._id}
+                                className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                              >
+                                {publishingAssessmentId === a._id
+                                  ? a.isPublished
+                                    ? "Republishing..."
+                                    : "Publishing..."
+                                  : a.isPublished
+                                    ? "Republish"
+                                    : "Publish"}
+                              </button>
+                            </div>
+                          </th>
+                        )
+                      )}
+
+                      <th className="sticky top-0 z-20 min-w-[150px] bg-slate-50 dark:bg-slate-800 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                        {courseType === "lab" ? "Lab Assessment (Main)" : "CT Main"}
+                      </th>
+
+                      {nonCtAssessments.map((a) => (
                         <th
                           key={a._id}
-                          className="min-w-[170px] px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300"
+                          className="sticky top-0 z-20 min-w-[190px] bg-slate-50 dark:bg-slate-800 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300"
                         >
                           <div className="space-y-2">
                             <div className="text-sm font-semibold normal-case text-slate-800 dark:text-slate-100">
@@ -1328,6 +1424,11 @@ export default function TabMarks({ courseId, course }) {
                             <div className="text-[11px] font-medium normal-case text-slate-400 dark:text-slate-500">
                               Full marks: {a.fullMarks}
                             </div>
+                            {a?.structureType === "lab_final" && (
+                              <div className="rounded-full border border-fuchsia-200 bg-fuchsia-50 px-2 py-1 text-[11px] font-semibold normal-case text-fuchsia-700 dark:border-fuchsia-500/20 dark:bg-fuchsia-500/10 dark:text-fuchsia-300">
+                                Faster entry enabled
+                              </div>
+                            )}
                             <button
                               onClick={() => handlePublish(a)}
                               disabled={publishingAssessmentId === a._id}
@@ -1343,89 +1444,128 @@ export default function TabMarks({ courseId, course }) {
                             </button>
                           </div>
                         </th>
-                      )
-                    )}
+                      ))}
 
-                    <th className="min-w-[150px] px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                      {courseType === "lab" ? "Lab Assessment (Main)" : "CT Main"}
-                    </th>
-
-                    {nonCtAssessments.map((a) => (
-                      <th
-                        key={a._id}
-                        className="min-w-[190px] px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300"
-                      >
-                        <div className="space-y-2">
-                          <div className="text-sm font-semibold normal-case text-slate-800 dark:text-slate-100">
-                            {a.name}
-                          </div>
-                          <div className="text-[11px] font-medium normal-case text-slate-400 dark:text-slate-500">
-                            Full marks: {a.fullMarks}
-                          </div>
-                          {a?.structureType === "lab_final" && (
-                            <div className="rounded-full border border-fuchsia-200 bg-fuchsia-50 px-2 py-1 text-[11px] font-semibold normal-case text-fuchsia-700 dark:border-fuchsia-500/20 dark:bg-fuchsia-500/10 dark:text-fuchsia-300">
-                              Faster entry enabled
-                            </div>
-                          )}
-                          <button
-                            onClick={() => handlePublish(a)}
-                            disabled={publishingAssessmentId === a._id}
-                            className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-                          >
-                            {publishingAssessmentId === a._id
-                              ? a.isPublished
-                                ? "Republishing..."
-                                : "Publishing..."
-                              : a.isPublished
-                                ? "Republish"
-                                : "Publish"}
-                          </button>
-                        </div>
+                      <th className="sticky top-0 z-20 min-w-[110px] bg-slate-50 dark:bg-slate-800 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                        Total
                       </th>
-                    ))}
 
-                    <th className="min-w-[110px] px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                      Total
-                    </th>
+                      <th className="sticky top-0 z-20 min-w-[100px] bg-slate-50 dark:bg-slate-800 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                        Grade
+                      </th>
+                    </tr>
+                  </thead>
 
-                    <th className="min-w-[100px] px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                      Grade
-                    </th>
-                  </tr>
-                </thead>
+                  <tbody>
+                    {sortedStudents.map((s, rowIndex) => {
+                      const row = marksMap[s.id] || {};
+                      const total = computeTotal100(
+                        course,
+                        assessments,
+                        row,
+                        Number(attMarksMap[s.id] || 0)
+                      );
 
-                <tbody>
-                  {sortedStudents.map((s, rowIndex) => {
-                    const row = marksMap[s.id] || {};
-                    const total = computeTotal100(
-                      course,
-                      assessments,
-                      row,
-                      Number(attMarksMap[s.id] || 0)
-                    );
+                      return (
+                        <tr
+                          key={s.id}
+                          className="border-b border-slate-100 last:border-0 dark:border-slate-800"
+                        >
+                          <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-4 py-3 font-semibold text-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                            {s.roll}
+                          </td>
 
-                    return (
-                      <tr
-                        key={s.id}
-                        className="border-b border-slate-100 last:border-0 dark:border-slate-800"
-                      >
-                        <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-4 py-3 font-semibold text-slate-700 dark:bg-slate-900 dark:text-slate-200">
-                          {s.roll}
-                        </td>
+                          <td className="sticky left-[110px] z-10 whitespace-nowrap bg-white px-4 py-3 dark:bg-slate-900">
+                            <div className="font-semibold text-slate-900 dark:text-slate-100">
+                              {s.name}
+                            </div>
+                          </td>
 
-                        <td className="sticky left-[110px] z-10 whitespace-nowrap bg-white px-4 py-3 dark:bg-slate-900">
-                          <div className="font-semibold text-slate-900 dark:text-slate-100">
-                            {s.name}
-                          </div>
-                        </td>
+                          {(courseType === "lab" ? labRegularAssessments : ctAssessments).map(
+                            (a, colIndex) => {
+                              const isAttendanceCol = String(a.name || "")
+                                .toLowerCase()
+                                .includes("att");
 
-                        {(courseType === "lab" ? labRegularAssessments : ctAssessments).map(
-                          (a, colIndex) => {
+                              const cell = row[a._id];
+
+                              return (
+                                <td key={a._id} className="px-4 py-3">
+                                  <input
+                                    type="number"
+                                    disabled={isAttendanceCol}
+                                    className={[
+                                      "h-11 w-24 rounded-xl border px-3 text-sm shadow-sm transition",
+                                      "focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500",
+                                      isAttendanceCol
+                                        ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                                        : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
+                                    ].join(" ")}
+                                    value={cell == null ? "" : getMainMarkValue(cell)}
+                                    onChange={(e) =>
+                                      handleMarkChange(s.id, a._id, e.target.value)
+                                    }
+                                    onKeyDown={handleKeyDown}
+                                    data-row={rowIndex}
+                                    data-col={colIndex}
+                                    ref={(el) => {
+                                      if (!inputRefs.current[rowIndex]) {
+                                        inputRefs.current[rowIndex] = [];
+                                      }
+                                      inputRefs.current[rowIndex][colIndex] = el;
+                                    }}
+                                  />
+                                </td>
+                              );
+                            }
+                          )}
+
+                          <td className="px-4 py-3">
+                            <div
+                              title={
+                                courseType === "lab"
+                                  ? "Calculated from average of all regular lab assessments and converted to 25"
+                                  : "Calculated from selected CT policy"
+                              }
+                              className="inline-flex min-w-[72px] items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300"
+                            >
+                              {courseType === "lab"
+                                ? getLabMain(assessments, row)
+                                : roundPolicyTotal(computeCtScore(course, assessments, row))}
+                            </div>
+                          </td>
+
+                          {nonCtAssessments.map((a, index) => {
+                            const firstPartCount =
+                              courseType === "lab"
+                                ? labRegularAssessments.length
+                                : ctAssessments.length;
+
+                            const actualColIndex = firstPartCount + index + 1;
                             const isAttendanceCol = String(a.name || "")
                               .toLowerCase()
                               .includes("att");
-
                             const cell = row[a._id];
+
+                            if (a?.structureType === "lab_final") {
+                              return (
+                                <td key={a._id} className="px-4 py-3">
+                                  <div className="flex flex-col gap-2">
+                                    <div className="inline-flex min-w-[78px] items-center justify-center rounded-full border border-fuchsia-200 bg-fuchsia-50 px-3 py-1.5 text-xs font-bold text-fuchsia-700 dark:border-fuchsia-500/20 dark:bg-fuchsia-500/10 dark:text-fuchsia-300">
+                                      {Number(getMainMarkValue(cell) || 0).toFixed(1)}
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => openAdvancedModal(s, a)}
+                                      className="rounded-xl border border-fuchsia-200 bg-white px-3 py-2 text-xs font-semibold text-fuchsia-700 shadow-sm transition hover:bg-fuchsia-50 dark:border-fuchsia-500/20 dark:bg-slate-900 dark:text-fuchsia-300 dark:hover:bg-fuchsia-500/10"
+                                    >
+                                      Open Breakdown
+                                    </button>
+                                  </div>
+                                </td>
+                              );
+                            }
 
                             return (
                               <td key={a._id} className="px-4 py-3">
@@ -1445,156 +1585,79 @@ export default function TabMarks({ courseId, course }) {
                                   }
                                   onKeyDown={handleKeyDown}
                                   data-row={rowIndex}
-                                  data-col={colIndex}
+                                  data-col={actualColIndex}
                                   ref={(el) => {
                                     if (!inputRefs.current[rowIndex]) {
                                       inputRefs.current[rowIndex] = [];
                                     }
-                                    inputRefs.current[rowIndex][colIndex] = el;
+                                    inputRefs.current[rowIndex][actualColIndex] = el;
                                   }}
                                 />
                               </td>
                             );
-                          }
-                        )}
+                          })}
 
-                        <td className="px-4 py-3">
-                          <div
-                            title={
-                              courseType === "lab"
-                                ? "Calculated from average of all regular lab assessments and converted to 25"
-                                : "Calculated from selected CT policy"
-                            }
-                            className="inline-flex min-w-[72px] items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300"
-                          >
-                            {courseType === "lab"
-                              ? getLabMain(assessments, row)
-                              : roundPolicyTotal(computeCtScore(course, assessments, row))}
-                          </div>
-                        </td>
+                          <td className="px-4 py-3">
+                            <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+                              {Number(total).toFixed(1)}
+                            </span>
+                          </td>
 
-                        {nonCtAssessments.map((a, index) => {
-                          const firstPartCount =
-                            courseType === "lab"
-                              ? labRegularAssessments.length
-                              : ctAssessments.length;
-
-                          const actualColIndex = firstPartCount + index + 1;
-                          const isAttendanceCol = String(a.name || "")
-                            .toLowerCase()
-                            .includes("att");
-                          const cell = row[a._id];
-
-                          if (a?.structureType === "lab_final") {
-                            return (
-                              <td key={a._id} className="px-4 py-3">
-                                <div className="flex flex-col gap-2">
-                                  <div className="inline-flex min-w-[78px] items-center justify-center rounded-full border border-fuchsia-200 bg-fuchsia-50 px-3 py-1.5 text-xs font-bold text-fuchsia-700 dark:border-fuchsia-500/20 dark:bg-fuchsia-500/10 dark:text-fuchsia-300">
-                                    {Number(getMainMarkValue(cell) || 0).toFixed(1)}
-                                  </div>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => openAdvancedModal(s, a)}
-                                    className="rounded-xl border border-fuchsia-200 bg-white px-3 py-2 text-xs font-semibold text-fuchsia-700 shadow-sm transition hover:bg-fuchsia-50 dark:border-fuchsia-500/20 dark:bg-slate-900 dark:text-fuchsia-300 dark:hover:bg-fuchsia-500/10"
-                                  >
-                                    Open Breakdown
-                                  </button>
-                                </div>
-                              </td>
-                            );
-                          }
-
-                          return (
-                            <td key={a._id} className="px-4 py-3">
-                              <input
-                                type="number"
-                                disabled={isAttendanceCol}
-                                className={[
-                                  "h-11 w-24 rounded-xl border px-3 text-sm shadow-sm transition",
-                                  "focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500",
-                                  isAttendanceCol
-                                    ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
-                                    : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
-                                ].join(" ")}
-                                value={cell == null ? "" : getMainMarkValue(cell)}
-                                onChange={(e) =>
-                                  handleMarkChange(s.id, a._id, e.target.value)
-                                }
-                                onKeyDown={handleKeyDown}
-                                data-row={rowIndex}
-                                data-col={actualColIndex}
-                                ref={(el) => {
-                                  if (!inputRefs.current[rowIndex]) {
-                                    inputRefs.current[rowIndex] = [];
-                                  }
-                                  inputRefs.current[rowIndex][actualColIndex] = el;
-                                }}
-                              />
-                            </td>
-                          );
-                        })}
-
-                        <td className="px-4 py-3">
-                          <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
-                            {Number(total).toFixed(1)}
-                          </span>
-                        </td>
-
-                        <td className="px-4 py-3">
-                          <GradeBadge grade={gradeFromTotal(total)} />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                          <td className="px-4 py-3">
+                            <GradeBadge grade={gradeFromTotal(total)} />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
+
+
+            {!loading && sortedStudents.length > 0 && assessments.length > 0 && (
+              <div className="mt-5 flex flex-wrap gap-3">
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="inline-flex items-center justify-center rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {saving ? "Saving..." : "Save Marks"}
+                </button>
+
+                <button
+                  onClick={handleExportExcel}
+                  className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                >
+                  Export Excel
+                </button>
+              </div>
+            )}
           </div>
-
-
-          {!loading && sortedStudents.length > 0 && assessments.length > 0 && (
-            <div className="mt-5 flex flex-wrap gap-3">
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="inline-flex items-center justify-center rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {saving ? "Saving..." : "Save Marks"}
-              </button>
-
-              <button
-                onClick={handleExportExcel}
-                className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
-              >
-                Export Excel
-              </button>
-            </div>
-          )}
         </div>
-      </div>
 
-      <AdvancedBreakdownModal
-        open={advancedModal.open}
-        student={activeAdvancedStudent}
-        assessment={activeAdvancedAssessment}
-        cellValue={activeAdvancedCell}
-        onClose={closeAdvancedModal}
-        onPrev={goPrevAdvancedStudent}
-        onNext={goNextAdvancedStudent}
-        hasPrev={advancedModal.studentIndex > 0}
-        hasNext={advancedModal.studentIndex < sortedStudents.length - 1}
-        onSubMarkChange={(subKey, value, fullMarks) => {
-          if (!activeAdvancedStudent || !activeAdvancedAssessment) return;
-          handleAdvancedSubMarkChange(
-            activeAdvancedStudent.id,
-            activeAdvancedAssessment,
-            subKey,
-            value,
-            fullMarks
-          );
-        }}
-      />
+        <AdvancedBreakdownModal
+          open={advancedModal.open}
+          student={activeAdvancedStudent}
+          assessment={activeAdvancedAssessment}
+          cellValue={activeAdvancedCell}
+          onClose={closeAdvancedModal}
+          onPrev={goPrevAdvancedStudent}
+          onNext={goNextAdvancedStudent}
+          hasPrev={advancedModal.studentIndex > 0}
+          hasNext={advancedModal.studentIndex < sortedStudents.length - 1}
+          onSubMarkChange={(subKey, value, fullMarks) => {
+            if (!activeAdvancedStudent || !activeAdvancedAssessment) return;
+            handleAdvancedSubMarkChange(
+              activeAdvancedStudent.id,
+              activeAdvancedAssessment,
+              subKey,
+              value,
+              fullMarks
+            );
+          }}
+        />
+      </div>
     </div>
   );
 }
