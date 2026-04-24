@@ -5,13 +5,54 @@ import {
 } from "../../services/projectFormService";
 
 const DEFAULT_FIELDS = {
-  groupName: { enabled: true, required: true },
-  projectTitle: { enabled: true, required: true },
-  projectSummary: { enabled: true, required: false },
-  driveLink: { enabled: true, required: false },
-  repositoryLink: { enabled: false, required: false },
-  contactEmail: { enabled: true, required: false },
-  note: { enabled: false, required: false },
+  groupName: {
+    visibleToStudent: true,
+    editableByStudent: false,
+    requiredOnGroupCreate: true,
+    requiredOnProjectUpdate: false,
+  },
+
+  projectTitle: {
+    visibleToStudent: true,
+    editableByStudent: true,
+    requiredOnGroupCreate: false,
+    requiredOnProjectUpdate: true,
+  },
+
+  projectSummary: {
+    visibleToStudent: true,
+    editableByStudent: true,
+    requiredOnGroupCreate: false,
+    requiredOnProjectUpdate: false,
+  },
+
+  driveLink: {
+    visibleToStudent: true,
+    editableByStudent: true,
+    requiredOnGroupCreate: false,
+    requiredOnProjectUpdate: false,
+  },
+
+  repositoryLink: {
+    visibleToStudent: true,
+    editableByStudent: true,
+    requiredOnGroupCreate: false,
+    requiredOnProjectUpdate: false,
+  },
+
+  contactEmail: {
+    visibleToStudent: true,
+    editableByStudent: true,
+    requiredOnGroupCreate: false,
+    requiredOnProjectUpdate: false,
+  },
+
+  additionalNote: {
+    visibleToStudent: true,
+    editableByStudent: true,
+    requiredOnGroupCreate: false,
+    requiredOnProjectUpdate: false,
+  },
 };
 
 const FIELD_META = [
@@ -52,7 +93,7 @@ const FIELD_META = [
     supportedNow: false,
   },
   {
-    key: "note",
+    key: "additionalNote",
     title: "Additional Note",
     desc: "Extra remarks or supporting note for later modules.",
     supportedNow: false,
@@ -60,14 +101,25 @@ const FIELD_META = [
 ];
 
 function mergeFields(rawFields = {}) {
-  const merged = { ...DEFAULT_FIELDS };
+  const merged = {};
 
   Object.keys(DEFAULT_FIELDS).forEach((key) => {
     merged[key] = {
-      enabled:
-        rawFields?.[key]?.enabled ?? DEFAULT_FIELDS[key].enabled,
-      required:
-        rawFields?.[key]?.required ?? DEFAULT_FIELDS[key].required,
+      visibleToStudent:
+        rawFields?.[key]?.visibleToStudent ??
+        DEFAULT_FIELDS[key].visibleToStudent,
+
+      editableByStudent:
+        rawFields?.[key]?.editableByStudent ??
+        DEFAULT_FIELDS[key].editableByStudent,
+
+      requiredOnGroupCreate:
+        rawFields?.[key]?.requiredOnGroupCreate ??
+        DEFAULT_FIELDS[key].requiredOnGroupCreate,
+
+      requiredOnProjectUpdate:
+        rawFields?.[key]?.requiredOnProjectUpdate ??
+        DEFAULT_FIELDS[key].requiredOnProjectUpdate,
     };
   });
 
@@ -111,33 +163,18 @@ export default function TeacherProjectForm({ course }) {
   };
 
   const enabledCount = useMemo(
-    () => Object.values(fields).filter((item) => item.enabled).length,
+    () => Object.values(fields).filter((item) => item.visibleToStudent).length,
     [fields]
   );
 
-  const handleToggleEnabled = (key) => {
+  const handleFieldChange = (key, fieldName) => {
     setFields((prev) => ({
       ...prev,
       [key]: {
         ...prev[key],
-        enabled: !prev[key].enabled,
-        required: !prev[key].enabled ? prev[key].required : false,
+        [fieldName]: !prev[key][fieldName],
       },
     }));
-  };
-
-  const handleToggleRequired = (key) => {
-    setFields((prev) => {
-      if (!prev[key].enabled) return prev;
-
-      return {
-        ...prev,
-        [key]: {
-          ...prev[key],
-          required: !prev[key].required,
-        },
-      };
-    });
   };
 
   const handleSave = async () => {
@@ -180,13 +217,13 @@ export default function TeacherProjectForm({ course }) {
                 Project Form Configuration
               </h3>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Choose which fields students must see while creating or viewing
-                project information.
+                Choose which fields students can see, edit, and must complete
+                during group creation or project update.
               </p>
             </div>
 
             <div className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
-              {enabledCount} field{enabledCount === 1 ? "" : "s"} enabled
+              {enabledCount} field{enabledCount === 1 ? "" : "s"} visible
             </div>
           </div>
         </div>
@@ -207,8 +244,10 @@ export default function TeacherProjectForm({ course }) {
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             {FIELD_META.map((item) => {
               const state = fields[item.key] || {
-                enabled: false,
-                required: false,
+                visibleToStudent: true,
+                editableByStudent: false,
+                requiredOnGroupCreate: false,
+                requiredOnProjectUpdate: false,
               };
 
               return (
@@ -238,35 +277,40 @@ export default function TeacherProjectForm({ course }) {
                         {item.desc}
                       </p>
                     </div>
-
-                    <ToggleSwitch
-                      checked={state.enabled}
-                      onChange={() => handleToggleEnabled(item.key)}
-                    />
                   </div>
 
-                  <div className="mt-4 flex flex-wrap items-center gap-3">
-                    <button
-                      type="button"
-                      disabled={!state.enabled}
-                      onClick={() => handleToggleRequired(item.key)}
-                      className={[
-                        "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
-                        !state.enabled
-                          ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-500"
-                          : state.required
-                          ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300"
-                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800",
-                      ].join(" ")}
-                    >
-                      {state.required ? "Required" : "Optional"}
-                    </button>
+                  <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <ToggleRow
+                      label="Visible to Student"
+                      checked={state.visibleToStudent}
+                      onChange={() =>
+                        handleFieldChange(item.key, "visibleToStudent")
+                      }
+                    />
 
-                    <span className="text-xs text-slate-500 dark:text-slate-400">
-                      {state.enabled
-                        ? "This field will be shown to students."
-                        : "This field will stay hidden from students."}
-                    </span>
+                    <ToggleRow
+                      label="Editable by Student"
+                      checked={state.editableByStudent}
+                      onChange={() =>
+                        handleFieldChange(item.key, "editableByStudent")
+                      }
+                    />
+
+                    <ToggleRow
+                      label="Required on Group Create"
+                      checked={state.requiredOnGroupCreate}
+                      onChange={() =>
+                        handleFieldChange(item.key, "requiredOnGroupCreate")
+                      }
+                    />
+
+                    <ToggleRow
+                      label="Required on Project Update"
+                      checked={state.requiredOnProjectUpdate}
+                      onChange={() =>
+                        handleFieldChange(item.key, "requiredOnProjectUpdate")
+                      }
+                    />
                   </div>
                 </div>
               );
@@ -314,5 +358,17 @@ function ToggleSwitch({ checked, onChange }) {
         ].join(" ")}
       />
     </button>
+  );
+}
+
+function ToggleRow({ label, checked, onChange }) {
+  return (
+    <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 dark:border-slate-700">
+      <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+        {label}
+      </span>
+
+      <ToggleSwitch checked={checked} onChange={onChange} />
+    </div>
   );
 }

@@ -28,6 +28,7 @@ export default function TeacherCourseLayout({
       ? [{ id: "projects", label: "Projects", icon: <ProjectIcon /> }]
       : []),
     { id: "materials", label: "Materials", icon: <FolderIcon /> },
+    { id: "obe", label: "OBE / CO-PO", icon: <TargetIcon /> },
     { id: "submissions", label: "Submissions", icon: <UploadIcon /> },
     { id: "students", label: "Students", icon: <UsersIcon /> },
     { id: "attendance", label: "Attendance", icon: <CalendarIcon /> },
@@ -246,6 +247,16 @@ function SettingsIcon() {
     <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7z" />
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 .6 1.65 1.65 0 0 1-2 0 1.65 1.65 0 0 0-1-.6 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-.6-1 1.65 1.65 0 0 1 0-2 1.65 1.65 0 0 0 .6-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-.6 1.65 1.65 0 0 1 2 0 1.65 1.65 0 0 0 1 .6 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.24.3.43.64.6 1a1.65 1.65 0 0 1 0 2c-.17.36-.36.7-.6 1z" />
+    </svg>
+  );
+}
+
+function TargetIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 3v3M21 12h-3M12 21v-3M3 12h3" />
     </svg>
   );
 }

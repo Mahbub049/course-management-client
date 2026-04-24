@@ -4,6 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchStudentCourses } from "../services/studentService";
 
+import StudentProjectGroups from "./studentCourse/StudentProjectGroups";
+import StudentProjectInfo from "./studentCourse/StudentProjectInfo";
+import StudentProjectPhases from "./studentCourse/StudentProjectPhases";
+import StudentProjectSubmissions from "./studentCourse/StudentProjectSubmissions";
+import StudentProjectMarks from "./studentCourse/StudentProjectMarks";
 function isLabLike(c) {
   const ct = (c?.courseType || "").toLowerCase();
   if (ct === "lab") return true;

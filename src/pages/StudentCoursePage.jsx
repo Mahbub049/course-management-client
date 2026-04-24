@@ -5,11 +5,12 @@ import { createStudentComplaint } from "../services/complaintService";
 import { fetchStudentAttendanceSheet } from "../services/attendanceService";
 import { fetchStudentCourseMaterials } from "../services/materialService";
 import StudentProjectGroups from "./studentCourse/StudentProjectGroups";
-import StudentProjectPhases from "./studentCourse/StudentProjectPhases";
+// import StudentProjectPhases from "./studentCourse/StudentProjectPhases";
 import StudentProjectSubmissions from "./studentCourse/StudentProjectSubmissions";
 import StudentProjectMarks from "./studentCourse/StudentProjectMarks";
 import StudentProjectTotalSummary from "./studentCourse/StudentProjectTotalSummary";
 import StudentLabSubmissions from "./studentCourse/StudentLabSubmissions";
+import StudentProjectInfo from "./studentCourse/StudentProjectInfo";
 
 const STATUS_COLORS = {
   APlus: "text-emerald-700 dark:text-emerald-300",
@@ -429,6 +430,169 @@ export default function StudentCoursePage() {
       setComplaintLoading(false);
     }
   };
+
+  // function StudentProjectSection({ course }) {
+  //   const [projectTab, setProjectTab] = useState("my-group");
+  //   const [selectedPhaseId, setSelectedPhaseId] = useState("");
+
+  //   const tabs = [
+  //     { key: "my-group", label: "My Group" },
+  //     { key: "project-info", label: "Project Info" },
+  //     { key: "phases", label: "Phases" },
+  //     { key: "submissions", label: "Workflow" },
+  //     { key: "marks", label: "Marks" },
+  //   ];
+
+  //   const openSubmissionForPhase = (phaseId) => {
+  //     setSelectedPhaseId(phaseId);
+  //     setProjectTab("submissions");
+  //   };
+
+  //   return (
+  //     <div className="space-y-6">
+  //       <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+  //         <div className="border-b border-slate-100 px-6 py-5 dark:border-slate-800">
+  //           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+  //             <div>
+  //               <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+  //                 Project Workspace
+  //               </h3>
+  //               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+  //                 View phases, open a selected phase, and complete submission from one clean workflow.
+  //               </p>
+  //             </div>
+
+  //             <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+  //               Student View
+  //             </div>
+  //           </div>
+  //         </div>
+
+  //         <div className="px-6 py-4">
+  //           <div className="flex flex-wrap gap-2">
+  //             {tabs.map((tab) => {
+  //               const active = projectTab === tab.key;
+
+  //               return (
+  //                 <button
+  //                   key={tab.key}
+  //                   type="button"
+  //                   onClick={() => setProjectTab(tab.key)}
+  //                   className={[
+  //                     "rounded-2xl border px-4 py-2.5 text-sm font-semibold transition",
+  //                     active
+  //                       ? "border-violet-600 bg-violet-600 text-white shadow-lg shadow-violet-600/20"
+  //                       : "border-slate-200 bg-white text-slate-700 hover:border-violet-200 hover:bg-violet-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-violet-500/30 dark:hover:bg-slate-800",
+  //                   ].join(" ")}
+  //                 >
+  //                   {tab.label}
+  //                 </button>
+  //               );
+  //             })}
+  //           </div>
+  //         </div>
+  //       </section>
+
+  //       {projectTab === "my-group" && <StudentProjectGroups course={course} />}
+  //       {projectTab === "project-info" && <StudentProjectInfo course={course} />}
+  //       {projectTab === "phases" && (
+  //         <StudentProjectPhases
+  //           course={course}
+  //           onOpenSubmission={openSubmissionForPhase}
+  //         />
+  //       )}
+  //       {projectTab === "submissions" && (
+  //         <StudentProjectSubmissions
+  //           course={course}
+  //           initialPhaseId={selectedPhaseId}
+  //         />
+  //       )}
+  //       {projectTab === "marks" && (
+  //         <div className="space-y-6">
+  //           <StudentProjectMarks course={course} />
+  //           <StudentProjectTotalSummary course={course} />
+  //         </div>
+  //       )}
+  //     </div>
+  //   );
+  // }
+
+  function StudentProjectSection({ course }) {
+  const [projectTab, setProjectTab] = useState("my-group");
+  const [selectedPhaseId, setSelectedPhaseId] = useState("");
+
+  const tabs = [
+    { key: "my-group", label: "My Group" },
+    { key: "project-info", label: "Project Info" },
+    { key: "workflow", label: "Phases & Workflow" },
+    { key: "marks", label: "Marks" },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="border-b border-slate-100 px-6 py-5 dark:border-slate-800">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+                Project Workspace
+              </h3>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Manage your group, update project information, and complete phase submissions from one organized workspace.
+              </p>
+            </div>
+
+            <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+              Student View
+            </div>
+          </div>
+        </div>
+
+        <div className="px-6 py-4">
+          <div className="flex flex-wrap gap-2">
+            {tabs.map((tab) => {
+              const active = projectTab === tab.key;
+
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setProjectTab(tab.key)}
+                  className={[
+                    "rounded-2xl border px-4 py-2.5 text-sm font-semibold transition",
+                    active
+                      ? "border-violet-600 bg-violet-600 text-white shadow-lg shadow-violet-600/20"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-violet-200 hover:bg-violet-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-violet-500/30 dark:hover:bg-slate-800",
+                  ].join(" ")}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {projectTab === "my-group" && <StudentProjectGroups course={course} />}
+
+      {projectTab === "project-info" && <StudentProjectInfo course={course} />}
+
+      {projectTab === "workflow" && (
+        <StudentProjectSubmissions
+          course={course}
+          initialPhaseId={selectedPhaseId}
+        />
+      )}
+
+      {projectTab === "marks" && (
+        <div className="space-y-6">
+          <StudentProjectMarks course={course} />
+          <StudentProjectTotalSummary course={course} />
+        </div>
+      )}
+    </div>
+  );
+}
 
   const openComplaintTab = () => {
     setActiveTab("complaint");
@@ -1028,15 +1192,7 @@ export default function StudentCoursePage() {
       )}
 
 
-      {activeTab === "project" && (
-        <div className="space-y-6">
-          <StudentProjectGroups course={course} />
-          <StudentProjectPhases course={course} />
-          <StudentProjectSubmissions course={course} />
-          <StudentProjectMarks course={course} />
-          <StudentProjectTotalSummary course={course} />
-        </div>
-      )}
+      {activeTab === "project" && <StudentProjectSection course={course} />}
 
       {activeTab === "submissions" && <StudentLabSubmissions courseId={courseId} />}
 

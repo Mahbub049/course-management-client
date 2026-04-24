@@ -10,6 +10,7 @@ import TabAttendance from "./teacherCourse/TabAttendence";
 import TabMaterials from "./teacherCourse/TabMaterials";
 import TabProjects from "./teacherCourse/TabProjects";
 import TeacherLabSubmissions from "./teacherCourse/TeacherLabSubmissions";
+import TabObe from "./teacherCourse/TabObe";
 
 import { fetchCourseById } from "../services/courseService";
 
@@ -76,6 +77,7 @@ export default function TeacherCoursePage() {
       {activeTab === "marks" && <TabMarks courseId={courseId} course={course} />}
       {activeTab === "attendance" && <TabAttendance courseId={courseId} />}
       {activeTab === "materials" && <TabMaterials courseId={courseId} />}
+      {activeTab === "obe" && <TabObe courseId={courseId} course={course} />}
       {activeTab === "submissions" && <TeacherLabSubmissions courseId={courseId} />}
       {activeTab === "projects" && <TabProjects course={course} />}
 

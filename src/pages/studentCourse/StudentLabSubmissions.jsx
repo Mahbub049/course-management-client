@@ -13,6 +13,18 @@ function formatDateTime(value) {
   return d.toLocaleString();
 }
 
+function getClosedLabel(item) {
+  if (item?.closedReason === "due_date_passed" || item?.dueDatePassed) {
+    return "Deadline Passed";
+  }
+
+  if (item?.submissionsOpen === false) {
+    return "Submission Closed";
+  }
+
+  return "Submission Open";
+}
+
 export default function StudentLabSubmissions({ courseId }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -85,7 +97,7 @@ export default function StudentLabSubmissions({ courseId }) {
     <div className="grid gap-4">
       {items.map((item) => {
         const submitted = !!item.submission;
-        const open = item.submissionsOpen !== false;
+        const open = item.submissionsOpen === true;
         const canUpload =
           open && (!submitted || item.allowResubmission !== false);
 
@@ -126,7 +138,7 @@ export default function StudentLabSubmissions({ courseId }) {
                         : "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300"
                     }`}
                   >
-                    {open ? "Submission Open" : "Submission Closed"}
+                    {getClosedLabel(item)}
                   </span>
                 </div>
 
@@ -200,7 +212,10 @@ export default function StudentLabSubmissions({ courseId }) {
                 ) : (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                     {!open
-                      ? "Submission is closed"
+                      ? item?.closedReason === "due_date_passed" ||
+                        item?.dueDatePassed
+                        ? "Submission deadline has passed"
+                        : "Submission is closed"
                       : "Resubmission is disabled"}
                   </div>
                 )}

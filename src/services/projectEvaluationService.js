@@ -7,7 +7,10 @@ export const fetchTeacherProjectEvaluations = async (courseId) => {
 };
 
 export const saveProjectEvaluation = async (courseId, phaseId, payload) => {
-  const res = await api.post(`/courses/${courseId}/project-evaluations/${phaseId}`, payload);
+  const res = await api.post(
+    `/courses/${courseId}/project-evaluations/${phaseId}`,
+    payload
+  );
   return res.data;
 };
 

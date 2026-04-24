@@ -1,0 +1,61 @@
+
+.input {
+  width: 100%;
+  border-radius: 1rem;
+  border: 1px solid rgb(226 232 240);
+  background: white;
+  padding: 0.7rem 0.9rem;
+  color: rgb(15 23 42);
+  outline: none;
+}
+
+.input:focus {
+  border-color: rgb(99 102 241);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.primary-btn,
+.secondary-btn,
+.danger-btn {
+  border-radius: 1rem;
+  padding: 0.7rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.primary-btn {
+  border: 1px solid rgb(79 70 229);
+  background: rgb(79 70 229);
+  color: white;
+}
+
+.secondary-btn {
+  border: 1px solid rgb(226 232 240);
+  background: white;
+  color: rgb(51 65 85);
+}
+
+.danger-btn {
+  border: 1px solid rgb(254 205 211);
+  background: rgb(255 241 242);
+  color: rgb(190 24 93);
+}
+
+.dark .input {
+  border-color: rgb(51 65 85);
+  background: rgb(15 23 42);
+  color: rgb(241 245 249);
+}
+
+.dark .secondary-btn {
+  border-color: rgb(51 65 85);
+  background: rgb(15 23 42);
+  color: rgb(226 232 240);
+}
+
+.dark .danger-btn {
+  border-color: rgba(244, 114, 182, 0.2);
+  background: rgba(236, 72, 153, 0.08);
+  color: rgb(244 114 182);
+}

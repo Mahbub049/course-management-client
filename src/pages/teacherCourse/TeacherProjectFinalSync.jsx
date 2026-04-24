@@ -11,13 +11,11 @@ export default function TeacherProjectFinalSync({ course }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
-
   const [assessments, setAssessments] = useState([]);
   const [targetAssessmentId, setTargetAssessmentId] = useState("");
   const [syncEnabled, setSyncEnabled] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [syncResult, setSyncResult] = useState(null);
-
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -31,8 +29,6 @@ export default function TeacherProjectFinalSync({ course }) {
     try {
       setLoading(true);
       setError("");
-      setSuccess("");
-
       const data = await fetchTeacherProjectSyncState(courseId);
 
       setAssessments(Array.isArray(data?.assessments) ? data.assessments : []);
@@ -87,6 +83,8 @@ export default function TeacherProjectFinalSync({ course }) {
     }
   };
 
+  const selectedAssessment = assessments.find((item) => item.id === targetAssessmentId);
+
   return (
     <div className="space-y-6">
       {error ? (
@@ -107,7 +105,7 @@ export default function TeacherProjectFinalSync({ course }) {
             Final Sync Settings
           </h3>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Sync the total project marks into one assessment so your existing marksheet and student total use it automatically.
+            For Advanced Lab Final, project marks now sync into the project breakdown items. For regular assessments, project total syncs as one flat value.
           </p>
         </div>
 
@@ -130,10 +128,22 @@ export default function TeacherProjectFinalSync({ course }) {
                   <option value="">Select assessment</option>
                   {assessments.map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.title} ({item.marks})
+                      {item.title} ({item.marks}){" "}
+                      {item.structureType === "lab_final"
+                        ? `• Advanced Lab Final${item.labFinalMode ? ` • ${item.labFinalMode}` : ""}`
+                        : "• Regular"}
                     </option>
                   ))}
                 </select>
+
+                {selectedAssessment ? (
+                  <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                    <span className="font-semibold">Selected type:</span>{" "}
+                    {selectedAssessment.structureType === "lab_final"
+                      ? `Advanced Lab Final${selectedAssessment.labFinalMode ? ` (${selectedAssessment.labFinalMode})` : ""}`
+                      : "Regular Assessment"}
+                  </div>
+                ) : null}
               </div>
 
               <div>
@@ -186,18 +196,73 @@ export default function TeacherProjectFinalSync({ course }) {
               Sync Result
             </h3>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              These project totals were synced into the selected assessment.
+              The result below shows what was pushed into the selected assessment.
             </p>
           </div>
 
-          <div className="p-6">
-            <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+          <div className="space-y-6 p-6">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
               <span className="font-semibold">Target Assessment:</span>{" "}
               {syncResult?.targetAssessment?.title || "-"}
               {" • "}
               <span className="font-semibold">Synced Students:</span>{" "}
               {syncResult?.syncedCount || 0}
+              {" • "}
+              <span className="font-semibold">Structure:</span>{" "}
+              {syncResult?.targetAssessment?.structureType || "-"}
             </div>
+
+            {Array.isArray(syncResult?.mapping) && syncResult.mapping.length > 0 ? (
+              <div className="rounded-3xl border border-slate-200 dark:border-slate-700">
+                <div className="border-b border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-700 dark:bg-slate-800">
+                  <h4 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                    Phase to Assessment Breakdown Mapping
+                  </h4>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    These project phases were synced into these advanced lab final breakdown items.
+                  </p>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+                    <thead className="bg-white dark:bg-slate-900">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                          Project Phase
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                          Phase Marks
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                          Assessment Breakdown Item
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                          Breakdown Marks
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 bg-white dark:divide-slate-700 dark:bg-slate-900">
+                      {syncResult.mapping.map((item) => (
+                        <tr key={item.phaseId}>
+                          <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-200">
+                            {item.phaseTitle}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-200">
+                            {item.phaseMarks}
+                          </td>
+                          <td className="px-4 py-3 text-sm font-medium text-slate-900 dark:text-slate-100">
+                            {item.targetLabel}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-200">
+                            {item.targetMarks}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
 
             <div className="overflow-x-auto rounded-3xl border border-slate-200 dark:border-slate-700">
               <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">

@@ -16,6 +16,13 @@ export const updateProjectPhase = async (courseId, phaseId, payload) => {
   return res.data;
 };
 
+export const moveProjectPhase = async (courseId, phaseId, direction) => {
+  const res = await api.post(`/courses/${courseId}/project-phases/${phaseId}/move`, {
+    direction,
+  });
+  return res.data;
+};
+
 export const deleteProjectPhase = async (courseId, phaseId) => {
   const res = await api.delete(`/courses/${courseId}/project-phases/${phaseId}`);
   return res.data;
