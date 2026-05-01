@@ -1,46 +1,58 @@
-import api from './api';
+import api from "./api";
 
-export const fetchObeSetup = async (courseId) => {
-  const res = await api.get(`/courses/${courseId}/obe/setup`);
-  return res.data;
+export const getObeSetup = async (courseId) => {
+  const { data } = await api.get(`/courses/${courseId}/obe/setup`);
+  return data;
 };
 
-export const saveObeSetupRequest = async (courseId, payload) => {
-  const res = await api.put(`/courses/${courseId}/obe/setup`, payload);
-  return res.data;
+export const saveObeSetup = async (courseId, payload) => {
+  const { data } = await api.put(`/courses/${courseId}/obe/setup`, payload);
+  return data;
 };
 
-export const fetchObeBlueprints = async (courseId) => {
-  const res = await api.get(`/courses/${courseId}/obe/blueprints`);
-  return res.data;
+export const getObeBlueprints = async (courseId) => {
+  const { data } = await api.get(`/courses/${courseId}/obe/blueprints`);
+  return data;
 };
 
-export const createObeBlueprintRequest = async (courseId, payload) => {
-  const res = await api.post(`/courses/${courseId}/obe/blueprints`, payload);
-  return res.data;
+export const createObeBlueprint = async (courseId, payload) => {
+  const { data } = await api.post(`/courses/${courseId}/obe/blueprints`, payload);
+  return data;
 };
 
-export const updateObeBlueprintRequest = async (courseId, blueprintId, payload) => {
-  const res = await api.put(`/courses/${courseId}/obe/blueprints/${blueprintId}`, payload);
-  return res.data;
+export const updateObeBlueprint = async (courseId, blueprintId, payload) => {
+  const { data } = await api.put(`/courses/${courseId}/obe/blueprints/${blueprintId}`, payload);
+  return data;
 };
 
-export const deleteObeBlueprintRequest = async (courseId, blueprintId) => {
-  const res = await api.delete(`/courses/${courseId}/obe/blueprints/${blueprintId}`);
-  return res.data;
+export const deleteObeBlueprint = async (courseId, blueprintId) => {
+  const { data } = await api.delete(`/courses/${courseId}/obe/blueprints/${blueprintId}`);
+  return data;
 };
 
-export const fetchObeMarkEntry = async (courseId) => {
-  const res = await api.get(`/courses/${courseId}/obe/marks`);
-  return res.data;
+export const getObeMarks = async (courseId) => {
+  const { data } = await api.get(`/courses/${courseId}/obe/marks`);
+  return data;
 };
 
-export const saveObeMarksRequest = async (courseId, payload) => {
-  const res = await api.post(`/courses/${courseId}/obe/marks`, payload);
-  return res.data;
+export const saveObeMarks = async (courseId, payload) => {
+  const { data } = await api.post(`/courses/${courseId}/obe/marks`, payload);
+  return data;
 };
 
-export const fetchObeOutput = async (courseId) => {
-  const res = await api.get(`/courses/${courseId}/obe/output`);
-  return res.data;
+export const getObeOutput = async (courseId) => {
+  const { data } = await api.get(`/courses/${courseId}/obe/output`);
+  return data;
+};
+
+export const getObeExportPayload = async (courseId) => {
+  const { data } = await api.get(`/courses/${courseId}/obe/export-payload`);
+  return data;
+};
+
+export const downloadObeCrr = async (courseId) => {
+  const response = await api.get(`/courses/${courseId}/obe/crr/download`, {
+    responseType: "blob",
+  });
+  return response.data;
 };
