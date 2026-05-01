@@ -52,6 +52,48 @@ function gradeFromTotal(total) {
   return "F";
 }
 
+function isAbsentInputValue(value) {
+  return String(value ?? "").trim().toUpperCase() === "A";
+}
+
+function getMarkStatus(cellValue) {
+  if (!cellValue || typeof cellValue !== "object") return "present";
+  return String(cellValue.status || "present").toLowerCase();
+}
+
+function isIncompleteCell(cellValue) {
+  const status = getMarkStatus(cellValue);
+  return status === "absent" || status === "incomplete";
+}
+
+function isFinalAssessment(assessment) {
+  const name = String(assessment?.name || "").toLowerCase();
+  return assessment?.structureType === "lab_final" || name.includes("final");
+}
+
+function studentHasFinalIncomplete(assessments, rowMarks) {
+  return (assessments || []).some((assessment) => {
+    if (!isFinalAssessment(assessment)) return false;
+    return isIncompleteCell(rowMarks?.[assessment._id]);
+  });
+}
+
+function gradeForStudent(course, assessments, rowMarks, total) {
+  if (studentHasFinalIncomplete(assessments, rowMarks)) return "I";
+  return gradeFromTotal(total);
+}
+
+function getMarkDisplayValue(cellValue) {
+  if (isIncompleteCell(cellValue)) return "A";
+  if (cellValue == null) return "";
+  return getMainMarkValue(cellValue);
+}
+
+function formatMarkForReport(cellValue) {
+  if (isIncompleteCell(cellValue)) return "A";
+  return Number(getMainMarkValue(cellValue) || 0).toFixed(2);
+}
+
 function roundPolicyTotal(total) {
   return total % 1 === 0
     ? total
@@ -141,8 +183,16 @@ function computeCtScore(course, assessments, rowMarks) {
 
 function getMainMarkValue(cellValue) {
   if (cellValue == null) return 0;
-  if (typeof cellValue === "object") return Number(cellValue.obtainedMarks || 0);
-  return Number(cellValue || 0);
+  if (isIncompleteCell(cellValue)) return 0;
+
+  if (typeof cellValue === "object") {
+    return Number(cellValue.obtainedMarks || 0);
+  }
+
+  if (isAbsentInputValue(cellValue)) return 0;
+
+  const numeric = Number(cellValue || 0);
+  return Number.isFinite(numeric) ? numeric : 0;
 }
 
 function getSubMarkMap(cellValue) {
@@ -334,7 +384,9 @@ function GradeBadge({ grade }) {
             ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
             : grade === "D"
               ? "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300"
-              : "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300";
+              : grade === "I"
+                ? "border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-500/20 dark:bg-purple-500/10 dark:text-purple-300"
+                : "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300";
 
   return (
     <span
@@ -692,6 +744,7 @@ export default function TabMarks({ courseId, course }) {
           if (!map[sid]) map[sid] = {};
           map[sid][aid] = {
             obtainedMarks: Number(m.obtainedMarks || 0),
+            status: m.status || "present",
             subMarks: buildSubMarkMap(m.subMarks || []),
           };
         });
@@ -836,6 +889,7 @@ export default function TabMarks({ courseId, course }) {
       C: 0,
       D: 0,
       F: 0,
+      I: 0,
     };
 
     sortedStudents.forEach((s) => {
@@ -846,7 +900,7 @@ export default function TabMarks({ courseId, course }) {
         row,
         Number(attMarksMap[s.id] || 0)
       );
-      const grade = gradeFromTotal(total);
+      const grade = gradeForStudent(course, assessments, row, total);
 
       if (counts[grade] !== undefined) {
         counts[grade] += 1;
@@ -878,11 +932,22 @@ export default function TabMarks({ courseId, course }) {
   }, [marksMap, activeAdvancedStudent, activeAdvancedAssessment]);
 
   const handleMarkChange = (studentId, assessmentId, value) => {
-    const numericValue = value === "" ? "" : Number(value);
+    const rawValue = String(value ?? "").trim();
+    const isAbsent = isAbsentInputValue(rawValue);
+
+    if (rawValue !== "" && !isAbsent && Number.isNaN(Number(rawValue))) {
+      return;
+    }
+
+    const numericValue = rawValue === "" || isAbsent ? 0 : Number(rawValue);
 
     setMarksMap((prev) => {
       const row = prev[studentId] || {};
-      const oldCell = row[assessmentId] || { obtainedMarks: 0, subMarks: {} };
+      const oldCell = row[assessmentId] || {
+        obtainedMarks: 0,
+        status: "present",
+        subMarks: {},
+      };
 
       return {
         ...prev,
@@ -890,8 +955,39 @@ export default function TabMarks({ courseId, course }) {
           ...row,
           [assessmentId]: {
             ...oldCell,
-            obtainedMarks: numericValue === "" ? 0 : numericValue,
+            obtainedMarks: numericValue,
+            status: isAbsent ? "absent" : "present",
           },
+        },
+      };
+    });
+  };
+
+  const handleAdvancedAbsentToggle = (studentId, assessmentId) => {
+    setMarksMap((prev) => {
+      const row = prev[studentId] || {};
+      const oldCell = row[assessmentId] || {
+        obtainedMarks: 0,
+        status: "present",
+        subMarks: {},
+      };
+
+      const currentlyAbsent = isIncompleteCell(oldCell);
+
+      return {
+        ...prev,
+        [studentId]: {
+          ...row,
+          [assessmentId]: currentlyAbsent
+            ? {
+              ...oldCell,
+              status: "present",
+            }
+            : {
+              obtainedMarks: 0,
+              status: "absent",
+              subMarks: {},
+            },
         },
       };
     });
@@ -922,6 +1018,7 @@ export default function TabMarks({ courseId, course }) {
           ...row,
           [assessment._id]: {
             obtainedMarks: total,
+            status: "present",
             subMarks: nextSubMarks,
           },
         },
@@ -1121,8 +1218,11 @@ export default function TabMarks({ courseId, course }) {
             studentId,
             assessmentId,
             obtainedMarks,
+            status: isIncompleteCell(cell) ? getMarkStatus(cell) : "present",
             subMarks:
-              assessment?.structureType === "lab_final" ? subMarks : [],
+              assessment?.structureType === "lab_final" && !isIncompleteCell(cell)
+                ? subMarks
+                : [],
           });
         });
       });
@@ -1214,15 +1314,15 @@ export default function TabMarks({ courseId, course }) {
         s.roll || "",
         s.name || "",
         ...(courseType === "lab"
-          ? labRegularAssessments.map((a) => getMainMarkValue(row[a._id]))
-          : ctAssessments.map((a) => getMainMarkValue(row[a._id]))),
+          ? labRegularAssessments.map((a) => getMarkDisplayValue(row[a._id]))
+          : ctAssessments.map((a) => getMarkDisplayValue(row[a._id]))),
         courseType === "lab"
           ? getLabMain(assessments, row)
           : roundPolicyTotal(computeCtScore(course, assessments, row)),
-        ...nonCtAssessments.map((a) => getMainMarkValue(row[a._id])),
+        ...nonCtAssessments.map((a) => getMarkDisplayValue(row[a._id])),
         ...advancedBreakdownValues,
         Number(total).toFixed(1),
-        gradeFromTotal(total),
+        gradeForStudent(course, assessments, row, total),
       ];
     });
 
@@ -1255,109 +1355,110 @@ export default function TabMarks({ courseId, course }) {
     saveAs(blob, `${code}_Sec${section}_${semester}_${year}_Marksheet.xlsx`);
   };
 
-const handleExportPdf = () => {
-  const doc = new jsPDF("landscape", "mm", "a4");
+  const handleExportPdf = () => {
+    const doc = new jsPDF("landscape", "mm", "a4");
 
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
 
-const getLocalUserName = () => {
-  // 1. Get name from top bar: "Signed in as Mahbub Sarwar"
-  const pageText = document.body.innerText || "";
-  const match = pageText.match(/Signed in as\s+([A-Za-z.\s]+)/i);
+    const getLocalUserName = () => {
+      // 1. Get name from top bar: "Signed in as Mahbub Sarwar"
+      const pageText = document.body.innerText || "";
+      const match = pageText.match(/Signed in as\s+([A-Za-z.\s]+)/i);
 
-  if (match?.[1]) {
-    return match[1]
-      .replace("Teacher", "")
-      .replace("Dark", "")
-      .replace("Logout", "")
-      .trim();
-  }
+      if (match?.[1]) {
+        return match[1]
+          .replace("Teacher", "")
+          .replace("Dark", "")
+          .replace("Logout", "")
+          .trim();
+      }
 
-  // 2. Get name from sidebar bottom, but ignore arrows/icons
-  const allLines = pageText
-    .split("\n")
-    .map((x) => x.trim())
-    .filter(Boolean);
+      // 2. Get name from sidebar bottom, but ignore arrows/icons
+      const allLines = pageText
+        .split("\n")
+        .map((x) => x.trim())
+        .filter(Boolean);
 
-  const teacherAccountIndex = allLines.findIndex((x) =>
-    x.includes("Teacher Account")
-  );
+      const teacherAccountIndex = allLines.findIndex((x) =>
+        x.includes("Teacher Account")
+      );
 
-  if (teacherAccountIndex > 0) {
-    return allLines[teacherAccountIndex - 1].trim();
-  }
+      if (teacherAccountIndex > 0) {
+        return allLines[teacherAccountIndex - 1].trim();
+      }
 
-  // 3. Try localStorage
-  const keys = Object.keys(localStorage);
+      // 3. Try localStorage
+      const keys = Object.keys(localStorage);
 
-  for (const key of keys) {
-    try {
-      const value = localStorage.getItem(key);
-      if (!value) continue;
+      for (const key of keys) {
+        try {
+          const value = localStorage.getItem(key);
+          if (!value) continue;
 
-      const parsed = JSON.parse(value);
+          const parsed = JSON.parse(value);
 
-      const possibleName =
-        parsed?.name ||
-        parsed?.displayName ||
-        parsed?.fullName ||
-        parsed?.user?.name ||
-        parsed?.user?.displayName ||
-        parsed?.teacher?.name ||
-        parsed?.teacher?.displayName;
+          const possibleName =
+            parsed?.name ||
+            parsed?.displayName ||
+            parsed?.fullName ||
+            parsed?.user?.name ||
+            parsed?.user?.displayName ||
+            parsed?.teacher?.name ||
+            parsed?.teacher?.displayName;
 
-      if (possibleName) return possibleName;
-    } catch (e) {
-      // ignore non-json values
-    }
-  }
+          if (possibleName) return possibleName;
+        } catch (e) {
+          // ignore non-json values
+        }
+      }
 
-  return "";
-};
+      return "";
+    };
 
-const teacherName =
-  getLocalUserName() ||
-  course?.teacherName ||
-  course?.facultyName ||
-  "Course Teacher";
+    const teacherName =
+      getLocalUserName() ||
+      course?.teacherName ||
+      course?.facultyName ||
+      "Course Teacher";
 
-  const rawSection = String(course?.section || "");
-  const sectionParts = rawSection.includes("/") ? rawSection.split("/") : [];
+    const rawSection = String(course?.section || "");
+    const sectionParts = rawSection.includes("/") ? rawSection.split("/") : [];
 
-  const intakeValue = course?.intake || sectionParts[0] || "";
-  const sectionValue = sectionParts[1] || course?.section || "";
+    const intakeValue = course?.intake || sectionParts[0] || "";
+    const sectionValue = sectionParts[1] || course?.section || "";
 
-  const gradeScale = [
-    ["80% and above", "A+", "(A Plus)", "4.00"],
-    ["75% to less than 80%", "A", "(A regular)", "3.75"],
-    ["70% to less than 75%", "A-", "(A Minus)", "3.50"],
-    ["65% to less than 70%", "B+", "(B Plus)", "3.25"],
-    ["60% to less than 65%", "B", "(B regular)", "3.00"],
-    ["55% to less than 60%", "B-", "(B Minus)", "2.75"],
-    ["50% to less than 55%", "C+", "(C Plus)", "2.50"],
-    ["45% to less than 50%", "C", "(C regular)", "2.25"],
-    ["40% to less than 45%", "D", "", "2.00"],
-    ["Less than 40%", "F", "", "0.00"],
-  ];
+    const gradeScale = [
+      ["80% and above", "A+", "(A Plus)", "4.00"],
+      ["75% to less than 80%", "A", "(A regular)", "3.75"],
+      ["70% to less than 75%", "A-", "(A Minus)", "3.50"],
+      ["65% to less than 70%", "B+", "(B Plus)", "3.25"],
+      ["60% to less than 65%", "B", "(B regular)", "3.00"],
+      ["55% to less than 60%", "B-", "(B Minus)", "2.75"],
+      ["50% to less than 55%", "C+", "(C Plus)", "2.50"],
+      ["45% to less than 50%", "C", "(C regular)", "2.25"],
+      ["40% to less than 45%", "D", "", "2.00"],
+      ["Less than 40%", "F", "", "0.00"],
+      ["Absent / Incomplete", "I", "", "0.00"],
+    ];
 
-  const getAssessmentByName = (keywords = []) => {
-    return sortedAssessments.find((a) => {
-      const n = String(a.name || "").toLowerCase();
-      return keywords.some((k) => n.includes(k));
-    });
-  };
+    const getAssessmentByName = (keywords = []) => {
+      return sortedAssessments.find((a) => {
+        const n = String(a.name || "").toLowerCase();
+        return keywords.some((k) => n.includes(k));
+      });
+    };
 
-  const midAssessment = getAssessmentByName(["mid"]);
-  const finalAssessment =
-    sortedAssessments.find((a) => a?.structureType === "lab_final") ||
-    getAssessmentByName(["final"]);
+    const midAssessment = getAssessmentByName(["mid"]);
+    const finalAssessment =
+      sortedAssessments.find((a) => a?.structureType === "lab_final") ||
+      getAssessmentByName(["final"]);
 
-  const assignmentAssessment = getAssessmentByName(["assign", "present"]);
+    const assignmentAssessment = getAssessmentByName(["assign", "present"]);
 
-  const header =
-    courseType === "lab"
-      ? [
+    const header =
+      courseType === "lab"
+        ? [
           "SL",
           "Student ID",
           "Student Name",
@@ -1369,7 +1470,7 @@ const teacherName =
           "Total Marks\n100",
           "Letter Grade",
         ]
-      : [
+        : [
           "SL",
           "Student ID",
           "Student Name",
@@ -1383,265 +1484,263 @@ const teacherName =
           "Letter Grade",
         ];
 
-  const body = sortedStudents.map((s, index) => {
-    const row = marksMap[s.id] || {};
-    const attendance = Number(attMarksMap[s.id] || 0);
+    const body = sortedStudents.map((s, index) => {
+      const row = marksMap[s.id] || {};
+      const attendance = Number(attMarksMap[s.id] || 0);
 
-    const total = computeTotal100(course, assessments, row, attendance);
-    const grade = gradeFromTotal(total);
+      const total = computeTotal100(course, assessments, row, attendance);
+      const grade = gradeForStudent(course, assessments, row, total);
 
-    if (courseType === "lab") {
+      if (courseType === "lab") {
+        return [
+          index + 1,
+          s.roll || "",
+          s.name || "",
+          intakeValue,
+          getLabMain(assessments, row).toFixed(2),
+          midAssessment
+            ? Number(getMainMarkValue(row[midAssessment._id]) || 0).toFixed(2)
+            : "0.00",
+          finalAssessment
+            ? formatMarkForReport(row[finalAssessment._id])
+            : "0.00",
+          attendance.toFixed(2),
+          Number(total).toFixed(2),
+          grade,
+        ];
+      }
+
       return [
         index + 1,
         s.roll || "",
         s.name || "",
         intakeValue,
-        getLabMain(assessments, row).toFixed(2),
+        roundPolicyTotal(computeCtScore(course, assessments, row)).toFixed(2),
+        assignmentAssessment
+          ? Number(getMainMarkValue(row[assignmentAssessment._id]) || 0).toFixed(2)
+          : "0.00",
         midAssessment
           ? Number(getMainMarkValue(row[midAssessment._id]) || 0).toFixed(2)
           : "0.00",
         finalAssessment
-          ? Number(getMainMarkValue(row[finalAssessment._id]) || 0).toFixed(2)
+          ? formatMarkForReport(row[finalAssessment._id])
           : "0.00",
         attendance.toFixed(2),
         Number(total).toFixed(2),
         grade,
       ];
-    }
-
-    return [
-      index + 1,
-      s.roll || "",
-      s.name || "",
-      intakeValue,
-      roundPolicyTotal(computeCtScore(course, assessments, row)).toFixed(2),
-      assignmentAssessment
-        ? Number(getMainMarkValue(row[assignmentAssessment._id]) || 0).toFixed(2)
-        : "0.00",
-      midAssessment
-        ? Number(getMainMarkValue(row[midAssessment._id]) || 0).toFixed(2)
-        : "0.00",
-      finalAssessment
-        ? Number(getMainMarkValue(row[finalAssessment._id]) || 0).toFixed(2)
-        : "0.00",
-      attendance.toFixed(2),
-      Number(total).toFixed(2),
-      grade,
-    ];
-  });
-
-  const addHeader = () => {
-    try {
-      doc.addImage("/logo.png", "PNG", 18, 10, 16, 18);
-    } catch (e) {
-      console.warn("Logo could not be added:", e);
-    }
-
-    doc.setFont("times", "bold");
-    doc.setFontSize(16);
-    doc.text("Bangladesh University of Business and Technology", pageWidth / 2, 14, {
-      align: "center",
     });
 
-    doc.setFont("times", "normal");
-    doc.setFontSize(11);
-    doc.text("Rupnagar, Mirpur-02, Dhaka-1216", pageWidth / 2, 21, {
-      align: "center",
-    });
+    const addHeader = () => {
+      try {
+        doc.addImage("/logo.png", "PNG", 18, 10, 16, 18);
+      } catch (e) {
+        console.warn("Logo could not be added:", e);
+      }
 
-    doc.setFont("times", "normal");
-    doc.setFontSize(14);
-    doc.text("Result Sheet", pageWidth / 2, 29, { align: "center" });
-
-    let y = 40;
-
-    const leftInfo = [
-      ["Program", course?.program || course?.department || ""],
-      ["Semester", `${course?.semester || ""} ${course?.year || ""}`],
-      [
-        "Course No & Title",
-        `[ ${course?.code || ""} ] ${course?.title || course?.name || ""}-${
-          courseType === "lab" ? "Lab" : "Theory"
-        }`,
-      ],
-      ["Intake & Section", `Intake # ${intakeValue}, Section # ${sectionValue}`],
-      ["Teacher's Name", teacherName],
-    ];
-
-    leftInfo.forEach(([label, value]) => {
-      doc.setFont("times", "bolditalic");
-      doc.setFontSize(9);
-      doc.text(label, 18, y);
-      doc.text(":", 58, y);
+      doc.setFont("times", "bold");
+      doc.setFontSize(16);
+      doc.text("Bangladesh University of Business and Technology", pageWidth / 2, 14, {
+        align: "center",
+      });
 
       doc.setFont("times", "normal");
-      doc.setFontSize(9);
-      doc.text(String(value || ""), 64, y);
-      y += 6;
-    });
+      doc.setFontSize(11);
+      doc.text("Rupnagar, Mirpur-02, Dhaka-1216", pageWidth / 2, 21, {
+        align: "center",
+      });
 
-    autoTable(doc, {
-      startY: 35,
-      margin: { left: pageWidth - 95 },
-      body: gradeScale,
-      theme: "plain",
-      styles: {
-        font: "times",
-        fontSize: 7.2,
-        cellPadding: 0.4,
-        textColor: [0, 0, 0],
-      },
-      columnStyles: {
-        0: { cellWidth: 36 },
-        1: { cellWidth: 9 },
-        2: { cellWidth: 25 },
-        3: { cellWidth: 11, halign: "right" },
-      },
-    });
-  };
+      doc.setFont("times", "normal");
+      doc.setFontSize(14);
+      doc.text("Result Sheet", pageWidth / 2, 29, { align: "center" });
 
-  const addFooter = (pageNumber, totalPages) => {
-    const y = pageHeight - 22;
+      let y = 40;
 
-    doc.setFont("times", "bold");
-    doc.setFontSize(9);
+      const leftInfo = [
+        ["Program", course?.program || course?.department || ""],
+        ["Semester", `${course?.semester || ""} ${course?.year || ""}`],
+        [
+          "Course No & Title",
+          `[ ${course?.code || ""} ] ${course?.title || course?.name || ""}-${courseType === "lab" ? "Lab" : "Theory"
+          }`,
+        ],
+        ["Intake & Section", `Intake # ${intakeValue}, Section # ${sectionValue}`],
+        ["Teacher's Name", teacherName],
+      ];
 
-    doc.line(45, y, 85, y);
-    doc.text(teacherName, 65, y + 5, { align: "center" });
+      leftInfo.forEach(([label, value]) => {
+        doc.setFont("times", "bolditalic");
+        doc.setFontSize(9);
+        doc.text(label, 18, y);
+        doc.text(":", 58, y);
 
-    doc.line(pageWidth - 90, y, pageWidth - 50, y);
-    doc.text("Chairman", pageWidth - 70, y + 5, { align: "center" });
+        doc.setFont("times", "normal");
+        doc.setFontSize(9);
+        doc.text(String(value || ""), 64, y);
+        y += 6;
+      });
 
-    doc.setFont("times", "normal");
-    doc.setFontSize(8);
-    doc.text(`Print Date : ${new Date().toLocaleString()}`, 18, pageHeight - 8);
-    doc.text(`Page ${pageNumber} of ${totalPages}`, pageWidth - 35, pageHeight - 8);
-  };
-
-  const getGradeCount = () => {
-    const counts = {
-      "A+": 0,
-      A: 0,
-      "A-": 0,
-      "B+": 0,
-      B: 0,
-      "B-": 0,
-      "C+": 0,
-      C: 0,
-      "C-": 0,
-      D: 0,
-      F: 0,
-      I: 0,
+      autoTable(doc, {
+        startY: 35,
+        margin: { left: pageWidth - 95 },
+        body: gradeScale,
+        theme: "plain",
+        styles: {
+          font: "times",
+          fontSize: 7.2,
+          cellPadding: 0.4,
+          textColor: [0, 0, 0],
+        },
+        columnStyles: {
+          0: { cellWidth: 36 },
+          1: { cellWidth: 9 },
+          2: { cellWidth: 25 },
+          3: { cellWidth: 11, halign: "right" },
+        },
+      });
     };
 
-    sortedStudents.forEach((s) => {
-      const row = marksMap[s.id] || {};
-      const attendance = Number(attMarksMap[s.id] || 0);
-      const total = computeTotal100(course, assessments, row, attendance);
-      const grade = gradeFromTotal(total);
-      counts[grade] = (counts[grade] || 0) + 1;
+    const addFooter = (pageNumber, totalPages) => {
+      const y = pageHeight - 22;
+
+      doc.setFont("times", "bold");
+      doc.setFontSize(9);
+
+      doc.line(45, y, 85, y);
+      doc.text(teacherName, 65, y + 5, { align: "center" });
+
+      doc.line(pageWidth - 90, y, pageWidth - 50, y);
+      doc.text("Chairman", pageWidth - 70, y + 5, { align: "center" });
+
+      doc.setFont("times", "normal");
+      doc.setFontSize(8);
+      doc.text(`Print Date : ${new Date().toLocaleString()}`, 18, pageHeight - 8);
+      doc.text(`Page ${pageNumber} of ${totalPages}`, pageWidth - 35, pageHeight - 8);
+    };
+
+    const getGradeCount = () => {
+      const counts = {
+        "A+": 0,
+        A: 0,
+        "A-": 0,
+        "B+": 0,
+        B: 0,
+        "B-": 0,
+        "C+": 0,
+        C: 0,
+        D: 0,
+        F: 0,
+        I: 0,
+      };
+
+      sortedStudents.forEach((s) => {
+        const row = marksMap[s.id] || {};
+        const attendance = Number(attMarksMap[s.id] || 0);
+        const total = computeTotal100(course, assessments, row, attendance);
+        const grade = gradeForStudent(course, assessments, row, total);
+        counts[grade] = (counts[grade] || 0) + 1;
+      });
+
+      return counts;
+    };
+
+    const c = getGradeCount();
+
+    const summaryBody = [
+      ["A+", c["A+"] || 0, "C+", c["C+"] || 0],
+      ["A", c.A || 0, "C", c.C || 0],
+      ["A-", c["A-"] || 0, "D", c.D || 0],
+      ["B+", c["B+"] || 0, "F", c.F || 0],
+      ["B", c.B || 0, "I", c.I || 0],
+      ["B-", c["B-"] || 0, "", ""],
+    ];
+
+    addHeader();
+
+    autoTable(doc, {
+      startY: 75,
+      head: [header],
+      body,
+      theme: "grid",
+      margin: { left: 14, right: 14, top: 75, bottom: 35 },
+      styles: {
+        font: "times",
+        fontSize: 8,
+        cellPadding: 1.2,
+        halign: "center",
+        valign: "middle",
+        lineColor: [0, 0, 0],
+        lineWidth: 0.12,
+        textColor: [0, 0, 0],
+      },
+      headStyles: {
+        fillColor: [255, 255, 255],
+        textColor: [0, 0, 0],
+        fontStyle: "normal",
+      },
+      columnStyles: {
+        0: { cellWidth: 10 },
+        1: { cellWidth: 30 },
+        2: { cellWidth: 58, halign: "left" },
+        3: { cellWidth: 16 },
+      },
+      didParseCell: (data) => {
+        const totalColIndex = courseType === "lab" ? 8 : 9;
+        const gradeColIndex = courseType === "lab" ? 9 : 10;
+
+        if (
+          data.section === "body" &&
+          (data.column.index === totalColIndex || data.column.index === gradeColIndex)
+        ) {
+          data.cell.styles.fontStyle = "bold";
+        }
+      },
+      willDrawPage: (data) => {
+        if (data.pageNumber > 1) {
+          addHeader();
+        }
+      },
     });
 
-    return counts;
+    let summaryY = doc.lastAutoTable.finalY + 8;
+
+    if (summaryY > pageHeight - 65) {
+      doc.addPage();
+      addHeader();
+      summaryY = 75;
+    }
+
+    doc.setFont("times", "bolditalic");
+    doc.setFontSize(10);
+    doc.text("Result Summary :", pageWidth / 2 - 48, summaryY + 5);
+
+    autoTable(doc, {
+      startY: summaryY,
+      body: summaryBody,
+      theme: "grid",
+      margin: { left: pageWidth / 2 - 15 },
+      tableWidth: 55,
+      styles: {
+        font: "times",
+        fontSize: 8,
+        cellPadding: 1.2,
+        lineColor: [0, 0, 0],
+        lineWidth: 0.12,
+        textColor: [0, 0, 0],
+      },
+    });
+
+    const totalPages = doc.internal.getNumberOfPages();
+
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      addFooter(i, totalPages);
+    }
+
+    doc.save(
+      `Mark_Sheet_${course?.code || "course"}_${intakeValue}_${sectionValue}.pdf`
+    );
   };
-
-  const c = getGradeCount();
-
-  const summaryBody = [
-    ["A+", c["A+"] || 0, "C+", c["C+"] || 0],
-    ["A", c.A || 0, "C", c.C || 0],
-    ["A-", c["A-"] || 0, "C-", c["C-"] || 0],
-    ["B+", c["B+"] || 0, "D", c.D || 0],
-    ["B", c.B || 0, "F", c.F || 0],
-    ["B-", c["B-"] || 0, "I", c.I || 0],
-  ];
-
-  addHeader();
-
-  autoTable(doc, {
-    startY: 75,
-    head: [header],
-    body,
-    theme: "grid",
-    margin: { left: 14, right: 14, top: 75, bottom: 35 },
-    styles: {
-      font: "times",
-      fontSize: 8,
-      cellPadding: 1.2,
-      halign: "center",
-      valign: "middle",
-      lineColor: [0, 0, 0],
-      lineWidth: 0.12,
-      textColor: [0, 0, 0],
-    },
-    headStyles: {
-      fillColor: [255, 255, 255],
-      textColor: [0, 0, 0],
-      fontStyle: "normal",
-    },
-    columnStyles: {
-      0: { cellWidth: 10 },
-      1: { cellWidth: 30 },
-      2: { cellWidth: 58, halign: "left" },
-      3: { cellWidth: 16 },
-    },
-    didParseCell: (data) => {
-      const totalColIndex = courseType === "lab" ? 8 : 9;
-      const gradeColIndex = courseType === "lab" ? 9 : 10;
-
-      if (
-        data.section === "body" &&
-        (data.column.index === totalColIndex || data.column.index === gradeColIndex)
-      ) {
-        data.cell.styles.fontStyle = "bold";
-      }
-    },
-    willDrawPage: (data) => {
-      if (data.pageNumber > 1) {
-        addHeader();
-      }
-    },
-  });
-
-  let summaryY = doc.lastAutoTable.finalY + 8;
-
-  if (summaryY > pageHeight - 65) {
-    doc.addPage();
-    addHeader();
-    summaryY = 75;
-  }
-
-  doc.setFont("times", "bolditalic");
-  doc.setFontSize(10);
-  doc.text("Result Summary :", pageWidth / 2 - 48, summaryY + 5);
-
-  autoTable(doc, {
-    startY: summaryY,
-    body: summaryBody,
-    theme: "grid",
-    margin: { left: pageWidth / 2 - 15 },
-    tableWidth: 55,
-    styles: {
-      font: "times",
-      fontSize: 8,
-      cellPadding: 1.2,
-      lineColor: [0, 0, 0],
-      lineWidth: 0.12,
-      textColor: [0, 0, 0],
-    },
-  });
-
-  const totalPages = doc.internal.getNumberOfPages();
-
-  for (let i = 1; i <= totalPages; i++) {
-    doc.setPage(i);
-    addFooter(i, totalPages);
-  }
-
-  doc.save(
-    `Mark_Sheet_${course?.code || "course"}_${intakeValue}_${sectionValue}.pdf`
-  );
-};
 
   return (
     <div className="space-y-6">
@@ -1681,8 +1780,8 @@ const teacherName =
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-10">
-                {["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "D", "F"].map((grade) => (
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-11">
+                {["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "D", "F", "I"].map((grade) => (
                   <div
                     key={grade}
                     className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-center dark:border-slate-700 dark:bg-slate-900"
@@ -1882,7 +1981,8 @@ const teacherName =
                               return (
                                 <td key={a._id} className="px-4 py-3">
                                   <input
-                                    type="number"
+                                    type="text"
+                                    inputMode="decimal"
                                     disabled={isAttendanceCol}
                                     className={[
                                       "h-11 w-24 rounded-xl border px-3 text-sm shadow-sm transition",
@@ -1891,7 +1991,8 @@ const teacherName =
                                         ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
                                         : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
                                     ].join(" ")}
-                                    value={cell == null ? "" : getMainMarkValue(cell)}
+
+                                    value={cell == null ? "" : getMarkDisplayValue(cell)}
                                     onChange={(e) =>
                                       handleMarkChange(s.id, a._id, e.target.value)
                                     }
@@ -1942,15 +2043,31 @@ const teacherName =
                                 <td key={a._id} className="px-4 py-3">
                                   <div className="flex flex-col gap-2">
                                     <div className="inline-flex min-w-[78px] items-center justify-center rounded-full border border-fuchsia-200 bg-fuchsia-50 px-3 py-1.5 text-xs font-bold text-fuchsia-700 dark:border-fuchsia-500/20 dark:bg-fuchsia-500/10 dark:text-fuchsia-300">
-                                      {Number(getMainMarkValue(cell) || 0).toFixed(1)}
+                                      {isIncompleteCell(cell)
+                                        ? "A"
+                                        : Number(getMainMarkValue(cell) || 0).toFixed(1)}
                                     </div>
 
                                     <button
                                       type="button"
                                       onClick={() => openAdvancedModal(s, a)}
-                                      className="rounded-xl border border-fuchsia-200 bg-white px-3 py-2 text-xs font-semibold text-fuchsia-700 shadow-sm transition hover:bg-fuchsia-50 dark:border-fuchsia-500/20 dark:bg-slate-900 dark:text-fuchsia-300 dark:hover:bg-fuchsia-500/10"
+                                      disabled={isIncompleteCell(cell)}
+                                      className="rounded-xl border border-fuchsia-200 bg-white px-3 py-2 text-xs font-semibold text-fuchsia-700 shadow-sm transition hover:bg-fuchsia-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-fuchsia-500/20 dark:bg-slate-900 dark:text-fuchsia-300 dark:hover:bg-fuchsia-500/10"
                                     >
                                       Open Breakdown
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAdvancedAbsentToggle(s.id, a._id)}
+                                      className={[
+                                        "rounded-xl border px-3 py-2 text-xs font-semibold shadow-sm transition",
+                                        isIncompleteCell(cell)
+                                          ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                                          : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300",
+                                      ].join(" ")}
+                                    >
+                                      {isIncompleteCell(cell) ? "Clear A" : "Mark A"}
                                     </button>
                                   </div>
                                 </td>
@@ -1960,7 +2077,8 @@ const teacherName =
                             return (
                               <td key={a._id} className="px-4 py-3">
                                 <input
-                                  type="number"
+                                  type="text"
+                                  inputMode="decimal"
                                   disabled={isAttendanceCol}
                                   className={[
                                     "h-11 w-24 rounded-xl border px-3 text-sm shadow-sm transition",
@@ -1969,7 +2087,7 @@ const teacherName =
                                       ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
                                       : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
                                   ].join(" ")}
-                                  value={cell == null ? "" : getMainMarkValue(cell)}
+                                  value={cell == null ? "" : getMarkDisplayValue(cell)}
                                   onChange={(e) =>
                                     handleMarkChange(s.id, a._id, e.target.value)
                                   }
@@ -1994,7 +2112,7 @@ const teacherName =
                           </td>
 
                           <td className="px-4 py-3">
-                            <GradeBadge grade={gradeFromTotal(total)} />
+                            <GradeBadge grade={gradeForStudent(course, assessments, row, total)} />
                           </td>
                         </tr>
                       );
