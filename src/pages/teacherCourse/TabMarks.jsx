@@ -95,11 +95,16 @@ function formatMarkForReport(cellValue) {
 }
 
 function roundPolicyTotal(total) {
-  return total % 1 === 0
-    ? total
-    : total % 1 <= 0.5
-      ? Math.floor(total) + 0.5
-      : Math.ceil(total);
+  const n = Number(total || 0);
+
+  if (!Number.isFinite(n) || n <= 0) return 0;
+
+  // Ceil to nearest 0.5
+  // 19.00 -> 19
+  // 19.25 -> 19.5
+  // 19.50 -> 19.5
+  // 19.75 -> 20
+  return Math.ceil((n - 1e-9) * 2) / 2;
 }
 
 function normalizeCtPolicy(course) {
@@ -273,28 +278,44 @@ function calculateAdvancedObtained(assessment, subMarksMap) {
   );
 }
 
-function getLabMain(assessments, rowMarks) {
-  const list = Array.isArray(assessments) ? assessments : [];
+function isRegularLabAssessment(assessment) {
+  const n = String(assessment?.name || "").toLowerCase();
 
-  const regularLabAssessments = list.filter((a) => {
-    const n = String(a?.name || "").toLowerCase();
-    return (
-      a?.structureType !== "lab_final" &&
-      !n.includes("mid") &&
-      !n.includes("final") &&
-      !n.includes("att")
-    );
-  });
+  return (
+    assessment?.structureType !== "lab_final" &&
+    assessment?.structureType !== "lab_submission" &&
+    !n.includes("mid") &&
+    !n.includes("final") &&
+    !n.includes("att")
+  );
+}
+
+function computeLabAssessmentScore25(assessments, rowMarks) {
+  const regularLabAssessments = (Array.isArray(assessments) ? assessments : []).filter(
+    isRegularLabAssessment
+  );
 
   if (!regularLabAssessments.length) return 0;
 
-  const avgPercent =
-    regularLabAssessments.reduce(
-      (sum, a) => sum + pct(getMainMarkValue(rowMarks?.[a._id]), a.fullMarks),
-      0
-    ) / regularLabAssessments.length;
+  const totalFullMarks = regularLabAssessments.reduce(
+    (sum, assessment) => sum + Number(assessment.fullMarks || 0),
+    0
+  );
 
-  return roundPolicyTotal(avgPercent * 25);
+  if (totalFullMarks <= 0) return 0;
+
+  const totalObtainedMarks = regularLabAssessments.reduce((sum, assessment) => {
+    const fullMarks = Number(assessment.fullMarks || 0);
+    const obtained = getMainMarkValue(rowMarks?.[assessment._id]);
+
+    return sum + clamp(obtained, 0, fullMarks);
+  }, 0);
+
+  return (totalObtainedMarks / totalFullMarks) * 25;
+}
+
+function getLabMain(assessments, rowMarks) {
+  return roundPolicyTotal(computeLabAssessmentScore25(assessments, rowMarks));
 }
 
 function computeTotal100(course, assessments, rowMarks, attendanceMarks5 = 0) {
@@ -305,35 +326,24 @@ function computeTotal100(course, assessments, rowMarks, attendanceMarks5 = 0) {
   const attScore5 = clamp(attendanceMarks5, 0, 5);
 
   if (courseType === "lab") {
-    const labList = list.filter((a) => {
-      const n = name(a);
-      return (
-        a?.structureType !== "lab_final" &&
-        !n.includes("mid") &&
-        !n.includes("final") &&
-        !n.includes("att")
-      );
-    });
-
     const mid = list.find((a) => name(a).includes("mid"));
+
     const advancedFinal = list.find((a) => a?.structureType === "lab_final");
+
     const regularFinal = list.find(
       (a) => a?.structureType !== "lab_final" && name(a).includes("final")
     );
+
     const finalAssessment = advancedFinal || regularFinal;
 
-    const labPercents = labList.map((a) =>
-      pct(getMainMarkValue(rowMarks?.[a._id]), a.fullMarks)
+    const labScore25 = roundPolicyTotal(
+      computeLabAssessmentScore25(list, rowMarks)
     );
 
-    const avgLab = labPercents.length
-      ? labPercents.reduce((s, v) => s + v, 0) / labPercents.length
-      : 0;
-
-    const labScore25 = avgLab * 25;
     const midScore30 = mid
       ? pct(getMainMarkValue(rowMarks?.[mid._id]), mid.fullMarks) * 30
       : 0;
+
     const finalScore40 = finalAssessment
       ? pct(getMainMarkValue(rowMarks?.[finalAssessment._id]), finalAssessment.fullMarks) * 40
       : 0;
@@ -802,17 +812,9 @@ export default function TabMarks({ courseId, course }) {
     });
   }, [assessments]);
 
-  const labRegularAssessments = useMemo(() => {
-    return sortedAssessments.filter((a) => {
-      const n = String(a.name || "").toLowerCase();
-      return (
-        a?.structureType !== "lab_final" &&
-        !n.includes("mid") &&
-        !n.includes("final") &&
-        !n.includes("att")
-      );
-    });
-  }, [sortedAssessments]);
+const labRegularAssessments = useMemo(() => {
+  return sortedAssessments.filter(isRegularLabAssessment);
+}, [sortedAssessments]);
 
   const advancedLabFinalAssessments = useMemo(() => {
     return sortedAssessments.filter((a) => a?.structureType === "lab_final");
@@ -1754,7 +1756,7 @@ export default function TabMarks({ courseId, course }) {
                 </h3>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                   {courseType === "lab"
-                    ? "Lab Assessment Main is calculated from regular lab assessments only. Advanced Lab Final now has a faster student-to-student entry flow."
+                    ? "Lab Assessment Main is calculated from total obtained marks divided by total lab assessment marks, then converted to 25."
                     : "Theory course marks entry with CT policy, Mid, Final, Assignment, Presentation, and Attendance."}
                 </p>
               </div>
@@ -2015,7 +2017,7 @@ export default function TabMarks({ courseId, course }) {
                             <div
                               title={
                                 courseType === "lab"
-                                  ? "Calculated from average of all regular lab assessments and converted to 25"
+                                  ? "Calculated from total obtained marks divided by total lab assessment marks and converted to 25"
                                   : "Calculated from selected CT policy"
                               }
                               className="inline-flex min-w-[72px] items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300"
