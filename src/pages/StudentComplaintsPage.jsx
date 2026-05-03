@@ -57,6 +57,9 @@ export default function StudentComplaintsPage() {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
 
+  const isComplaintsOpenForCourse = (course) =>
+    course?.complaintSettings?.allowStudentComplaints !== false;
+
   useEffect(() => {
     if (role !== "student") navigate("/login");
   }, [role, navigate]);
@@ -89,7 +92,9 @@ export default function StudentComplaintsPage() {
       setCourses(safeCourses);
 
       if (!formCourseId && safeCourses.length > 0) {
-        setFormCourseId(safeCourses[0]._id || safeCourses[0].id || "");
+        const firstOpenCourse = safeCourses.find(isComplaintsOpenForCourse);
+        const selectedCourse = firstOpenCourse || safeCourses[0];
+        setFormCourseId(selectedCourse._id || selectedCourse.id || "");
       }
     } catch (err) {
       console.error(err);
@@ -147,6 +152,16 @@ export default function StudentComplaintsPage() {
     });
   }, [complaints, statusFilter, search]);
 
+  const selectedCourse = useMemo(() => {
+    return courses.find((c) => (c._id || c.id) === formCourseId) || null;
+  }, [courses, formCourseId]);
+
+  const selectedCourseComplaintsOpen = isComplaintsOpenForCourse(selectedCourse);
+  const openCourseCount = courses.filter(isComplaintsOpenForCourse).length;
+  const selectedClosedMessage =
+    selectedCourse?.complaintSettings?.closedMessage ||
+    "Complaint submission is currently closed by the course teacher.";
+
   const handleSubmitGeneralComplaint = async (e) => {
     e.preventDefault();
     setSubmitError("");
@@ -159,6 +174,11 @@ export default function StudentComplaintsPage() {
 
     if (!message.trim()) {
       setSubmitError("Please write a short description of the issue.");
+      return;
+    }
+
+    if (!selectedCourseComplaintsOpen) {
+      setSubmitError(selectedClosedMessage);
       return;
     }
 
@@ -257,6 +277,22 @@ export default function StudentComplaintsPage() {
             </div>
           )}
 
+          {!coursesLoading && courses.length > 0 && openCourseCount === 0 && (
+            <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+              <div className="font-semibold">Complaint submission is closed</div>
+              <div className="opacity-90">
+                Complaint submission is currently closed for all of your courses.
+              </div>
+            </div>
+          )}
+
+          {!coursesLoading && selectedCourse && !selectedCourseComplaintsOpen && (
+            <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+              <div className="font-semibold">Selected course is closed for complaints</div>
+              <div className="opacity-90">{selectedClosedMessage}</div>
+            </div>
+          )}
+
           <form onSubmit={handleSubmitGeneralComplaint} className="space-y-4">
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
               <div className="xl:col-span-4">
@@ -278,15 +314,18 @@ export default function StudentComplaintsPage() {
                   ) : courses.length === 0 ? (
                     <option value="">No courses found</option>
                   ) : (
-                    courses.map((c) => (
-                      <option key={c._id || c.id} value={c._id || c.id}>
-                        {c.code} — {c.title}
+                    courses.map((c) => {
+                      const isOpen = isComplaintsOpenForCourse(c);
+                      return (
+                      <option key={c._id || c.id} value={c._id || c.id} disabled={!isOpen}>
+                        {c.code} — {c.title}{isOpen ? "" : " (Closed)"}
                       </option>
-                    ))
+                      );
+                    })
                   )}
                 </select>
                 <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                  Select the course related to your issue.
+                  Select an open course related to your issue.
                 </p>
               </div>
 
@@ -299,6 +338,7 @@ export default function StudentComplaintsPage() {
                   className="mt-1.5 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                   placeholder="Example: assessment is not visible yet, classroom notice is unclear, course information mismatch, or another general issue."
                   value={message}
+                  disabled={!selectedCourseComplaintsOpen}
                   onChange={(e) => {
                     setMessage(e.target.value);
                     setSubmitError("");
@@ -319,7 +359,12 @@ export default function StudentComplaintsPage() {
             <div className="flex justify-end">
               <button
                 type="submit"
-                disabled={submitLoading || coursesLoading || !courses.length}
+                disabled={
+                  submitLoading ||
+                  coursesLoading ||
+                  !courses.length ||
+                  !selectedCourseComplaintsOpen
+                }
                 className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {submitLoading ? (

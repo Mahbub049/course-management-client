@@ -256,6 +256,10 @@ export default function StudentCoursePage() {
   }, [courseId]);
 
   const courseType = useMemo(() => getCourseType(course), [course]);
+  const complaintsOpen = course?.complaintSettings?.allowStudentComplaints !== false;
+  const complaintClosedMessage =
+    course?.complaintSettings?.closedMessage ||
+    "Complaint submission is currently closed by the course teacher.";
 
   const {
     displayTotal,
@@ -381,6 +385,11 @@ export default function StudentCoursePage() {
 
     if (!message.trim()) {
       setComplaintError("Please write a short description of the issue.");
+      return;
+    }
+
+    if (!complaintsOpen) {
+      setComplaintError(complaintClosedMessage);
       return;
     }
 
@@ -1307,6 +1316,12 @@ export default function StudentCoursePage() {
               </div>
             )}
 
+            {!complaintsOpen ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-5 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                <div className="font-semibold">Complaint submission is closed</div>
+                <p className="mt-1 leading-6">{complaintClosedMessage}</p>
+              </div>
+            ) : (
             <form onSubmit={handleSubmitComplaint} className="space-y-5">
               <div
                 className={[
@@ -1440,6 +1455,7 @@ export default function StudentCoursePage() {
                 </button>
               </div>
             </form>
+            )}
           </div>
         </section>
       )}

@@ -5,6 +5,7 @@ import {
   replyTeacherComplaint,
   resolveAttendanceComplaint,
 } from "../services/complaintService";
+import { fetchTeacherCourses, updateCourseRequest } from "../services/courseService";
 import Swal from "sweetalert2";
 
 const STATUS_BADGE_CLASSES = {
@@ -77,6 +78,9 @@ export default function TeacherComplaintsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [complaints, setComplaints] = useState([]);
+  const [courses, setCourses] = useState([]);
+  const [courseSettingsLoading, setCourseSettingsLoading] = useState(true);
+  const [togglingCourseId, setTogglingCourseId] = useState("");
 
   const [statusFilter, setStatusFilter] = useState("all");
   const [courseFilter, setCourseFilter] = useState("all");
@@ -97,13 +101,19 @@ export default function TeacherComplaintsPage() {
       setLoading(true);
       setError("");
       try {
-        const data = await fetchTeacherComplaints();
-        setComplaints(data || []);
+        const [complaintData, courseData] = await Promise.all([
+          fetchTeacherComplaints(),
+          fetchTeacherCourses({ archived: false }),
+        ]);
+
+        setComplaints(complaintData || []);
+        setCourses(Array.isArray(courseData) ? courseData : []);
       } catch (err) {
         console.error(err);
         setError(err?.response?.data?.message || "Failed to load complaints");
       } finally {
         setLoading(false);
+        setCourseSettingsLoading(false);
       }
     };
 
@@ -144,6 +154,12 @@ export default function TeacherComplaintsPage() {
   const courseOptions = useMemo(() => {
     const map = new Map();
 
+    courses.forEach((c) => {
+      const key = c._id || c.id;
+      const label = `${c.code || ""}${c.title ? " – " + c.title : ""}`;
+      if (key && !map.has(key)) map.set(key, label);
+    });
+
     complaints.forEach((c) => {
       if (c.course) {
         const key = c.course._id || c.course.code;
@@ -153,7 +169,62 @@ export default function TeacherComplaintsPage() {
     });
 
     return Array.from(map.entries());
-  }, [complaints]);
+  }, [complaints, courses]);
+
+  const handleToggleComplaintSubmission = async (course, nextValue) => {
+    const courseId = course?._id || course?.id;
+    if (!courseId) return;
+
+    setTogglingCourseId(courseId);
+
+    try {
+      const updated = await updateCourseRequest(courseId, {
+        complaintSettings: {
+          allowStudentComplaints: nextValue,
+          closedMessage:
+            course?.complaintSettings?.closedMessage ||
+            "Complaint submission is currently closed by the course teacher.",
+        },
+      });
+
+      const updatedSettings = updated?.complaintSettings || {
+        allowStudentComplaints: nextValue,
+        closedMessage:
+          course?.complaintSettings?.closedMessage ||
+          "Complaint submission is currently closed by the course teacher.",
+      };
+
+      setCourses((prev) =>
+        prev.map((item) => {
+          const id = item._id || item.id;
+          return id === courseId
+            ? { ...item, complaintSettings: updatedSettings }
+            : item;
+        })
+      );
+
+      Swal.fire({
+        icon: "success",
+        title: nextValue ? "Complaints opened" : "Complaints closed",
+        text: nextValue
+          ? "Students can submit complaints for this course now."
+          : "Students cannot submit new complaints for this course now.",
+        timer: 1600,
+        showConfirmButton: false,
+      });
+    } catch (err) {
+      console.error(err);
+      Swal.fire({
+        icon: "error",
+        title: "Failed",
+        text:
+          err?.response?.data?.message ||
+          "Failed to update complaint submission setting.",
+      });
+    } finally {
+      setTogglingCourseId("");
+    }
+  };
 
   const filteredComplaints = useMemo(() => {
     return complaints.filter((c) => {
@@ -343,6 +414,85 @@ export default function TeacherComplaintsPage() {
           </button>
         </div>
       </div>
+
+      <section className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex flex-col gap-2 border-b border-slate-100 px-5 py-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              Student Complaint Submission
+            </div>
+            <div className="text-xs text-slate-500 dark:text-slate-400">
+              Turn complaints on or off course-wise. Closed courses will reject new student complaints.
+            </div>
+          </div>
+
+          <span className="inline-flex w-fit rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+            Course-wise control
+          </span>
+        </div>
+
+        <div className="p-5">
+          {courseSettingsLoading ? (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+              Loading course complaint settings...
+            </div>
+          ) : courses.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-200 px-5 py-6 text-center text-sm text-slate-400 dark:border-slate-700 dark:text-slate-500">
+              No active courses found.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+              {courses.map((course) => {
+                const id = course._id || course.id;
+                const isOpen = course?.complaintSettings?.allowStudentComplaints !== false;
+                const isToggling = togglingCourseId === id;
+
+                return (
+                  <div
+                    key={id}
+                    className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/40 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">
+                        {course.code} – {course.title}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Section {course.section || "—"} • {course.semester || "—"} {course.year || ""}
+                      </div>
+                      <div
+                        className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                          isOpen
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+                            : "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300"
+                        }`}
+                      >
+                        {isOpen ? "Complaints Open" : "Complaints Closed"}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleToggleComplaintSubmission(course, !isOpen)}
+                      disabled={isToggling}
+                      className={`inline-flex min-w-[170px] items-center justify-center rounded-2xl px-4 py-2.5 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                        isOpen
+                          ? "border border-rose-200 bg-white text-rose-700 hover:bg-rose-50 dark:border-rose-500/20 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                          : "border border-emerald-200 bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-500/20"
+                      }`}
+                    >
+                      {isToggling
+                        ? "Updating..."
+                        : isOpen
+                        ? "Turn Off Complaints"
+                        : "Turn On Complaints"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </section>
 
       <div className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">

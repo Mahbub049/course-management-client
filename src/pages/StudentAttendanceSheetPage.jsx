@@ -67,9 +67,26 @@ export default function StudentAttendanceSheetPage() {
     return { rows, totalClasses, totalPresent, percentage };
   }, [data]);
 
+  const selectedCourse = useMemo(() => {
+    return courses.find((c) => (c._id || c.id) === courseId) || null;
+  }, [courses, courseId]);
+
+  const complaintsOpen =
+    selectedCourse?.complaintSettings?.allowStudentComplaints !== false;
+
+  const complaintClosedMessage =
+    selectedCourse?.complaintSettings?.closedMessage ||
+    "Complaint submission is currently closed by the course teacher.";
+
   const openIssueModal = (row) => {
     setIssueSuccess("");
     setErr("");
+
+    if (!complaintsOpen) {
+      setErr(complaintClosedMessage);
+      return;
+    }
+
     setIssueRow(row);
     setIssueMessage(
       `I have an attendance issue for ${row.date} (Period ${row.period}). Please review it.`
@@ -88,6 +105,7 @@ export default function StudentAttendanceSheetPage() {
     if (!courseId) return setErr("Please select a course first");
     if (!issueRow) return setErr("Please select an attendance row");
     if (!issueMessage.trim()) return setErr("Please write your issue message");
+    if (!complaintsOpen) return setErr(complaintClosedMessage);
 
     setSubmittingIssue(true);
     setErr("");
@@ -170,6 +188,13 @@ export default function StudentAttendanceSheetPage() {
         {err && (
           <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
             {err}
+          </div>
+        )}
+
+        {selectedCourse && !complaintsOpen && (
+          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+            <div className="font-semibold">Complaint submission is closed</div>
+            <div className="opacity-90">{complaintClosedMessage}</div>
           </div>
         )}
       </section>
@@ -266,7 +291,8 @@ export default function StudentAttendanceSheetPage() {
                             <button
                               type="button"
                               onClick={() => openIssueModal(r)}
-                              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                              disabled={!complaintsOpen}
+                              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                             >
                               <FlagIcon />
                               Report Issue
@@ -305,7 +331,8 @@ export default function StudentAttendanceSheetPage() {
                       <button
                         type="button"
                         onClick={() => openIssueModal(r)}
-                        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                        disabled={!complaintsOpen}
+                        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                       >
                         <FlagIcon />
                         Report Issue
