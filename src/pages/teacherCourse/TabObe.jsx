@@ -267,15 +267,20 @@ export default function TabObe({ courseId, course }) {
   //   }));
   // };
 
-  const addMappingRow = () => {
-    setSetup((prev) => ({
-      ...prev,
-      mappings: [
-        ...(prev.mappings || []),
-        { coCode: "", targetCode: "" },
-      ],
-    }));
-  };
+const addMappingRow = () => {
+  setSetup((prev) => ({
+    ...prev,
+    mappings: [
+      ...(prev.mappings || []),
+      {
+        coCode: "",
+        targetType: "PO",
+        targetCode: "",
+        strength: 1,
+      },
+    ],
+  }));
+};
 
   const updateMappingRow = (index, key, value) => {
     setSetup((prev) => ({
@@ -293,19 +298,35 @@ export default function TabObe({ courseId, course }) {
     }));
   };
 
-  const saveSetup = async () => {
-    try {
-      setSetupSaving(true);
-      await saveObeSetup(courseId, setup);
-      toast("success", "OBE setup saved successfully.");
-      await Promise.all([loadSetup(), loadMarks()]);
-    } catch (error) {
-      console.error(error);
-      toast("error", error?.response?.data?.message || "Failed to save OBE setup.");
-    } finally {
-      setSetupSaving(false);
-    }
-  };
+const saveSetup = async () => {
+  try {
+    setSetupSaving(true);
+
+    const cleanedMappings = (setup.mappings || [])
+      .map((row) => ({
+        coCode: String(row.coCode || "").trim().toUpperCase(),
+        targetType: "PO",
+        targetCode: String(row.targetCode || "").trim().toUpperCase(),
+        strength: Number(row.strength || 1),
+      }))
+      .filter((row) => row.coCode && row.targetCode);
+
+    const payload = {
+      ...setup,
+      mappings: cleanedMappings,
+    };
+
+    await saveObeSetup(courseId, payload);
+
+    toast("success", "OBE setup saved successfully.");
+    await Promise.all([loadSetup(), loadMarks()]);
+  } catch (error) {
+    console.error(error);
+    toast("error", error?.response?.data?.message || "Failed to save OBE setup.");
+  } finally {
+    setSetupSaving(false);
+  }
+};
 
   const updateBlueprintRow = (index, key, value) => {
     setBlueprintForm((prev) => ({
