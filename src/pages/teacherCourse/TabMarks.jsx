@@ -56,6 +56,51 @@ function isAbsentInputValue(value) {
   return String(value ?? "").trim().toUpperCase() === "A";
 }
 
+function isHalfMarkDraftAllowed(value) {
+  const raw = String(value ?? "").trim();
+
+  if (raw === "" || isAbsentInputValue(raw)) return true;
+
+  // Allowed:
+  // 7
+  // 7.
+  // 7.5
+  // .5
+  // Not allowed:
+  // 7.2
+  // 7.25
+  // abc
+  return /^(?:\d+|\d+\.|\d+\.5|\.5)$/.test(raw);
+}
+
+function toHalfMarkNumber(value) {
+  const raw = String(value ?? "").trim();
+
+  if (raw === "" || isAbsentInputValue(raw)) return 0;
+  if (raw === ".5") return 0.5;
+  if (raw.endsWith(".")) return Number(raw.slice(0, -1) || 0);
+
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function formatHalfMarkValue(value) {
+  const n = Number(value ?? 0);
+
+  if (!Number.isFinite(n)) return "";
+
+  return n % 1 === 0 ? String(n) : n.toFixed(1);
+}
+
+function normalizeHalfMarkInputValue(value) {
+  const raw = String(value ?? "").trim();
+
+  if (raw === "") return "";
+  if (isAbsentInputValue(raw)) return "A";
+
+  return formatHalfMarkValue(toHalfMarkNumber(raw));
+}
+
 function getMarkStatus(cellValue) {
   if (!cellValue || typeof cellValue !== "object") return "present";
   return String(cellValue.status || "present").toLowerCase();
@@ -86,8 +131,18 @@ function gradeForStudent(course, assessments, rowMarks, total) {
 function getMarkDisplayValue(cellValue) {
   if (isIncompleteCell(cellValue)) return "A";
   if (cellValue == null) return "";
+
+  if (
+    typeof cellValue === "object" &&
+    Object.prototype.hasOwnProperty.call(cellValue, "inputValue")
+  ) {
+    return cellValue.inputValue;
+  }
+
   return getMainMarkValue(cellValue);
 }
+
+
 
 function formatMarkForReport(cellValue) {
   if (isIncompleteCell(cellValue)) return "A";
@@ -203,6 +258,11 @@ function getMainMarkValue(cellValue) {
 function getSubMarkMap(cellValue) {
   if (!cellValue || typeof cellValue !== "object") return {};
   return cellValue.subMarks || {};
+}
+
+function getSubMarkInputMap(cellValue) {
+  if (!cellValue || typeof cellValue !== "object") return {};
+  return cellValue.subMarkInputs || {};
 }
 
 function buildSubMarkMap(subMarksArray = []) {
@@ -452,11 +512,13 @@ function AdvancedBreakdownModal({
   hasPrev,
   hasNext,
   onSubMarkChange,
+  onSubMarkBlur,
 }) {
   if (!open || !student || !assessment) return null;
 
   const items = advancedAssessmentItems(assessment);
   const subMarks = getSubMarkMap(cellValue);
+  const subMarkInputs = getSubMarkInputMap(cellValue);
   const total = calculateAdvancedObtained(assessment, subMarks);
 
   const grouped = items.reduce((acc, item) => {
@@ -574,13 +636,13 @@ function AdvancedBreakdownModal({
 
                         <div className="mt-4">
                           <input
-                            type="number"
-                            min="0"
-                            step="0.5"
-                            value={subMarks[item.key] ?? ""}
+                            type="text"
+                            inputMode="decimal"
+                            value={subMarkInputs[item.key] ?? subMarks[item.key] ?? ""}
                             onChange={(e) =>
                               onSubMarkChange(item.key, e.target.value, item.fullMarks)
                             }
+                            onBlur={() => onSubMarkBlur(item.key, item.fullMarks)}
                             className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold text-slate-900 shadow-sm outline-none transition focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                             placeholder="Enter marks"
                           />
@@ -632,6 +694,7 @@ export default function TabMarks({ courseId, course }) {
 
   const [tabMode, setTabMode] = useState("row");
   const [sortMode, setSortMode] = useState("entered");
+  const [studentSearch, setStudentSearch] = useState("");
 
   const [advancedModal, setAdvancedModal] = useState({
     open: false,
@@ -812,9 +875,9 @@ export default function TabMarks({ courseId, course }) {
     });
   }, [assessments]);
 
-const labRegularAssessments = useMemo(() => {
-  return sortedAssessments.filter(isRegularLabAssessment);
-}, [sortedAssessments]);
+  const labRegularAssessments = useMemo(() => {
+    return sortedAssessments.filter(isRegularLabAssessment);
+  }, [sortedAssessments]);
 
   const advancedLabFinalAssessments = useMemo(() => {
     return sortedAssessments.filter((a) => a?.structureType === "lab_final");
@@ -879,6 +942,24 @@ const labRegularAssessments = useMemo(() => {
     return [...originalStudentsRef.current];
   }, [students, sortMode]);
 
+  const visibleStudents = useMemo(() => {
+    const q = studentSearch.trim().toLowerCase();
+
+    if (!q) return sortedStudents;
+
+    return sortedStudents.filter((student) => {
+      const roll = String(student.roll || "").toLowerCase();
+      const name = String(student.name || "").toLowerCase();
+      const email = String(student.email || "").toLowerCase();
+
+      return roll.includes(q) || name.includes(q) || email.includes(q);
+    });
+  }, [sortedStudents, studentSearch]);
+
+  useEffect(() => {
+    inputRefs.current = [];
+  }, [studentSearch, sortMode]);
+
   const gradeCounts = useMemo(() => {
     const counts = {
       "A+": 0,
@@ -920,8 +1001,8 @@ const labRegularAssessments = useMemo(() => {
   }, [advancedModal.assessmentId, assessments]);
 
   const activeAdvancedStudent = useMemo(() => {
-    return sortedStudents[advancedModal.studentIndex] || null;
-  }, [sortedStudents, advancedModal.studentIndex]);
+    return visibleStudents[advancedModal.studentIndex] || null;
+  }, [visibleStudents, advancedModal.studentIndex]);
 
   const activeAdvancedCell = useMemo(() => {
     if (!activeAdvancedStudent || !activeAdvancedAssessment) return null;
@@ -937,11 +1018,11 @@ const labRegularAssessments = useMemo(() => {
     const rawValue = String(value ?? "").trim();
     const isAbsent = isAbsentInputValue(rawValue);
 
-    if (rawValue !== "" && !isAbsent && Number.isNaN(Number(rawValue))) {
+    if (!isHalfMarkDraftAllowed(rawValue)) {
       return;
     }
 
-    const numericValue = rawValue === "" || isAbsent ? 0 : Number(rawValue);
+    const numericValue = rawValue === "" || isAbsent ? 0 : toHalfMarkNumber(rawValue);
 
     setMarksMap((prev) => {
       const row = prev[studentId] || {};
@@ -958,7 +1039,34 @@ const labRegularAssessments = useMemo(() => {
           [assessmentId]: {
             ...oldCell,
             obtainedMarks: numericValue,
+            inputValue: isAbsent ? "A" : rawValue,
             status: isAbsent ? "absent" : "present",
+          },
+        },
+      };
+    });
+  };
+
+  const handleMarkBlur = (studentId, assessmentId) => {
+    setMarksMap((prev) => {
+      const row = prev[studentId] || {};
+      const oldCell = row[assessmentId];
+
+      if (!oldCell || isIncompleteCell(oldCell)) return prev;
+
+      const normalized = normalizeHalfMarkInputValue(
+        oldCell.inputValue ?? oldCell.obtainedMarks ?? ""
+      );
+
+      return {
+        ...prev,
+        [studentId]: {
+          ...row,
+          [assessmentId]: {
+            ...oldCell,
+            obtainedMarks: normalized === "" ? 0 : toHalfMarkNumber(normalized),
+            inputValue: normalized,
+            status: "present",
           },
         },
       };
@@ -1002,16 +1110,38 @@ const labRegularAssessments = useMemo(() => {
     value,
     fullMarks
   ) => {
-    const raw = value === "" ? 0 : Number(value);
-    const safeValue = clamp(raw, 0, Number(fullMarks || 0));
+    const rawValue = String(value ?? "").trim();
+
+    if (!isHalfMarkDraftAllowed(rawValue)) {
+      return;
+    }
+
+    const full = Number(fullMarks || 0);
+    const numericValue = rawValue === "" ? 0 : toHalfMarkNumber(rawValue);
+    const safeValue = clamp(numericValue, 0, full);
 
     setMarksMap((prev) => {
       const row = prev[studentId] || {};
-      const oldCell = row[assessment._id] || { obtainedMarks: 0, subMarks: {} };
+      const oldCell = row[assessment._id] || {
+        obtainedMarks: 0,
+        status: "present",
+        subMarks: {},
+        subMarkInputs: {},
+      };
+
       const nextSubMarks = {
         ...(oldCell.subMarks || {}),
         [subKey]: safeValue,
       };
+
+      const nextSubMarkInputs = {
+        ...(oldCell.subMarkInputs || {}),
+        [subKey]:
+          numericValue > full && full > 0
+            ? formatHalfMarkValue(full)
+            : rawValue,
+      };
+
       const total = calculateAdvancedObtained(assessment, nextSubMarks);
 
       return {
@@ -1019,9 +1149,57 @@ const labRegularAssessments = useMemo(() => {
         [studentId]: {
           ...row,
           [assessment._id]: {
+            ...oldCell,
             obtainedMarks: total,
             status: "present",
             subMarks: nextSubMarks,
+            subMarkInputs: nextSubMarkInputs,
+          },
+        },
+      };
+    });
+  };
+
+  const handleAdvancedSubMarkBlur = (studentId, assessment, subKey, fullMarks) => {
+    setMarksMap((prev) => {
+      const row = prev[studentId] || {};
+      const oldCell = row[assessment._id];
+
+      if (!oldCell || isIncompleteCell(oldCell)) return prev;
+
+      const full = Number(fullMarks || 0);
+
+      const oldInput =
+        oldCell.subMarkInputs?.[subKey] ??
+        oldCell.subMarks?.[subKey] ??
+        "";
+
+      const normalized = normalizeHalfMarkInputValue(oldInput);
+      const numericValue = normalized === "" ? 0 : toHalfMarkNumber(normalized);
+      const safeValue = clamp(numericValue, 0, full);
+
+      const nextSubMarks = {
+        ...(oldCell.subMarks || {}),
+        [subKey]: safeValue,
+      };
+
+      const nextSubMarkInputs = {
+        ...(oldCell.subMarkInputs || {}),
+        [subKey]: normalized === "" ? "" : formatHalfMarkValue(safeValue),
+      };
+
+      const total = calculateAdvancedObtained(assessment, nextSubMarks);
+
+      return {
+        ...prev,
+        [studentId]: {
+          ...row,
+          [assessment._id]: {
+            ...oldCell,
+            obtainedMarks: total,
+            status: "present",
+            subMarks: nextSubMarks,
+            subMarkInputs: nextSubMarkInputs,
           },
         },
       };
@@ -1029,7 +1207,7 @@ const labRegularAssessments = useMemo(() => {
   };
 
   const openAdvancedModal = (student, assessment) => {
-    const index = sortedStudents.findIndex((s) => String(s.id) === String(student.id));
+    const index = visibleStudents.findIndex((s) => String(s.id) === String(student.id));
     setAdvancedModal({
       open: true,
       assessmentId: assessment._id,
@@ -1055,7 +1233,7 @@ const labRegularAssessments = useMemo(() => {
   const goNextAdvancedStudent = () => {
     setAdvancedModal((prev) => ({
       ...prev,
-      studentIndex: Math.min(sortedStudents.length - 1, prev.studentIndex + 1),
+      studentIndex: Math.min(visibleStudents.length - 1, prev.studentIndex + 1),
     }));
   };
 
@@ -1194,7 +1372,7 @@ const labRegularAssessments = useMemo(() => {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [advancedModal.open, sortedStudents.length]);
+  }, [advancedModal.open, visibleStudents.length]);
 
   const handleSave = async () => {
     try {
@@ -1809,7 +1987,7 @@ const labRegularAssessments = useMemo(() => {
       </div>
 
       <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <ControlSelect
             label="Tab Mode"
             value={tabMode}
@@ -1830,6 +2008,22 @@ const labRegularAssessments = useMemo(() => {
               { value: "roll_desc", label: "Roll Descending" },
             ]}
           />
+
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+              Search Student
+            </label>
+            <input
+              type="text"
+              value={studentSearch}
+              onChange={(e) => setStudentSearch(e.target.value)}
+              placeholder="Search by roll, name, or email"
+              className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+            />
+            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Showing {visibleStudents.length} of {sortedStudents.length} students
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1948,7 +2142,7 @@ const labRegularAssessments = useMemo(() => {
                   </thead>
 
                   <tbody>
-                    {sortedStudents.map((s, rowIndex) => {
+                    {visibleStudents.map((s, rowIndex) => {
                       const row = marksMap[s.id] || {};
                       const total = computeTotal100(
                         course,
@@ -1983,31 +2177,31 @@ const labRegularAssessments = useMemo(() => {
                               return (
                                 <td key={a._id} className="px-4 py-3">
                                   <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    disabled={isAttendanceCol}
-                                    className={[
-                                      "h-11 w-24 rounded-xl border px-3 text-sm shadow-sm transition",
-                                      "focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500",
-                                      isAttendanceCol
-                                        ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
-                                        : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
-                                    ].join(" ")}
-
-                                    value={cell == null ? "" : getMarkDisplayValue(cell)}
-                                    onChange={(e) =>
-                                      handleMarkChange(s.id, a._id, e.target.value)
-                                    }
-                                    onKeyDown={handleKeyDown}
-                                    data-row={rowIndex}
-                                    data-col={colIndex}
-                                    ref={(el) => {
-                                      if (!inputRefs.current[rowIndex]) {
-                                        inputRefs.current[rowIndex] = [];
-                                      }
-                                      inputRefs.current[rowIndex][colIndex] = el;
-                                    }}
-                                  />
+  type="text"
+  inputMode="decimal"
+  disabled={isAttendanceCol}
+  className={[
+    "h-11 w-24 rounded-xl border px-3 text-sm shadow-sm transition",
+    "focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500",
+    isAttendanceCol
+      ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+      : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
+  ].join(" ")}
+  value={cell == null ? "" : getMarkDisplayValue(cell)}
+  onChange={(e) =>
+    handleMarkChange(s.id, a._id, e.target.value)
+  }
+  onBlur={() => handleMarkBlur(s.id, a._id)}
+  onKeyDown={handleKeyDown}
+  data-row={rowIndex}
+  data-col={colIndex}
+  ref={(el) => {
+    if (!inputRefs.current[rowIndex]) {
+      inputRefs.current[rowIndex] = [];
+    }
+    inputRefs.current[rowIndex][colIndex] = el;
+  }}
+/>
                                 </td>
                               );
                             }
@@ -2093,6 +2287,7 @@ const labRegularAssessments = useMemo(() => {
                                   onChange={(e) =>
                                     handleMarkChange(s.id, a._id, e.target.value)
                                   }
+                                  onBlur={() => handleMarkBlur(s.id, a._id)}
                                   onKeyDown={handleKeyDown}
                                   data-row={rowIndex}
                                   data-col={actualColIndex}
@@ -2162,7 +2357,7 @@ const labRegularAssessments = useMemo(() => {
           onPrev={goPrevAdvancedStudent}
           onNext={goNextAdvancedStudent}
           hasPrev={advancedModal.studentIndex > 0}
-          hasNext={advancedModal.studentIndex < sortedStudents.length - 1}
+          hasNext={advancedModal.studentIndex < visibleStudents.length - 1}
           onSubMarkChange={(subKey, value, fullMarks) => {
             if (!activeAdvancedStudent || !activeAdvancedAssessment) return;
             handleAdvancedSubMarkChange(
@@ -2170,6 +2365,15 @@ const labRegularAssessments = useMemo(() => {
               activeAdvancedAssessment,
               subKey,
               value,
+              fullMarks
+            );
+          }}
+          onSubMarkBlur={(subKey, fullMarks) => {
+            if (!activeAdvancedStudent || !activeAdvancedAssessment) return;
+            handleAdvancedSubMarkBlur(
+              activeAdvancedStudent.id,
+              activeAdvancedAssessment,
+              subKey,
               fullMarks
             );
           }}
