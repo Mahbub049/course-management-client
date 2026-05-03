@@ -116,6 +116,11 @@ function isFinalAssessment(assessment) {
   return assessment?.structureType === "lab_final" || name.includes("final");
 }
 
+function isAttendanceAssessment(assessment) {
+  const name = String(assessment?.name || "").toLowerCase();
+  return name.includes("att") || name.includes("attendance");
+}
+
 function studentHasFinalIncomplete(assessments, rowMarks) {
   return (assessments || []).some((assessment) => {
     if (!isFinalAssessment(assessment)) return false;
@@ -826,26 +831,37 @@ export default function TabMarks({ courseId, course }) {
       if (attSummary.status === "fulfilled") {
         const attRows = attSummary.value || [];
 
-        const newAttMap = {};
-        attRows.forEach((r) => {
-          newAttMap[String(r.student)] = Number(r.marks ?? 0);
-        });
-        setAttMarksMap(newAttMap);
-
-        const attendanceAssessment = (assessmentsData || []).find((a) =>
-          String(a.name || "").toLowerCase().includes("att")
+        const attendanceAssessment = (assessmentsData || []).find(
+          isAttendanceAssessment
         );
 
-        if (attendanceAssessment) {
-          attRows.forEach((r) => {
-            const sid = String(r.student);
-            if (!map[sid]) map[sid] = {};
+        const newAttMap = {};
+
+        attRows.forEach((r) => {
+          const sid = String(r.student);
+
+          if (!map[sid]) map[sid] = {};
+
+          const existingAttendanceCell = attendanceAssessment
+            ? map[sid]?.[attendanceAssessment._id]
+            : null;
+
+          const attendanceValue = existingAttendanceCell
+            ? Number(existingAttendanceCell.obtainedMarks || 0)
+            : Number(r.marks ?? 0);
+
+          newAttMap[sid] = attendanceValue;
+
+          if (attendanceAssessment && !existingAttendanceCell) {
             map[sid][attendanceAssessment._id] = {
-              obtainedMarks: Number(r.marks ?? 0),
+              obtainedMarks: attendanceValue,
+              status: "present",
               subMarks: {},
             };
-          });
-        }
+          }
+        });
+
+        setAttMarksMap(newAttMap);
       } else {
         setAttMarksMap({});
       }
@@ -1024,6 +1040,17 @@ export default function TabMarks({ courseId, course }) {
 
     const numericValue = rawValue === "" || isAbsent ? 0 : toHalfMarkNumber(rawValue);
 
+    const assessment = assessments.find(
+      (a) => String(a._id) === String(assessmentId)
+    );
+
+    if (assessment && isAttendanceAssessment(assessment)) {
+      setAttMarksMap((prev) => ({
+        ...prev,
+        [studentId]: clamp(numericValue, 0, Number(assessment.fullMarks || 5)),
+      }));
+    }
+
     setMarksMap((prev) => {
       const row = prev[studentId] || {};
       const oldCell = row[assessmentId] || {
@@ -1058,13 +1085,26 @@ export default function TabMarks({ courseId, course }) {
         oldCell.inputValue ?? oldCell.obtainedMarks ?? ""
       );
 
+      const assessment = assessments.find(
+        (a) => String(a._id) === String(assessmentId)
+      );
+
+      const normalizedNumber = normalized === "" ? 0 : toHalfMarkNumber(normalized);
+
+      if (assessment && isAttendanceAssessment(assessment)) {
+        setAttMarksMap((prev) => ({
+          ...prev,
+          [studentId]: clamp(normalizedNumber, 0, Number(assessment.fullMarks || 5)),
+        }));
+      }
+
       return {
         ...prev,
         [studentId]: {
           ...row,
           [assessmentId]: {
             ...oldCell,
-            obtainedMarks: normalized === "" ? 0 : toHalfMarkNumber(normalized),
+            obtainedMarks: normalizedNumber,
             inputValue: normalized,
             status: "present",
           },
@@ -2177,31 +2217,31 @@ export default function TabMarks({ courseId, course }) {
                               return (
                                 <td key={a._id} className="px-4 py-3">
                                   <input
-  type="text"
-  inputMode="decimal"
-  disabled={isAttendanceCol}
-  className={[
-    "h-11 w-24 rounded-xl border px-3 text-sm shadow-sm transition",
-    "focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500",
-    isAttendanceCol
-      ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
-      : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
-  ].join(" ")}
-  value={cell == null ? "" : getMarkDisplayValue(cell)}
-  onChange={(e) =>
-    handleMarkChange(s.id, a._id, e.target.value)
-  }
-  onBlur={() => handleMarkBlur(s.id, a._id)}
-  onKeyDown={handleKeyDown}
-  data-row={rowIndex}
-  data-col={colIndex}
-  ref={(el) => {
-    if (!inputRefs.current[rowIndex]) {
-      inputRefs.current[rowIndex] = [];
-    }
-    inputRefs.current[rowIndex][colIndex] = el;
-  }}
-/>
+                                    type="text"
+                                    inputMode="decimal"
+                                    disabled={isAttendanceCol}
+                                    className={[
+                                      "h-11 w-24 rounded-xl border px-3 text-sm shadow-sm transition",
+                                      "focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500",
+                                      isAttendanceCol
+                                        ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                                        : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
+                                    ].join(" ")}
+                                    value={cell == null ? "" : getMarkDisplayValue(cell)}
+                                    onChange={(e) =>
+                                      handleMarkChange(s.id, a._id, e.target.value)
+                                    }
+                                    onBlur={() => handleMarkBlur(s.id, a._id)}
+                                    onKeyDown={handleKeyDown}
+                                    data-row={rowIndex}
+                                    data-col={colIndex}
+                                    ref={(el) => {
+                                      if (!inputRefs.current[rowIndex]) {
+                                        inputRefs.current[rowIndex] = [];
+                                      }
+                                      inputRefs.current[rowIndex][colIndex] = el;
+                                    }}
+                                  />
                                 </td>
                               );
                             }
@@ -2275,13 +2315,11 @@ export default function TabMarks({ courseId, course }) {
                                 <input
                                   type="text"
                                   inputMode="decimal"
-                                  disabled={isAttendanceCol}
+                                  disabled={false}
                                   className={[
                                     "h-11 w-24 rounded-xl border px-3 text-sm shadow-sm transition",
                                     "focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500",
-                                    isAttendanceCol
-                                      ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
-                                      : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
+                                    "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
                                   ].join(" ")}
                                   value={cell == null ? "" : getMarkDisplayValue(cell)}
                                   onChange={(e) =>
