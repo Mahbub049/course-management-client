@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
 import { saveAs } from "file-saver";
 
@@ -106,6 +106,11 @@ export default function TabObe({ courseId, course }) {
   const [markDraft, setMarkDraft] = useState({});
   const [markLoading, setMarkLoading] = useState(true);
   const [markSaving, setMarkSaving] = useState(false);
+  const [obeTabMode, setObeTabMode] = useState("row");
+  const [obeSortMode, setObeSortMode] = useState("entered");
+  const [obeStudentSearch, setObeStudentSearch] = useState("");
+
+  const obeInputRefs = useRef([]);
 
   const [outputData, setOutputData] = useState(null);
   const [outputLoading, setOutputLoading] = useState(false);
@@ -479,6 +484,157 @@ const saveSetup = async () => {
         return sum + val;
       }, 0)
     );
+  };
+
+    const sortedMarkStudents = useMemo(() => {
+    const base = [...markStudents];
+
+    if (obeSortMode === "roll_asc") {
+      return base.sort((a, b) =>
+        String(a.roll || "").localeCompare(String(b.roll || ""), undefined, {
+          numeric: true,
+        })
+      );
+    }
+
+    if (obeSortMode === "roll_desc") {
+      return base.sort((a, b) =>
+        String(b.roll || "").localeCompare(String(a.roll || ""), undefined, {
+          numeric: true,
+        })
+      );
+    }
+
+    return base;
+  }, [markStudents, obeSortMode]);
+
+  const visibleMarkStudents = useMemo(() => {
+    const query = obeStudentSearch.trim().toLowerCase();
+
+    if (!query) return sortedMarkStudents;
+
+    return sortedMarkStudents.filter((student) => {
+      const roll = String(student.roll || "").toLowerCase();
+      const name = String(student.name || "").toLowerCase();
+      const email = String(student.email || "").toLowerCase();
+
+      return roll.includes(query) || name.includes(query) || email.includes(query);
+    });
+  }, [sortedMarkStudents, obeStudentSearch]);
+
+  const obeInputColumns = useMemo(() => {
+    return markBlueprints.flatMap((blueprint) =>
+      (blueprint.items || []).map((item) => ({
+        blueprintId: blueprint._id,
+        itemKey: item.key,
+      }))
+    );
+  }, [markBlueprints]);
+
+  const getObeInputColIndex = (blueprintId, itemKey) => {
+    return obeInputColumns.findIndex(
+      (column) =>
+        String(column.blueprintId) === String(blueprintId) &&
+        String(column.itemKey) === String(itemKey)
+    );
+  };
+
+  const getObeFocusableCells = () => {
+    const cells = [];
+
+    obeInputRefs.current.forEach((rowRefs, rowIndex) => {
+      if (!Array.isArray(rowRefs)) return;
+
+      rowRefs.forEach((el, colIndex) => {
+        if (!el || el.disabled) return;
+        cells.push({ row: rowIndex, col: colIndex, el });
+      });
+    });
+
+    return cells;
+  };
+
+  const focusObeCellByPosition = (row, col) => {
+    const target = obeInputRefs.current?.[row]?.[col];
+
+    if (!target || target.disabled) return false;
+
+    target.focus();
+    target.select?.();
+
+    return true;
+  };
+
+  const moveObeTabFocus = (row, col, reverse = false) => {
+    const focusableCells = getObeFocusableCells();
+
+    if (!focusableCells.length) return;
+
+    const orderedCells = [...focusableCells].sort((a, b) => {
+      if (obeTabMode === "column") {
+        if (a.col !== b.col) return a.col - b.col;
+        return a.row - b.row;
+      }
+
+      if (a.row !== b.row) return a.row - b.row;
+      return a.col - b.col;
+    });
+
+    const currentIndex = orderedCells.findIndex(
+      (cell) => cell.row === row && cell.col === col
+    );
+
+    if (currentIndex === -1) return;
+
+    const nextIndex = reverse ? currentIndex - 1 : currentIndex + 1;
+    const nextCell = orderedCells[nextIndex];
+
+    if (!nextCell) return;
+
+    nextCell.el.focus();
+    nextCell.el.select?.();
+  };
+
+  const handleObeKeyDown = (event) => {
+    const row = Number(event.currentTarget.dataset.row);
+    const col = Number(event.currentTarget.dataset.col);
+
+    if (Number.isNaN(row) || Number.isNaN(col)) return;
+
+    if (event.key === "Tab") {
+      event.preventDefault();
+      moveObeTabFocus(row, col, event.shiftKey);
+      return;
+    }
+
+    if (event.key === "Enter") {
+      event.preventDefault();
+      moveObeTabFocus(row, col, event.shiftKey);
+      return;
+    }
+
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      focusObeCellByPosition(row, col + 1);
+      return;
+    }
+
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      focusObeCellByPosition(row, col - 1);
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      focusObeCellByPosition(row + 1, col);
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      focusObeCellByPosition(row - 1, col);
+    }
   };
 
   const saveMarks = async () => {
@@ -1237,20 +1393,72 @@ const saveSetup = async () => {
               </div>
             ) : (
               <>
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                  <div className="text-sm text-slate-600 dark:text-slate-400">
-                    Students: <strong>{markStudents.length}</strong> · Assessments:{" "}
-                    <strong>{markBlueprints.length}</strong>
+                <div className="mb-4 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="text-sm text-slate-600 dark:text-slate-400">
+                      Students: <strong>{markStudents.length}</strong> · Assessments:{" "}
+                      <strong>{markBlueprints.length}</strong>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={saveMarks}
+                      disabled={markSaving}
+                      className={primaryButtonClass}
+                    >
+                      {markSaving ? "Saving..." : "Save OBE Marks"}
+                    </button>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={saveMarks}
-                    disabled={markSaving}
-                    className={primaryButtonClass}
-                  >
-                    {markSaving ? "Saving..." : "Save OBE Marks"}
-                  </button>
+                  <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                      <label className="block">
+                        <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                          Tab Mode
+                        </span>
+                        <select
+                          value={obeTabMode}
+                          onChange={(e) => setObeTabMode(e.target.value)}
+                          className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                        >
+                          <option value="row">Row-wise Entry</option>
+                          <option value="column">Column-wise Entry</option>
+                        </select>
+                      </label>
+
+                      <label className="block">
+                        <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                          Student Sort
+                        </span>
+                        <select
+                          value={obeSortMode}
+                          onChange={(e) => setObeSortMode(e.target.value)}
+                          className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                        >
+                          <option value="entered">Default / Entered Order</option>
+                          <option value="roll_asc">Roll Ascending</option>
+                          <option value="roll_desc">Roll Descending</option>
+                        </select>
+                      </label>
+
+                      <div>
+                        <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                          Search Student
+                        </label>
+                        <input
+                          type="text"
+                          value={obeStudentSearch}
+                          onChange={(e) => setObeStudentSearch(e.target.value)}
+                          placeholder="Search by roll, name, or email"
+                          className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                        />
+
+                        <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          Showing {visibleMarkStudents.length} of {sortedMarkStudents.length} students
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-950">
@@ -1301,7 +1509,7 @@ const saveSetup = async () => {
                       </thead>
 
                       <tbody>
-                        {markStudents.map((student) => (
+                        {visibleMarkStudents.map((student, rowIndex) => (
                           <tr
                             key={student.studentId}
                             className="group hover:bg-slate-50 dark:hover:bg-slate-800/50"
@@ -1340,6 +1548,23 @@ const saveSetup = async () => {
                                         item.marks
                                       )
                                     }
+                                    onKeyDown={handleObeKeyDown}
+                                    data-row={rowIndex}
+                                    data-col={getObeInputColIndex(blueprint._id, item.key)}
+                                    ref={(el) => {
+                                      const colIndex = getObeInputColIndex(
+                                        blueprint._id,
+                                        item.key
+                                      );
+
+                                      if (colIndex < 0) return;
+
+                                      if (!obeInputRefs.current[rowIndex]) {
+                                        obeInputRefs.current[rowIndex] = [];
+                                      }
+
+                                      obeInputRefs.current[rowIndex][colIndex] = el;
+                                    }}
                                     className="h-8 w-full min-w-[48px] max-w-[64px] rounded-lg border border-slate-300 bg-white px-1.5 text-center text-xs font-semibold text-slate-800 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-indigo-400 dark:focus:ring-indigo-500/20 sm:h-9 sm:max-w-[72px] sm:text-sm"
                                   />
                                 </td>
