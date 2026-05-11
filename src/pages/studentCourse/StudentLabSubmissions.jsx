@@ -6,6 +6,47 @@ import {
   submitStudentLabAssessmentFile,
 } from "../../services/labSubmissionService";
 
+const DEFAULT_ALLOWED_EXTENSIONS = [
+  "pdf",
+  "doc",
+  "docx",
+  "xls",
+  "xlsx",
+  "ppt",
+  "pptx",
+  "txt",
+  "zip",
+];
+
+function normalizeAllowedExtensions(value) {
+  const selected = Array.isArray(value)
+    ? value.map((item) => String(item || "").trim().toLowerCase())
+    : [];
+
+  const valid = selected.filter((item) =>
+    DEFAULT_ALLOWED_EXTENSIONS.includes(item)
+  );
+
+  return valid.length ? Array.from(new Set(valid)) : DEFAULT_ALLOWED_EXTENSIONS;
+}
+
+function getAcceptString(value) {
+  return normalizeAllowedExtensions(value)
+    .map((item) => `.${item}`)
+    .join(",");
+}
+
+function formatAllowedExtensions(value) {
+  return normalizeAllowedExtensions(value)
+    .map((item) => item.toUpperCase())
+    .join(", ");
+}
+
+function getFileExtension(fileName = "") {
+  const parts = String(fileName || "").split(".");
+  return parts.length > 1 ? parts.pop().toLowerCase() : "";
+}
+
 function formatDateTime(value) {
   if (!value) return "No deadline set";
   const d = new Date(value);
@@ -113,8 +154,20 @@ export default function StudentLabSubmissions({ courseId }) {
     return () => window.clearInterval(timer);
   }, []);
 
-  const handleFileChange = async (assessmentId, file) => {
+  const handleFileChange = async (assessmentId, file, allowedExtensions = []) => {
     if (!file) return;
+
+    const selectedAllowedExtensions = normalizeAllowedExtensions(allowedExtensions);
+    const fileExt = getFileExtension(file.name);
+
+    if (!selectedAllowedExtensions.includes(fileExt)) {
+      Swal.fire(
+        "Invalid file type",
+        `Only ${formatAllowedExtensions(selectedAllowedExtensions)} files are allowed for this submission.`,
+        "warning"
+      );
+      return;
+    }
 
     setUploadingId(assessmentId);
     try {
@@ -180,7 +233,7 @@ export default function StudentLabSubmissions({ courseId }) {
                   </span>
 
                   <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                    {(item.allowedExtensions || []).join(", ")}
+                    Allowed: {formatAllowedExtensions(item.allowedExtensions)}
                   </span>
 
                   <span
@@ -231,9 +284,9 @@ export default function StudentLabSubmissions({ courseId }) {
                     </div>
                   </div>
 
-                  <div className="text-left text-base font-semibold opacity-80 sm:text-right">
-                    <div className="text-xs font-bold uppercase tracking-[0.18em] opacity-70">Deadline</div>
-                    <div className="text-xl font-black tracking-wide sm:text-2xl">{formatDateTime(item.dueDate)}</div>
+                  <div className="text-left text-xs font-semibold opacity-80 sm:text-right">
+                    <div>Deadline</div>
+                    <div>{formatDateTime(item.dueDate)}</div>
                   </div>
                 </div>
 
@@ -305,11 +358,16 @@ export default function StudentLabSubmissions({ courseId }) {
                     <input
                       type="file"
                       className="hidden"
-                      accept=".pdf,.doc,.docx,.zip,.xls,.xlsx,.ppt,.pptx,.txt"
+                      accept={getAcceptString(item.allowedExtensions)}
                       disabled={uploadingId === item.id}
-                      onChange={(e) =>
-                        handleFileChange(item.id, e.target.files?.[0])
-                      }
+                      onChange={(e) => {
+                        handleFileChange(
+                          item.id,
+                          e.target.files?.[0],
+                          item.allowedExtensions
+                        );
+                        e.target.value = "";
+                      }}
                     />
                   </label>
                 ) : (

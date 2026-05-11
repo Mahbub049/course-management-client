@@ -13,6 +13,20 @@ import {
   updateTeacherSubmissionAssessment,
 } from "../../services/labSubmissionService";
 
+const FILE_TYPE_OPTIONS = [
+  { value: "pdf", label: "PDF" },
+  { value: "doc", label: "DOC" },
+  { value: "docx", label: "DOCX" },
+  { value: "xls", label: "XLS" },
+  { value: "xlsx", label: "XLSX" },
+  { value: "ppt", label: "PPT" },
+  { value: "pptx", label: "PPTX" },
+  { value: "txt", label: "TXT" },
+  { value: "zip", label: "ZIP" },
+];
+
+const DEFAULT_ALLOWED_EXTENSIONS = FILE_TYPE_OPTIONS.map((item) => item.value);
+
 const initialForm = {
   name: "Lab Assessment Submission",
   fullMarks: 10,
@@ -23,6 +37,7 @@ const initialForm = {
   maxFileSizeMB: 10,
   resourceTitle: "View Resource",
   resourceUrl: "",
+  allowedExtensions: DEFAULT_ALLOWED_EXTENSIONS,
 };
 
 function formatDateTime(value) {
@@ -71,6 +86,25 @@ function formatFileSize(size = 0) {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
   return `${(size / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function normalizeAllowedExtensions(value, fallbackToDefault = true) {
+  const selected = Array.isArray(value)
+    ? value.map((item) => String(item || "").trim().toLowerCase())
+    : [];
+
+  const valid = selected.filter((item) =>
+    DEFAULT_ALLOWED_EXTENSIONS.includes(item)
+  );
+
+  if (valid.length) return Array.from(new Set(valid));
+  return fallbackToDefault ? DEFAULT_ALLOWED_EXTENSIONS : [];
+}
+
+function formatAllowedExtensions(value) {
+  return normalizeAllowedExtensions(value, true)
+    .map((item) => item.toUpperCase())
+    .join(", ");
 }
 
 function getSubmissionStatusMeta(item) {
@@ -221,6 +255,18 @@ export default function TeacherLabSubmissions({ courseId }) {
 
   const handleCreateOrUpdate = async (e) => {
     e.preventDefault();
+
+    const allowedExtensions = normalizeAllowedExtensions(form.allowedExtensions, false);
+
+    if (!allowedExtensions.length) {
+      Swal.fire(
+        "Select file type",
+        "Please select at least one allowed file type for student submissions.",
+        "warning"
+      );
+      return;
+    }
+
     setSavingForm(true);
 
     try {
@@ -234,17 +280,7 @@ export default function TeacherLabSubmissions({ courseId }) {
           allowResubmission: !!form.allowResubmission,
           resourceTitle: form.resourceTitle,
           resourceUrl: form.resourceUrl,
-          allowedExtensions: [
-            "pdf",
-            "doc",
-            "docx",
-            "zip",
-            "xls",
-            "xlsx",
-            "ppt",
-            "pptx",
-            "txt",
-          ],
+          allowedExtensions,
         },
       };
 
@@ -260,6 +296,7 @@ export default function TeacherLabSubmissions({ courseId }) {
             allowResubmission: payload.submissionConfig.allowResubmission,
             resourceTitle: payload.submissionConfig.resourceTitle,
             resourceUrl: payload.submissionConfig.resourceUrl,
+            allowedExtensions: payload.submissionConfig.allowedExtensions,
           },
         });
 
@@ -310,6 +347,7 @@ export default function TeacherLabSubmissions({ courseId }) {
       maxFileSizeMB: item.maxFileSizeMB || 10,
       resourceTitle: item.resourceTitle || "View Resource",
       resourceUrl: item.resourceUrl || "",
+      allowedExtensions: normalizeAllowedExtensions(item.allowedExtensions),
     });
 
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -503,6 +541,21 @@ export default function TeacherLabSubmissions({ courseId }) {
     ? "close"
     : "open";
 
+  const toggleAllowedExtension = (extension) => {
+    setForm((prev) => {
+      const current = normalizeAllowedExtensions(prev.allowedExtensions, false);
+      const exists = current.includes(extension);
+      const next = exists
+        ? current.filter((item) => item !== extension)
+        : [...current, extension];
+
+      return {
+        ...prev,
+        allowedExtensions: next,
+      };
+    });
+  };
+
   return (
     <div className="space-y-6">
       <form
@@ -642,8 +695,8 @@ export default function TeacherLabSubmissions({ courseId }) {
           </div>
         </div>
 
-        <div className="mt-4">
-          <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
+          <label className="flex min-h-[92px] items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
             <input
               type="checkbox"
               checked={form.allowResubmission}
@@ -654,8 +707,66 @@ export default function TeacherLabSubmissions({ courseId }) {
                 }))
               }
             />
-            Allow resubmission
+            <span>
+              <span className="block font-semibold">Allow resubmission</span>
+              <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
+                Students can replace their submitted file before the deadline.
+              </span>
+            </span>
           </label>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800">
+            <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  Allowed file types
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">
+                  Students can upload only the checked formats.
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setForm((prev) => ({
+                    ...prev,
+                    allowedExtensions: DEFAULT_ALLOWED_EXTENSIONS,
+                  }))
+                }
+                className="w-fit rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-700"
+              >
+                Select all
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {FILE_TYPE_OPTIONS.map((option) => {
+                const checked = normalizeAllowedExtensions(
+                  form.allowedExtensions,
+                  false
+                ).includes(option.value);
+
+                return (
+                  <label
+                    key={option.value}
+                    className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition ${
+                      checked
+                        ? "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-700"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleAllowedExtension(option.value)}
+                    />
+                    {option.label}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         <textarea
@@ -751,6 +862,10 @@ export default function TeacherLabSubmissions({ courseId }) {
                         {item.submissionCount || 0} submission(s) • Full marks:{" "}
                         {item.fullMarks || 0}
                       </div>
+
+                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Files: {formatAllowedExtensions(item.allowedExtensions)}
+                      </div>
                     </button>
 
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -790,6 +905,9 @@ export default function TeacherLabSubmissions({ courseId }) {
                   <div>Assessment: {selectedAssessment.name}</div>
                   <div>Due: {formatDateTime(selectedAssessment.dueDate)}</div>
                   <div>Full Marks: {selectedAssessment.fullMarks || 0}</div>
+                  <div>
+                    Allowed files: {formatAllowedExtensions(selectedAssessment.allowedExtensions)}
+                  </div>
 
                   {selectedAssessment.resourceUrl ? (
                     <a
