@@ -231,7 +231,7 @@ export default function StudentLabSubmissions({ courseId }) {
                     </div>
                   </div>
 
-                  <div className="text-left text-xs font-semibold opacity-80 sm:text-right">
+                  <div className="text-left text-base font-semibold opacity-80 sm:text-right">
                     <div>Deadline</div>
                     <div>{formatDateTime(item.dueDate)}</div>
                   </div>
