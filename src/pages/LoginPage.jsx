@@ -212,7 +212,15 @@ function LoginPage() {
                 </form>
 
                 <p className="mt-6 text-center text-[11px] text-slate-400 dark:text-slate-500">
-                  Developed by Mahbub Sarwar (MMSS, Lecturer, CSE, BUBT)
+                  Portfolio Website:{" "}
+                  <a
+                    href="https://mahbub-sarwar.vercel.app/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-semibold text-indigo-600 underline-offset-4 transition hover:text-indigo-700 hover:underline dark:text-indigo-400 dark:hover:text-indigo-300"
+                  >
+                    mahbub-sarwar.vercel.app
+                  </a>
                 </p>
               </div>
             </div>
