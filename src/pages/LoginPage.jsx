@@ -219,7 +219,7 @@ function LoginPage() {
                     rel="noopener noreferrer"
                     className="font-semibold text-indigo-600 underline-offset-4 transition hover:text-indigo-700 hover:underline dark:text-indigo-400 dark:hover:text-indigo-300"
                   >
-                    Mahbub Sarwar (Lecture in CSE, BUBT)
+                    Mahbub Sarwar (Lecturer in CSE, BUBT)
                   </a>
                 </p>
               </div>
