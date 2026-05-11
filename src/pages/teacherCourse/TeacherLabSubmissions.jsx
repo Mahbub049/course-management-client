@@ -192,7 +192,7 @@ export default function TeacherLabSubmissions({ courseId }) {
       Swal.fire(
         "Failed",
         err?.response?.data?.message ||
-          "Could not load submission assessments.",
+        "Could not load submission assessments.",
         "error"
       );
       return [];
@@ -327,7 +327,7 @@ export default function TeacherLabSubmissions({ courseId }) {
       Swal.fire(
         "Failed",
         err?.response?.data?.message ||
-          "Could not save submission assessment.",
+        "Could not save submission assessment.",
         "error"
       );
     } finally {
@@ -587,116 +587,170 @@ export default function TeacherLabSubmissions({ courseId }) {
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <input
-            type="text"
-            value={form.name}
-            onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-            className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-            placeholder="Assessment title"
-            required
-          />
+          {/* Assessment Title */}
+          <div>
+            <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Assessment Title
+            </label>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, name: e.target.value }))
+              }
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              placeholder="Example: Lab Assessment Submission"
+              required
+            />
+          </div>
 
-          <input
-            type="number"
-            min="0"
-            value={form.fullMarks}
-            onChange={(e) =>
-              setForm((prev) => ({ ...prev, fullMarks: e.target.value }))
-            }
-            className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-            placeholder="Full marks"
-            required
-          />
+          {/* Full Marks */}
+          <div>
+            <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Full Marks
+            </label>
+            <input
+              type="number"
+              min="0"
+              value={form.fullMarks}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, fullMarks: e.target.value }))
+              }
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              placeholder="Example: 10"
+              required
+            />
+          </div>
 
-          <input
-            type="number"
-            min="1"
-            max="10"
-            value={form.maxFileSizeMB}
-            onChange={(e) =>
-              setForm((prev) => ({ ...prev, maxFileSizeMB: e.target.value }))
-            }
-            className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-            placeholder="Max file size in MB"
-          />
+          {/* Max File Size */}
+          <div>
+            <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Maximum File Size
+            </label>
+            <input
+              type="number"
+              min="1"
+              max="10"
+              value={form.maxFileSizeMB}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, maxFileSizeMB: e.target.value }))
+              }
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              placeholder="Example: 10"
+            />
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Enter file size in MB. Maximum allowed value is 10 MB.
+            </p>
+          </div>
 
-          <input
-            type="text"
-            value={form.resourceTitle}
-            onChange={(e) =>
-              setForm((prev) => ({ ...prev, resourceTitle: e.target.value }))
-            }
-            className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-            placeholder="Resource button text, e.g. View PDF"
-          />
+          {/* Resource Button Text */}
+          <div>
+            <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Resource Button Text
+            </label>
+            <input
+              type="text"
+              value={form.resourceTitle}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, resourceTitle: e.target.value }))
+              }
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              placeholder="Example: View Resource"
+            />
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              This text will be shown as a button on the student side.
+            </p>
+          </div>
 
-          <input
-            type="url"
-            value={form.resourceUrl}
-            onChange={(e) =>
-              setForm((prev) => ({ ...prev, resourceUrl: e.target.value }))
-            }
-            className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-            placeholder="Resource link, e.g. Google Drive PDF link"
-          />
+          {/* Resource Link */}
+          <div>
+            <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Resource Link
+            </label>
+            <input
+              type="url"
+              value={form.resourceUrl}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, resourceUrl: e.target.value }))
+              }
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              placeholder="Example: Google Drive PDF link"
+            />
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Paste any resource link such as Google Drive PDF, class instruction file,
+              or reference document.
+            </p>
+          </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <button
-              type="button"
-              onClick={() => {
-                if (dateInputRef.current?.showPicker) {
-                  dateInputRef.current.showPicker();
-                } else {
-                  dateInputRef.current?.focus();
-                }
-              }}
-              className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm text-slate-900 transition hover:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-            >
-              <input
-                ref={dateInputRef}
-                type="date"
-                value={form.dueDate}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, dueDate: e.target.value }))
-                }
-                className="absolute inset-0 opacity-0"
-              />
-              <div className="flex items-center justify-between gap-2">
-                <span>{form.dueDate || "Pick date"}</span>
-                <CalendarIcon />
-              </div>
-            </button>
+          {/* Due Date and Due Time */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Submission Deadline Date
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  if (dateInputRef.current?.showPicker) {
+                    dateInputRef.current.showPicker();
+                  } else {
+                    dateInputRef.current?.focus();
+                  }
+                }}
+                className="relative w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm text-slate-900 transition hover:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              >
+                <input
+                  ref={dateInputRef}
+                  type="date"
+                  value={form.dueDate}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, dueDate: e.target.value }))
+                  }
+                  className="absolute inset-0 opacity-0"
+                />
+                <div className="flex items-center justify-between gap-2">
+                  <span>{form.dueDate || "Pick date"}</span>
+                  <CalendarIcon />
+                </div>
+              </button>
+            </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                if (timeInputRef.current?.showPicker) {
-                  timeInputRef.current.showPicker();
-                } else {
-                  timeInputRef.current?.focus();
-                }
-              }}
-              className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm text-slate-900 transition hover:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-            >
-              <input
-                ref={timeInputRef}
-                type="time"
-                value={form.dueTime}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, dueTime: e.target.value }))
-                }
-                className="absolute inset-0 opacity-0"
-              />
-              <div className="flex items-center justify-between gap-2">
-                <span>{form.dueTime || "Pick time"}</span>
-                <ClockIcon />
-              </div>
-            </button>
+            <div>
+              <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Submission Deadline Time
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  if (timeInputRef.current?.showPicker) {
+                    timeInputRef.current.showPicker();
+                  } else {
+                    timeInputRef.current?.focus();
+                  }
+                }}
+                className="relative w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm text-slate-900 transition hover:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              >
+                <input
+                  ref={timeInputRef}
+                  type="time"
+                  value={form.dueTime}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, dueTime: e.target.value }))
+                  }
+                  className="absolute inset-0 opacity-0"
+                />
+                <div className="flex items-center justify-between gap-2">
+                  <span>{form.dueTime || "Pick time"}</span>
+                  <ClockIcon />
+                </div>
+              </button>
+            </div>
           </div>
         </div>
 
         <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
-          <label className="flex min-h-[92px] items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+          {/* Allow Resubmission */}
+          <label className="flex min-h-[112px] items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
             <input
               type="checkbox"
               checked={form.allowResubmission}
@@ -708,21 +762,28 @@ export default function TeacherLabSubmissions({ courseId }) {
               }
             />
             <span>
-              <span className="block font-semibold">Allow resubmission</span>
+              <span className="block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Resubmission Permission
+              </span>
+              <span className="mt-1 block font-semibold">Allow resubmission</span>
               <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
                 Students can replace their submitted file before the deadline.
               </span>
             </span>
           </label>
 
+          {/* Allowed File Types */}
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800">
             <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                  Allowed file types
+                <div className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  Allowed File Types
+                </div>
+                <div className="mt-1 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  Select accepted submission formats
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">
-                  Students can upload only the checked formats.
+                  Students can upload only the checked file formats.
                 </div>
               </div>
 
@@ -750,11 +811,10 @@ export default function TeacherLabSubmissions({ courseId }) {
                 return (
                   <label
                     key={option.value}
-                    className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition ${
-                      checked
+                    className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition ${checked
                         ? "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300"
                         : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-700"
-                    }`}
+                      }`}
                   >
                     <input
                       type="checkbox"
@@ -769,15 +829,21 @@ export default function TeacherLabSubmissions({ courseId }) {
           </div>
         </div>
 
-        <textarea
-          value={form.instructions}
-          onChange={(e) =>
-            setForm((prev) => ({ ...prev, instructions: e.target.value }))
-          }
-          rows={4}
-          className="mt-4 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-          placeholder="Instructions for students"
-        />
+        {/* Instructions */}
+        <div className="mt-4">
+          <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            Instructions for Students
+          </label>
+          <textarea
+            value={form.instructions}
+            onChange={(e) =>
+              setForm((prev) => ({ ...prev, instructions: e.target.value }))
+            }
+            rows={4}
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            placeholder="Example: Upload your lab report before the deadline. File name should include your ID and name."
+          />
+        </div>
 
         <div className="mt-4 flex flex-wrap gap-3">
           <button
@@ -835,11 +901,10 @@ export default function TeacherLabSubmissions({ courseId }) {
                 return (
                   <div
                     key={item.id}
-                    className={`rounded-2xl border p-4 transition ${
-                      isSelected
+                    className={`rounded-2xl border p-4 transition ${isSelected
                         ? "border-indigo-500 bg-indigo-50 dark:border-indigo-500/40 dark:bg-indigo-500/10"
                         : "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800"
-                    }`}
+                      }`}
                   >
                     <button
                       type="button"
@@ -962,10 +1027,9 @@ export default function TeacherLabSubmissions({ courseId }) {
                   }
                   disabled={
                     actionLoading ===
-                    `${selectedAssessment.id}-${
-                      selectedAssessment.isVisibleToStudents
-                        ? "unpublish"
-                        : "publish"
+                    `${selectedAssessment.id}-${selectedAssessment.isVisibleToStudents
+                      ? "unpublish"
+                      : "publish"
                     }`
                   }
                   className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-60"
@@ -984,7 +1048,7 @@ export default function TeacherLabSubmissions({ courseId }) {
                   disabled={
                     isDeadlinePassed ||
                     actionLoading ===
-                      `${selectedAssessment.id}-${submissionToggleAction}`
+                    `${selectedAssessment.id}-${submissionToggleAction}`
                   }
                   className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                 >
