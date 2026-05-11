@@ -13,8 +13,59 @@ function formatDateTime(value) {
   return d.toLocaleString();
 }
 
-function getClosedLabel(item) {
-  if (item?.closedReason === "due_date_passed" || item?.dueDatePassed) {
+function getDueMs(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.getTime();
+}
+
+function formatRemainingTime(dueDate, now) {
+  const dueMs = getDueMs(dueDate);
+
+  if (!dueMs) {
+    return {
+      expired: false,
+      label: "No deadline set",
+      shortLabel: "No deadline",
+    };
+  }
+
+  const diff = dueMs - now;
+
+  if (diff <= 0) {
+    return {
+      expired: true,
+      label: "Deadline passed",
+      shortLabel: "Expired",
+    };
+  }
+
+  const totalSeconds = Math.floor(diff / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  const labelParts = [];
+  if (days > 0) labelParts.push(`${days}d`);
+  labelParts.push(`${String(hours).padStart(2, "0")}h`);
+  labelParts.push(`${String(minutes).padStart(2, "0")}m`);
+  labelParts.push(`${String(seconds).padStart(2, "0")}s`);
+
+  return {
+    expired: false,
+    label: labelParts.join(" "),
+    shortLabel: labelParts.join(" "),
+  };
+}
+
+function getClosedLabel(item, deadlinePassedLive = false) {
+  if (
+    deadlinePassedLive ||
+    item?.closedReason === "due_date_passed" ||
+    item?.dueDatePassed
+  ) {
     return "Deadline Passed";
   }
 
@@ -29,6 +80,7 @@ export default function StudentLabSubmissions({ courseId }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploadingId, setUploadingId] = useState("");
+  const [now, setNow] = useState(() => Date.now());
 
   const load = async () => {
     setLoading(true);
@@ -52,6 +104,14 @@ export default function StudentLabSubmissions({ courseId }) {
       load();
     }
   }, [courseId]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, []);
 
   const handleFileChange = async (assessmentId, file) => {
     if (!file) return;
@@ -97,7 +157,9 @@ export default function StudentLabSubmissions({ courseId }) {
     <div className="grid gap-4">
       {items.map((item) => {
         const submitted = !!item.submission;
-        const open = item.submissionsOpen === true;
+        const remaining = formatRemainingTime(item.dueDate, now);
+        const deadlinePassedLive = remaining.expired;
+        const open = item.submissionsOpen === true && !deadlinePassedLive;
         const canUpload =
           open && (!submitted || item.allowResubmission !== false);
 
@@ -107,7 +169,7 @@ export default function StudentLabSubmissions({ courseId }) {
             className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
           >
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
+              <div className="min-w-0 flex-1">
                 <div className="text-lg font-semibold text-slate-900 dark:text-white">
                   {item.name}
                 </div>
@@ -138,8 +200,41 @@ export default function StudentLabSubmissions({ courseId }) {
                         : "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300"
                     }`}
                   >
-                    {getClosedLabel(item)}
+                    {getClosedLabel(item, deadlinePassedLive)}
                   </span>
+                </div>
+
+                <div
+                  className={`mt-4 flex flex-col gap-3 rounded-2xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${
+                    deadlinePassedLive
+                      ? "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200"
+                      : "border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-200"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`flex h-10 w-10 items-center justify-center rounded-2xl ${
+                        deadlinePassedLive
+                          ? "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-200"
+                          : "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-200"
+                      }`}
+                    >
+                      <ClockIcon />
+                    </span>
+                    <div>
+                      <div className="text-xs font-bold uppercase tracking-[0.18em] opacity-70">
+                        Time Remaining
+                      </div>
+                      <div className="text-xl font-black tracking-wide sm:text-2xl">
+                        {remaining.label}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-left text-xs font-semibold opacity-80 sm:text-right">
+                    <div>Deadline</div>
+                    <div>{formatDateTime(item.dueDate)}</div>
+                  </div>
                 </div>
 
                 {item.instructions ? (
@@ -159,10 +254,6 @@ export default function StudentLabSubmissions({ courseId }) {
                     {item.resourceTitle || "View Resource"}
                   </a>
                 ) : null}
-
-                <div className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-                  Due: {formatDateTime(item.dueDate)}
-                </div>
 
                 {submitted ? (
                   <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200">
@@ -202,7 +293,7 @@ export default function StudentLabSubmissions({ courseId }) {
                 ) : null}
               </div>
 
-              <div className="w-full lg:w-auto">
+              <div className="w-full lg:w-auto lg:min-w-[150px]">
                 {canUpload ? (
                   <label className="flex cursor-pointer items-center justify-center rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-700">
                     {uploadingId === item.id
@@ -222,9 +313,10 @@ export default function StudentLabSubmissions({ courseId }) {
                     />
                   </label>
                 ) : (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center text-sm font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                     {!open
-                      ? item?.closedReason === "due_date_passed" ||
+                      ? deadlinePassedLive ||
+                        item?.closedReason === "due_date_passed" ||
                         item?.dueDatePassed
                         ? "Submission deadline has passed"
                         : "Submission is closed"
@@ -237,6 +329,23 @@ export default function StudentLabSubmissions({ courseId }) {
         );
       })}
     </div>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
   );
 }
 
