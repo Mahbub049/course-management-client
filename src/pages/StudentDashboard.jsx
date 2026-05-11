@@ -9,6 +9,7 @@ function StudentDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [pendingSubmissionItems, setPendingSubmissionItems] = useState([]);
+  const [nowTick, setNowTick] = useState(() => Date.now());
 
   const studentName = localStorage.getItem("marksPortalName") || "Student";
 
@@ -19,6 +20,14 @@ function StudentDashboard() {
     if (h < 12) return "Good morning";
     if (h < 18) return "Good afternoon";
     return "Good evening";
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowTick(Date.now());
+    }, 1000);
+
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -35,11 +44,9 @@ function StudentDashboard() {
         setCourses(courseData || []);
 
         const pendingItems = Array.isArray(submissionData)
-          ? submissionData.filter(
-            (item) =>
-              item?.isVisibleToStudents === true &&
-              !item?.submission
-          )
+          ? submissionData.filter((item) =>
+              isPendingSubmissionActive(item, Date.now())
+            )
           : [];
 
         setPendingSubmissionItems(pendingItems.slice(0, 6));
@@ -71,8 +78,16 @@ function StudentDashboard() {
 
   const recent = useMemo(() => (courses || []).slice(0, 4), [courses]);
 
-  const showPendingSection = pendingSubmissionItems.length > 0;
-  const showProgressQuickActions = pendingSubmissionItems.length === 0;
+  const activePendingSubmissionItems = useMemo(
+    () =>
+      (pendingSubmissionItems || []).filter((item) =>
+        isPendingSubmissionActive(item, nowTick)
+      ),
+    [pendingSubmissionItems, nowTick]
+  );
+
+  const showPendingSection = activePendingSubmissionItems.length > 0;
+  const showProgressQuickActions = activePendingSubmissionItems.length === 0;
 
   // const pendingSubmissionItems = useMemo(() => {
   //   const rows = [];
@@ -247,7 +262,7 @@ function StudentDashboard() {
       </section>
 
 
-      {pendingSubmissionItems.length > 0 && (
+      {showPendingSection && (
         <section className="rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -261,7 +276,7 @@ function StudentDashboard() {
             </div>
 
             <div className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">
-              {loading ? "..." : `${pendingSubmissionItems.length} pending`}
+              {loading ? "..." : `${activePendingSubmissionItems.length} pending`}
             </div>
           </div>
 
@@ -271,7 +286,7 @@ function StudentDashboard() {
             </div>
           ) : (
             <div className="mt-5 grid gap-4 xl:grid-cols-2">
-              {pendingSubmissionItems.map((item) => (
+              {activePendingSubmissionItems.map((item) => (
                 <div
                   key={`${item.course?.id}-${item.id}`}
                   className="rounded-[24px] border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-800/50"
@@ -296,6 +311,10 @@ function StudentDashboard() {
                           ? new Date(item.dueDate).toLocaleString()
                           : "No deadline set"}{" "}
                         • Max {item.maxFileSizeMB || 10} MB
+                      </div>
+
+                      <div className="mt-2 inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300">
+                        Time remaining: {formatRemainingTime(item, nowTick)}
                       </div>
                     </div>
 
@@ -454,6 +473,52 @@ function StudentDashboard() {
       </section>
     </div>
   );
+}
+
+function getDueTime(dueDate) {
+  if (!dueDate) return null;
+
+  const parsed = new Date(dueDate).getTime();
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function isPendingSubmissionActive(item, now = Date.now()) {
+  if (!item) return false;
+  if (item.isVisibleToStudents !== true) return false;
+  if (item.submission) return false;
+  if (item.submissionsOpen === false) return false;
+  if (item.dueDatePassed === true) return false;
+
+  const dueTime = getDueTime(item.dueDate);
+  if (dueTime && dueTime <= now) return false;
+
+  return true;
+}
+
+function formatRemainingTime(item, now = Date.now()) {
+  const dueTime = getDueTime(item?.dueDate);
+
+  if (!dueTime) return "No deadline set";
+
+  const diff = Math.max(0, dueTime - now);
+
+  if (diff <= 0) return "Deadline passed";
+
+  const totalSeconds = Math.floor(diff / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (days > 0) {
+    return `${days}d ${hours}h ${minutes}m`;
+  }
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`;
+  }
+
+  return `${minutes}m ${seconds}s`;
 }
 
 export default StudentDashboard;
