@@ -148,6 +148,18 @@ export default function StudentLabSubmissions({ courseId }) {
                   </p>
                 ) : null}
 
+                {item.resourceUrl ? (
+                  <a
+                    href={getPublicFileUrl(item.resourceUrl)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
+                  >
+                    <LinkIcon />
+                    {item.resourceTitle || "View Resource"}
+                  </a>
+                ) : null}
+
                 <div className="mt-3 text-sm text-slate-500 dark:text-slate-400">
                   Due: {formatDateTime(item.dueDate)}
                 </div>
@@ -225,5 +237,20 @@ export default function StudentLabSubmissions({ courseId }) {
         );
       })}
     </div>
+  );
+}
+
+function LinkIcon() {
+  return (
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+    </svg>
   );
 }

@@ -21,6 +21,8 @@ const initialForm = {
   dueTime: "",
   allowResubmission: true,
   maxFileSizeMB: 10,
+  resourceTitle: "View Resource",
+  resourceUrl: "",
 };
 
 function formatDateTime(value) {
@@ -51,7 +53,17 @@ function toTimeInputValue(value) {
 
 function combineDateTime(date, time) {
   if (!date) return null;
-  return `${date}T${time || "23:59"}`;
+
+  const [year, month, day] = String(date).split("-").map(Number);
+  const [hour = 23, minute = 59] = String(time || "23:59")
+    .split(":")
+    .map(Number);
+
+  if (!year || !month || !day) return null;
+
+  // Create the deadline in the browser's local timezone, then send ISO UTC.
+  // This prevents Vercel/Render server timezone from shifting the selected date/time.
+  return new Date(year, month - 1, day, hour, minute, 0, 0).toISOString();
 }
 
 function formatFileSize(size = 0) {
@@ -220,6 +232,8 @@ export default function TeacherLabSubmissions({ courseId }) {
           dueDate: combineDateTime(form.dueDate, form.dueTime),
           maxFileSizeMB: Number(form.maxFileSizeMB || 10),
           allowResubmission: !!form.allowResubmission,
+          resourceTitle: form.resourceTitle,
+          resourceUrl: form.resourceUrl,
           allowedExtensions: [
             "pdf",
             "doc",
@@ -244,6 +258,8 @@ export default function TeacherLabSubmissions({ courseId }) {
             dueDate: payload.submissionConfig.dueDate,
             maxFileSizeMB: payload.submissionConfig.maxFileSizeMB,
             allowResubmission: payload.submissionConfig.allowResubmission,
+            resourceTitle: payload.submissionConfig.resourceTitle,
+            resourceUrl: payload.submissionConfig.resourceUrl,
           },
         });
 
@@ -292,6 +308,8 @@ export default function TeacherLabSubmissions({ courseId }) {
       dueTime: toTimeInputValue(item.dueDate),
       allowResubmission: item.allowResubmission !== false,
       maxFileSizeMB: item.maxFileSizeMB || 10,
+      resourceTitle: item.resourceTitle || "View Resource",
+      resourceUrl: item.resourceUrl || "",
     });
 
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -549,6 +567,26 @@ export default function TeacherLabSubmissions({ courseId }) {
             placeholder="Max file size in MB"
           />
 
+          <input
+            type="text"
+            value={form.resourceTitle}
+            onChange={(e) =>
+              setForm((prev) => ({ ...prev, resourceTitle: e.target.value }))
+            }
+            className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            placeholder="Resource button text, e.g. View PDF"
+          />
+
+          <input
+            type="url"
+            value={form.resourceUrl}
+            onChange={(e) =>
+              setForm((prev) => ({ ...prev, resourceUrl: e.target.value }))
+            }
+            className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            placeholder="Resource link, e.g. Google Drive PDF link"
+          />
+
           <div className="grid grid-cols-2 gap-4">
             <button
               type="button"
@@ -752,6 +790,18 @@ export default function TeacherLabSubmissions({ courseId }) {
                   <div>Assessment: {selectedAssessment.name}</div>
                   <div>Due: {formatDateTime(selectedAssessment.dueDate)}</div>
                   <div>Full Marks: {selectedAssessment.fullMarks || 0}</div>
+
+                  {selectedAssessment.resourceUrl ? (
+                    <a
+                      href={getPublicFileUrl(selectedAssessment.resourceUrl)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex w-fit items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
+                    >
+                      <LinkIcon />
+                      {selectedAssessment.resourceTitle || "View Resource"}
+                    </a>
+                  ) : null}
 
                   <div className="flex flex-wrap gap-2">
                     <Badge
@@ -1016,6 +1066,21 @@ function ClockIcon() {
     >
       <circle cx="12" cy="12" r="10" />
       <polyline points="12 6 12 12 16 14" />
+    </svg>
+  );
+}
+
+function LinkIcon() {
+  return (
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
     </svg>
   );
 }
