@@ -2,16 +2,100 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
 import { getMyRoutine, saveMyRoutine } from "../services/routineService";
 
-const DEFAULT_DAYS = ["Mon", "Tue", "Wed", "Thu"];
+const DEFAULT_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri"];
 
 const DEFAULT_TIME_SLOTS = [
-  { id: "slot_1", label: "08:15 AM to\n09:45 AM\n(Day)", start: "08:15 AM", end: "09:45 AM", shift: "Day" },
-  { id: "slot_2", label: "11:15 AM to\n12:45 PM\n(Day)", start: "11:15 AM", end: "12:45 PM", shift: "Day" },
-  { id: "slot_3", label: "01:15 PM to\n02:45 PM\n(Day)", start: "01:15 PM", end: "02:45 PM", shift: "Day" },
-  { id: "slot_4", label: "04:15 PM to\n05:45 PM\n(Day)", start: "04:15 PM", end: "05:45 PM", shift: "Day" },
-  { id: "slot_5", label: "05:45 PM to\n07:00 PM\n(EVE)", start: "05:45 PM", end: "07:00 PM", shift: "EVE" },
-  { id: "slot_6", label: "07:00 PM to\n08:15 PM\n(EVE)", start: "07:00 PM", end: "08:15 PM", shift: "EVE" },
-  { id: "slot_7", label: "08:15 PM to\n09:30 PM\n(EVE)", start: "08:15 PM", end: "09:30 PM", shift: "EVE" },
+  {
+    id: "slot_1",
+    label: "08:15 AM to\n09:45 AM\n(Day)",
+    start: "08:15 AM",
+    end: "09:45 AM",
+    shift: "Day",
+  },
+  {
+    id: "slot_2",
+    label: "09:45 AM to\n11:15 AM\n(Day)",
+    start: "09:45 AM",
+    end: "11:15 AM",
+    shift: "Day",
+  },
+  {
+    id: "slot_3",
+    label: "11:15 AM to\n12:45 PM\n(Day)",
+    start: "11:15 AM",
+    end: "12:45 PM",
+    shift: "Day",
+  },
+  {
+    id: "slot_4",
+    label: "01:15 PM to\n02:45 PM\n(Day)",
+    start: "01:15 PM",
+    end: "02:45 PM",
+    shift: "Day",
+  },
+  {
+    id: "slot_5",
+    label: "02:45 PM to\n04:15 PM\n(Day)",
+    start: "02:45 PM",
+    end: "04:15 PM",
+    shift: "Day",
+  },
+  {
+    id: "slot_6",
+    label: "04:15 PM to\n05:45 PM\n(Day)",
+    start: "04:15 PM",
+    end: "05:45 PM",
+    shift: "Day",
+  },
+  {
+    id: "slot_7",
+    label: "08:00 AM to\n09:15 AM\n(EVE)",
+    start: "08:00 AM",
+    end: "09:15 AM",
+    shift: "EVE",
+  },
+  {
+    id: "slot_8",
+    label: "09:15 AM to\n10:30 AM\n(EVE)",
+    start: "09:15 AM",
+    end: "10:30 AM",
+    shift: "EVE",
+  },
+  {
+    id: "slot_9",
+    label: "03:15 PM to\n04:30 PM\n(EVE)",
+    start: "03:15 PM",
+    end: "04:30 PM",
+    shift: "EVE",
+  },
+  {
+    id: "slot_10",
+    label: "04:30 PM to\n05:45 PM\n(EVE)",
+    start: "04:30 PM",
+    end: "05:45 PM",
+    shift: "EVE",
+  },
+  {
+    id: "slot_11",
+    label: "05:45 PM to\n07:00 PM\n(EVE)",
+    start: "05:45 PM",
+    end: "07:00 PM",
+    shift: "EVE",
+  },
+  {
+    id: "slot_12",
+    label: "07:00 PM to\n08:15 PM\n(EVE)",
+    start: "07:00 PM",
+    end: "08:15 PM",
+    shift: "EVE",
+  },
+  {
+    id: "slot_13",
+    label: "08:15 PM to\n09:30 PM\n(EVE)",
+    start: "08:15 PM",
+    end: "09:30 PM",
+    shift: "EVE",
+  },
 ];
 
 const emptyRoutine = () => createRoutineShell();

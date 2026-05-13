@@ -2,16 +2,22 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getMyRoutine } from "../services/routineService";
 
-const DEFAULT_DAYS = ["Mon", "Tue", "Wed", "Thu"];
+const DEFAULT_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri"];
 
 const DEFAULT_TIME_SLOTS = [
   { id: "slot_1", label: "08:15 AM to\n09:45 AM\n(Day)", start: "08:15 AM", end: "09:45 AM", shift: "Day" },
-  { id: "slot_2", label: "11:15 AM to\n12:45 PM\n(Day)", start: "11:15 AM", end: "12:45 PM", shift: "Day" },
-  { id: "slot_3", label: "01:15 PM to\n02:45 PM\n(Day)", start: "01:15 PM", end: "02:45 PM", shift: "Day" },
-  { id: "slot_4", label: "04:15 PM to\n05:45 PM\n(Day)", start: "04:15 PM", end: "05:45 PM", shift: "Day" },
-  { id: "slot_5", label: "05:45 PM to\n07:00 PM\n(EVE)", start: "05:45 PM", end: "07:00 PM", shift: "EVE" },
-  { id: "slot_6", label: "07:00 PM to\n08:15 PM\n(EVE)", start: "07:00 PM", end: "08:15 PM", shift: "EVE" },
-  { id: "slot_7", label: "08:15 PM to\n09:30 PM\n(EVE)", start: "08:15 PM", end: "09:30 PM", shift: "EVE" },
+  { id: "slot_2", label: "09:45 AM to\n11:15 AM\n(Day)", start: "09:45 AM", end: "11:15 AM", shift: "Day" },
+  { id: "slot_3", label: "11:15 AM to\n12:45 PM\n(Day)", start: "11:15 AM", end: "12:45 PM", shift: "Day" },
+  { id: "slot_4", label: "01:15 PM to\n02:45 PM\n(Day)", start: "01:15 PM", end: "02:45 PM", shift: "Day" },
+  { id: "slot_5", label: "02:45 PM to\n04:15 PM\n(Day)", start: "02:45 PM", end: "04:15 PM", shift: "Day" },
+  { id: "slot_6", label: "04:15 PM to\n05:45 PM\n(Day)", start: "04:15 PM", end: "05:45 PM", shift: "Day" },
+  { id: "slot_7", label: "08:00 AM to\n09:15 AM\n(EVE)", start: "08:00 AM", end: "09:15 AM", shift: "EVE" },
+  { id: "slot_8", label: "09:15 AM to\n10:30 AM\n(EVE)", start: "09:15 AM", end: "10:30 AM", shift: "EVE" },
+  { id: "slot_9", label: "03:15 PM to\n04:30 PM\n(EVE)", start: "03:15 PM", end: "04:30 PM", shift: "EVE" },
+  { id: "slot_10", label: "04:30 PM to\n05:45 PM\n(EVE)", start: "04:30 PM", end: "05:45 PM", shift: "EVE" },
+  { id: "slot_11", label: "05:45 PM to\n07:00 PM\n(EVE)", start: "05:45 PM", end: "07:00 PM", shift: "EVE" },
+  { id: "slot_12", label: "07:00 PM to\n08:15 PM\n(EVE)", start: "07:00 PM", end: "08:15 PM", shift: "EVE" },
+  { id: "slot_13", label: "08:15 PM to\n09:30 PM\n(EVE)", start: "08:15 PM", end: "09:30 PM", shift: "EVE" },
 ];
 
 function createRoutineShell(overrides = {}) {
@@ -65,14 +71,25 @@ function TeacherRoutinePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const visibleTimeSlots = useMemo(() => {
+    if (!routine) return [];
+
+    return routine.timeSlots.filter((slot) =>
+      routine.days.some((day) =>
+        String(routine.cells?.[day]?.[slot.id] || "").trim()
+      )
+    );
+  }, [routine]);
+
   const filledCells = useMemo(() => {
     if (!routine) return 0;
 
     return routine.days.reduce((count, day) => {
       return (
         count +
-        routine.timeSlots.filter((slot) => routine.cells?.[day]?.[slot.id])
-          .length
+        routine.timeSlots.filter((slot) =>
+          String(routine.cells?.[day]?.[slot.id] || "").trim()
+        ).length
       );
     }, 0);
   }, [routine]);
@@ -129,7 +146,7 @@ function TeacherRoutinePage() {
 
           {routine && (
             <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-              {routine.days.length} days · {routine.timeSlots.length} slots ·{" "}
+              {routine.days.length} days · {visibleTimeSlots.length} active slots ·{" "}
               {filledCells} classes
               {routine.sourceFileName ? ` · Source: ${routine.sourceFileName}` : ""}
             </p>
@@ -148,7 +165,7 @@ function TeacherRoutinePage() {
           <button
             type="button"
             onClick={() => window.print()}
-            disabled={!routine}
+            disabled={!routine || visibleTimeSlots.length === 0}
             className="rounded-xl border border-slate-700 bg-slate-900 px-5 py-2.5 text-sm font-black text-slate-100 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:hover:bg-slate-900"
           >
             Print
@@ -181,17 +198,35 @@ function TeacherRoutinePage() {
             Create Routine
           </button>
         </section>
+      ) : visibleTimeSlots.length === 0 ? (
+        <section className="rounded-2xl border border-dashed border-slate-300 p-8 text-center dark:border-slate-700 print:hidden">
+          <h2 className="text-xl font-black text-slate-900 dark:text-white">
+            No class found in this routine
+          </h2>
+
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">
+            The routine is saved, but all time slots are empty. Upload again or update the routine manually.
+          </p>
+
+          <button
+            type="button"
+            onClick={() => navigate("/teacher/routine/manage")}
+            className="mt-5 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-black text-white shadow-sm transition hover:bg-violet-700"
+          >
+            Update Routine
+          </button>
+        </section>
       ) : (
         <section className="routine-print-area rounded-2xl border border-slate-800 bg-slate-950/30 p-2 shadow-sm print:border-0 print:bg-white print:p-0 print:shadow-none">
           <div className="overflow-x-auto rounded-xl border border-slate-700 print:overflow-visible print:rounded-none print:border-0">
             <table className="routine-table w-full min-w-[1120px] table-fixed border-collapse text-center text-slate-100 2xl:min-w-0 print:min-w-full print:text-slate-950">
               <colgroup>
-                <col className="w-[8.5%]" />
-                {routine.timeSlots.map((slot) => (
+                <col className="w-[9%]" />
+                {visibleTimeSlots.map((slot) => (
                   <col
                     key={slot.id}
                     style={{
-                      width: `${91.5 / routine.timeSlots.length}%`,
+                      width: `${91 / visibleTimeSlots.length}%`,
                     }}
                   />
                 ))}
@@ -203,7 +238,7 @@ function TeacherRoutinePage() {
                     Day/Time
                   </th>
 
-                  {routine.timeSlots.map((slot) => (
+                  {visibleTimeSlots.map((slot) => (
                     <th
                       key={slot.id}
                       className="whitespace-pre-line border border-slate-700 bg-slate-900 px-3 py-3 align-middle text-[14px] font-black leading-snug text-white xl:text-[15px] print:border-black print:bg-slate-100 print:text-black"
@@ -221,7 +256,7 @@ function TeacherRoutinePage() {
                       {day}
                     </th>
 
-                    {routine.timeSlots.map((slot) => {
+                    {visibleTimeSlots.map((slot) => {
                       const value = routine.cells?.[day]?.[slot.id] || "";
 
                       return (
