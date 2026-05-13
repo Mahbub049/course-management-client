@@ -73,7 +73,7 @@ function AppLayout() {
   const teacherLinks = [
     { to: "/teacher/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
     { to: "/teacher/courses", label: "Courses", icon: <BookIcon /> },
-    { to: "/teacher/create-course", label: "Create Course", icon: <PlusIcon /> },
+    
     { to: "/teacher/attendance", label: "Attendance", icon: <CalendarIcon /> },
     {
       to: "/teacher/attendance-sheet",
@@ -81,6 +81,8 @@ function AppLayout() {
       icon: <TableIcon />,
     },
     { to: "/teacher/complaints", label: "Complaints", icon: <AlertIcon /> },
+    { to: "/teacher/routine", label: "Routine", icon: <RoutineIcon /> },
+    { to: "/teacher/create-course", label: "Create Course", icon: <PlusIcon /> },
     { to: "/change-password", label: "Account", icon: <UserIcon /> },
   ];
 
@@ -622,6 +624,22 @@ function MoonIcon() {
       strokeWidth="2"
     >
       <path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a6.5 6.5 0 0 0 9.8 9.8z" />
+    </svg>
+  );
+}
+
+function RoutineIcon() {
+  return (
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M4 4h16v16H4z" />
+      <path d="M4 9h16M4 14h16" />
+      <path d="M9 4v16M15 4v16" />
     </svg>
   );
 }

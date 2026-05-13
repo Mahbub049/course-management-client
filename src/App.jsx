@@ -14,7 +14,8 @@ import TeacherCreateCoursePage from './pages/TeacherCreateCoursePage';
 import TeacherAttendancePage from "./pages/TeacherAttendancePage";
 import TeacherRegisterPage from "./pages/TeacherRegisterPage";
 import TeacherCoursesPage from "./pages/TeacherCoursesPage";
-
+import TeacherRoutinePage from "./pages/TeacherRoutinePage.jsx";
+import TeacherRoutineBuilderPage from "./pages/TeacherRoutineBuilderPage.jsx";
 
 import AppLayout from './layouts/AppLayout.jsx';
 import TeacherAttendanceSheetPage from './pages/TeacherAttendanceSheetPage.jsx';
@@ -58,8 +59,8 @@ function App() {
         <Route path="/teacher/register" element={<TeacherRegisterPage />} />
         <Route path="/teacher/courses" element={<TeacherCoursesPage />} />
         <Route path="/teacher/attendance-sheet" element={<TeacherAttendanceSheetPage />} />
-
-
+        <Route path="/teacher/routine" element={<TeacherRoutinePage />} />
+        <Route path="/teacher/routine/manage" element={<TeacherRoutineBuilderPage />} />
 
         {/* Shared */}
         <Route
