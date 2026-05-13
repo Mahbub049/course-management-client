@@ -17,6 +17,12 @@ export const downloadTeacherProjectPhaseZip = async (courseId, phaseId) => {
 };
 
 // student
+
+export const fetchStudentPendingProjectSubmissions = async () => {
+  const res = await api.get(`/student/project-submissions/pending`);
+  return res.data;
+};
+
 export const fetchStudentProjectSubmissions = async (courseId) => {
   const res = await api.get(`/student/courses/${courseId}/project-submissions`);
   return res.data;

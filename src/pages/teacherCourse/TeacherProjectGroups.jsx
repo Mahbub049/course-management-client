@@ -97,6 +97,9 @@ export default function TeacherProjectGroups({ course }) {
     return groups.filter((group) => {
       const groupName = (group.groupName || "").toLowerCase();
       const projectTitle = (group.projectTitle || "").toLowerCase();
+      const projectSummary = (group.projectSummary || "").toLowerCase();
+      const additionalNote = (group.additionalNote || "").toLowerCase();
+      const contactEmail = (group.contactEmail || "").toLowerCase();
       const leaderName = (group.leader?.name || "").toLowerCase();
       const leaderRoll = String(group.leader?.roll || "").toLowerCase();
 
@@ -107,6 +110,9 @@ export default function TeacherProjectGroups({ course }) {
       return (
         groupName.includes(term) ||
         projectTitle.includes(term) ||
+        projectSummary.includes(term) ||
+        additionalNote.includes(term) ||
+        contactEmail.includes(term) ||
         leaderName.includes(term) ||
         leaderRoll.includes(term) ||
         memberText.includes(term)
@@ -285,22 +291,16 @@ export default function TeacherProjectGroups({ course }) {
   return (
     <div className="space-y-6">
       <section className="rounded-[28px] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="border-b border-slate-100 px-6 py-6 dark:border-slate-800">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div className="max-w-3xl">
-              <div className="inline-flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
+        <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="inline-flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
                 <UsersIcon className="h-4 w-4" />
-                Teacher Group Management
+                Groups
               </div>
-
-              <h3 className="mt-4 text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-                Organize groups with a cleaner and more controlled workflow
+              <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                Teacher Group Management
               </h3>
-
-              <p className="mt-2 text-sm leading-7 text-slate-600 dark:text-slate-400">
-                Create groups, assign leaders, manage members, and quickly see
-                which students are already grouped or still available.
-              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:w-[520px]">
@@ -473,7 +473,7 @@ export default function TeacherProjectGroups({ course }) {
                     Existing Groups
                   </h4>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Search groups, review members, and edit or delete instantly.
+                    Review group members and submitted project information.
                   </p>
                 </div>
 
@@ -502,6 +502,13 @@ export default function TeacherProjectGroups({ course }) {
                     const groupId = group._id || group.id;
                     const members = Array.isArray(group.members) ? group.members : [];
                     const leaderId = String(group.leader?._id || group.leader?.id || "");
+                    const projectInfoFields = [
+                      { title: "Project Summary", value: group.projectSummary, wide: true },
+                      { title: "Contact Email", value: group.contactEmail },
+                      { title: "Drive Link", value: group.driveLink, isLink: true },
+                      { title: "Repository Link", value: group.repositoryLink, isLink: true },
+                      { title: "Additional Note", value: group.additionalNote, wide: true },
+                    ].filter((item) => String(item.value || "").trim());
 
                     return (
                       <div
@@ -551,43 +558,29 @@ export default function TeacherProjectGroups({ course }) {
                               />
                             </div>
 
-                            {(group.projectSummary ||
-                              group.contactEmail ||
-                              group.driveLink ||
-                              group.repositoryLink) && (
-                              <div className="mt-4 grid gap-3 md:grid-cols-2">
-                                {group.projectSummary ? (
-                                  <DetailBlock
-                                    title="Project Summary"
-                                    value={group.projectSummary}
-                                    wide
-                                  />
-                                ) : null}
-
-                                {group.contactEmail ? (
-                                  <DetailBlock
-                                    title="Contact Email"
-                                    value={group.contactEmail}
-                                  />
-                                ) : null}
-
-                                {group.driveLink ? (
-                                  <DetailBlock
-                                    title="Drive Link"
-                                    value={group.driveLink}
-                                    isLink
-                                  />
-                                ) : null}
-
-                                {group.repositoryLink ? (
-                                  <DetailBlock
-                                    title="Repository Link"
-                                    value={group.repositoryLink}
-                                    isLink
-                                  />
-                                ) : null}
+                            <div className="mt-4">
+                              <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                                Student Submitted Project Info
                               </div>
-                            )}
+
+                              {projectInfoFields.length > 0 ? (
+                                <div className="grid gap-3 md:grid-cols-2">
+                                  {projectInfoFields.map((item) => (
+                                    <DetailBlock
+                                      key={item.title}
+                                      title={item.title}
+                                      value={item.value}
+                                      isLink={item.isLink}
+                                      wide={item.wide}
+                                    />
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-400">
+                                  No project summary, links, or additional information submitted yet.
+                                </div>
+                              )}
+                            </div>
 
                             <div className="mt-5">
                               <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
@@ -764,7 +757,7 @@ function DetailBlock({ title, value, isLink = false, wide = false }) {
 
       {isLink ? (
         <a
-          href={value}
+          href={String(value || "").startsWith("http") ? value : `https://${value}`}
           target="_blank"
           rel="noreferrer"
           className="break-all text-sm text-violet-600 hover:underline dark:text-violet-300"

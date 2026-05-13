@@ -150,12 +150,12 @@ export default function StudentProjectGroups({ course }) {
           {Array.from({ length: 4 }).map((_, index) => (
             <div
               key={index}
-              className="h-28 animate-pulse rounded-[24px] bg-slate-100 dark:bg-slate-800"
+              className="h-24 animate-pulse rounded-[22px] bg-slate-100 dark:bg-slate-800"
             />
           ))}
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
           <div className="h-[420px] animate-pulse rounded-[28px] bg-slate-100 dark:bg-slate-800" />
           <div className="h-[420px] animate-pulse rounded-[28px] bg-slate-100 dark:bg-slate-800" />
         </div>
@@ -169,55 +169,49 @@ export default function StudentProjectGroups({ course }) {
       {success ? <AlertBox tone="success" message={success} /> : null}
 
       <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="border-b border-slate-100 px-6 py-6 dark:border-slate-800">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div className="max-w-3xl">
+        <div className="border-b border-slate-100 px-6 py-5 dark:border-slate-800">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+            <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
                 <UsersIcon className="h-4 w-4" />
                 My Group
               </div>
 
-              <h3 className="mt-4 text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-                Create and manage your project group from one clean section
+              <h3 className="mt-3 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+                Project Group Management
               </h3>
-
-              <p className="mt-2 text-sm leading-7 text-slate-600 dark:text-slate-400">
-                This section is only for group formation. Project details like
-                summary, links, and contact information should be updated from
-                the Project Info tab.
-              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:w-[520px]">
               <TopMetricCard
                 label="My Status"
                 value={myGroup ? "Grouped" : "Pending"}
-                helper="Current group state"
+                helper="Current state"
                 tone={myGroup ? "emerald" : "amber"}
               />
               <TopMetricCard
                 label="My Role"
                 value={myGroup ? getRoleText(myGroup) : "Not Set"}
-                helper="Leader or member"
+                helper="Leader/member"
                 tone="violet"
               />
               <TopMetricCard
                 label="Members"
                 value={myGroup ? String(myGroup.members?.length || 0) : "0"}
-                helper="Current team size"
+                helper="Team size"
                 tone="sky"
               />
               <TopMetricCard
-                label="Open Seats"
+                label="Available"
                 value={String(availableStudents.length)}
-                helper="Ungrouped students"
+                helper="Ungrouped"
                 tone="amber"
               />
             </div>
           </div>
         </div>
 
-        <div className="grid gap-6 p-6 xl:grid-cols-[1.15fr_0.85fr]">
+        <div className="grid gap-6 p-6 xl:grid-cols-[0.95fr_1.05fr]">
           <div className="space-y-6">
             {myGroup ? (
               <>
@@ -230,10 +224,6 @@ export default function StudentProjectGroups({ course }) {
                       <h4 className="mt-2 text-xl font-bold text-slate-900 dark:text-slate-100">
                         {myGroup.groupName || "Unnamed Group"}
                       </h4>
-                      <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
-                        Your group is already created. Use the Project Info tab
-                        to update summary, links, and other project details.
-                      </p>
                     </div>
 
                     <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
@@ -244,7 +234,7 @@ export default function StudentProjectGroups({ course }) {
                   <div className="mt-5 grid gap-4 md:grid-cols-2">
                     <InfoCard label="Group Name" value={myGroup.groupName || "-"} />
                     <InfoCard
-                      label="Initial Project Title"
+                      label="Project Title"
                       value={myGroup.projectTitle || "Not added yet"}
                     />
                     <InfoCard
@@ -259,10 +249,7 @@ export default function StudentProjectGroups({ course }) {
                           : "-"
                       }
                     />
-                    <InfoCard
-                      label="Your Role"
-                      value={getRoleText(myGroup)}
-                    />
+                    <InfoCard label="Your Role" value={getRoleText(myGroup)} />
                   </div>
                 </section>
 
@@ -282,48 +269,7 @@ export default function StudentProjectGroups({ course }) {
                     </span>
                   </div>
 
-                  <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {(myGroup.members || []).map((member) => {
-                      const memberId = String(member.id || member._id);
-                      const leaderId = String(
-                        myGroup.leader?.id || myGroup.leader?._id || ""
-                      );
-                      const isLeader = memberId === leaderId;
-
-                      return (
-                        <div
-                          key={memberId}
-                          className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4 dark:border-slate-700 dark:bg-slate-900"
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
-                                {member.name || "Unnamed Student"}
-                              </div>
-                              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                Roll: {member.roll || "-"}
-                              </div>
-                              {member.email ? (
-                                <div className="mt-1 break-all text-xs text-slate-500 dark:text-slate-400">
-                                  {member.email}
-                                </div>
-                              ) : null}
-                            </div>
-
-                            <span
-                              className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${
-                                isLeader
-                                  ? "border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
-                                  : "border border-slate-200 bg-white text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                              }`}
-                            >
-                              {isLeader ? "Leader" : "Member"}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <MemberCardGrid members={myGroup.members || []} leader={myGroup.leader} />
                 </section>
               </>
             ) : canCreateGroup ? (
@@ -335,8 +281,7 @@ export default function StudentProjectGroups({ course }) {
                         Create Project Group
                       </h4>
                       <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                        You will become the group leader automatically after
-                        creating the group.
+                        Select members from the available student list.
                       </p>
                     </div>
 
@@ -346,7 +291,7 @@ export default function StudentProjectGroups({ course }) {
                   </div>
                 </div>
 
-                <div className="p-6 space-y-5">
+                <div className="space-y-5 p-6">
                   <FieldBlock label="Group Name" required>
                     <input
                       type="text"
@@ -398,16 +343,6 @@ export default function StudentProjectGroups({ course }) {
                     />
                   </div>
 
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4 dark:border-slate-700 dark:bg-slate-900">
-                    <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                      Group creation note
-                    </div>
-                    <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
-                      After the group is created, complete summary, links, and
-                      other project details from the Project Info tab.
-                    </p>
-                  </div>
-
                   <div>
                     <button
                       type="button"
@@ -429,158 +364,175 @@ export default function StudentProjectGroups({ course }) {
                 </div>
               </section>
             )}
-
-            <section className="rounded-[28px] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
-              <div className="border-b border-slate-100 px-6 py-5 dark:border-slate-800">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <h4 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-                      Group Directory
-                    </h4>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                      All created groups for this course.
-                    </p>
-                  </div>
-
-                  <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                    {groups.length} Group{groups.length > 1 ? "s" : ""}
-                  </span>
-                </div>
-              </div>
-
-              <div className="p-6">
-                {groups.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 px-4 py-10 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-400">
-                    No groups available yet.
-                  </div>
-                ) : (
-                  <div className="grid gap-4 xl:grid-cols-2">
-                    {groups.map((group) => (
-                      <div
-                        key={group.id || group._id}
-                        className="rounded-[24px] border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-5 dark:border-slate-700 dark:from-slate-900 dark:to-slate-950"
-                      >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h5 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                            {group.groupName || "Unnamed Group"}
-                          </h5>
-                          <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                            {group.members?.length || 0} Members
-                          </span>
-                        </div>
-
-                        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                          {group.projectTitle || "No project title added yet."}
-                        </p>
-
-                        <div className="mt-3 text-sm text-slate-600 dark:text-slate-300">
-                          <span className="font-semibold">Leader:</span>{" "}
-                          {group.leader?.name || "-"}
-                          {group.leader?.roll ? ` (${group.leader.roll})` : ""}
-                        </div>
-
-                        {(group.members || []).length > 0 ? (
-                          <div className="mt-4 flex flex-wrap gap-2">
-                            {group.members.map((member) => (
-                              <span
-                                key={member.id || member._id}
-                                className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-                              >
-                                {member.name}
-                                {member.roll ? ` • ${member.roll}` : ""}
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </section>
           </div>
 
           <div className="space-y-6">
-            <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                Group Workflow
-              </div>
-              <h4 className="mt-2 text-lg font-bold text-slate-900 dark:text-slate-100">
-                What to do here
-              </h4>
-
-              <div className="mt-4 space-y-3">
-                <GuideRow
-                  title="Step 1"
-                  text="Create your group with group name and members."
-                />
-                <GuideRow
-                  title="Step 2"
-                  text="Once the group is created, move to Project Info."
-                />
-                <GuideRow
-                  title="Step 3"
-                  text="Complete title, summary, links, and contact fields there."
-                />
-              </div>
-            </section>
-
-            <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                Deadline & Rules
-              </div>
-              <h4 className="mt-2 text-lg font-bold text-slate-900 dark:text-slate-100">
-                Group formation guidance
-              </h4>
-
-              <div className="mt-4 space-y-3">
-                <RuleCard
-                  tone="amber"
-                  title="Group editing"
-                  text="This page is for group formation only. Project details should not be edited here."
-                />
-                <RuleCard
-                  tone="sky"
-                  title="Leader responsibility"
-                  text="The student who creates the group becomes the group leader automatically."
-                />
-                <RuleCard
-                  tone="violet"
-                  title="Next step"
-                  text="After group creation, continue from Project Info, then Phases, then Submissions."
-                />
-              </div>
-            </section>
-
-            <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                Available Students
-              </div>
-              <h4 className="mt-2 text-lg font-bold text-slate-900 dark:text-slate-100">
-                Students not yet grouped
-              </h4>
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                {availableStudents.length === 0 ? (
-                  <span className="text-sm text-slate-500 dark:text-slate-400">
-                    No unassigned students left.
-                  </span>
-                ) : (
-                  availableStudents.map((student) => (
-                    <span
-                      key={student.id || student._id}
-                      className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-                    >
-                      {student.name}
-                      {student.roll ? ` • ${student.roll}` : ""}
-                    </span>
-                  ))
-                )}
-              </div>
-            </section>
+            <AvailableStudentsCard students={availableStudents} />
+            <GroupDirectoryCard groups={groups} />
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+function AvailableStudentsCard({ students }) {
+  return (
+    <section className="rounded-[28px] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
+      <div className="border-b border-slate-100 px-6 py-5 dark:border-slate-800">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+              Available Students
+            </div>
+            <h4 className="mt-2 text-lg font-bold text-slate-900 dark:text-slate-100">
+              Students not yet grouped
+            </h4>
+          </div>
+
+          <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+            {students.length} Available
+          </span>
+        </div>
+      </div>
+
+      <div className="max-h-[260px] overflow-y-auto p-6">
+        {students.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-400">
+            No unassigned students left.
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {students.map((student) => (
+              <span
+                key={student.id || student._id}
+                className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+              >
+                {student.name}
+                {student.roll ? ` • ${student.roll}` : ""}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function GroupDirectoryCard({ groups }) {
+  return (
+    <section className="rounded-[28px] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
+      <div className="border-b border-slate-100 px-6 py-5 dark:border-slate-800">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h4 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+              Group Directory
+            </h4>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              All created groups for this course.
+            </p>
+          </div>
+
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+            {groups.length} Group{groups.length > 1 ? "s" : ""}
+          </span>
+        </div>
+      </div>
+
+      <div className="max-h-[430px] overflow-y-auto p-6">
+        {groups.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 px-4 py-10 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-400">
+            No groups available yet.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {groups.map((group) => (
+              <div
+                key={group.id || group._id}
+                className="rounded-[24px] border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-5 dark:border-slate-700 dark:from-slate-900 dark:to-slate-950"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <h5 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                    {group.groupName || "Unnamed Group"}
+                  </h5>
+                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                    {group.members?.length || 0} Members
+                  </span>
+                </div>
+
+                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                  {group.projectTitle || "No project title added yet."}
+                </p>
+
+                <div className="mt-3 text-sm text-slate-600 dark:text-slate-300">
+                  <span className="font-semibold">Leader:</span>{" "}
+                  {group.leader?.name || "-"}
+                  {group.leader?.roll ? ` (${group.leader.roll})` : ""}
+                </div>
+
+                {(group.members || []).length > 0 ? (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {group.members.map((member) => (
+                      <span
+                        key={member.id || member._id}
+                        className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                      >
+                        {member.name}
+                        {member.roll ? ` • ${member.roll}` : ""}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function MemberCardGrid({ members, leader }) {
+  return (
+    <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3">
+      {members.map((member) => {
+        const memberId = String(member.id || member._id);
+        const leaderId = String(leader?.id || leader?._id || "");
+        const isLeader = memberId === leaderId;
+
+        return (
+          <div
+            key={memberId}
+            className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4 dark:border-slate-700 dark:bg-slate-900"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  {member.name || "Unnamed Student"}
+                </div>
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Roll: {member.roll || "-"}
+                </div>
+                {member.email ? (
+                  <div className="mt-1 break-all text-xs text-slate-500 dark:text-slate-400">
+                    {member.email}
+                  </div>
+                ) : null}
+              </div>
+
+              <span
+                className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                  isLeader
+                    ? "border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+                    : "border border-slate-200 bg-white text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                }`}
+              >
+                {isLeader ? "Leader" : "Member"}
+              </span>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -734,45 +686,6 @@ function InfoCard({ label, value }) {
       </div>
       <div className="mt-2 break-words text-sm font-medium text-slate-900 dark:text-slate-100">
         {value}
-      </div>
-    </div>
-  );
-}
-
-function GuideRow({ title, text }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
-      <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-        {title}
-      </div>
-      <div className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
-        {text}
-      </div>
-    </div>
-  );
-}
-
-function RuleCard({ tone = "amber", title, text }) {
-  const toneMap = {
-    amber:
-      "border-amber-200 bg-amber-50 dark:border-amber-500/20 dark:bg-amber-500/10",
-    sky:
-      "border-sky-200 bg-sky-50 dark:border-sky-500/20 dark:bg-sky-500/10",
-    violet:
-      "border-violet-200 bg-violet-50 dark:border-violet-500/20 dark:bg-violet-500/10",
-  };
-
-  return (
-    <div
-      className={`rounded-2xl border px-4 py-4 ${
-        toneMap[tone] || toneMap.amber
-      }`}
-    >
-      <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-        {title}
-      </div>
-      <div className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-400">
-        {text}
       </div>
     </div>
   );

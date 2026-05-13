@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchStudentCourses } from "../services/studentService";
 import { fetchStudentSubmissionAssessments } from "../services/labSubmissionService";
+import { fetchStudentPendingProjectSubmissions } from "../services/projectSubmissionService";
 
 function StudentDashboard() {
   const navigate = useNavigate();
@@ -36,20 +37,49 @@ function StudentDashboard() {
       setError("");
 
       try {
-        const [courseData, submissionData] = await Promise.all([
+        const [courseData, submissionData, projectSubmissionData] = await Promise.all([
           fetchStudentCourses(),
           fetchStudentSubmissionAssessments(),
+          fetchStudentPendingProjectSubmissions(),
         ]);
 
         setCourses(courseData || []);
 
-        const pendingItems = Array.isArray(submissionData)
-          ? submissionData.filter((item) =>
-              isPendingSubmissionActive(item, Date.now())
-            )
+        const labPendingItems = Array.isArray(submissionData)
+          ? submissionData.map((item) => ({
+              ...item,
+              taskType: "lab_submission",
+              taskLabel: "Assessment Submission",
+              badgeLabel: "You have an assessment",
+              actionLabel: "Go to Submission Page",
+              navigateTo: `/student/courses/${item.course?.id}?tab=submissions`,
+            }))
           : [];
 
-        setPendingSubmissionItems(pendingItems.slice(0, 6));
+        const projectPendingItems = Array.isArray(projectSubmissionData)
+          ? projectSubmissionData.map((item) => ({
+              ...item,
+              taskType: "project_phase",
+              taskLabel: item.submissionLabel || "Project Phase",
+              badgeLabel: item.missingGroup
+                ? "Create or join group first"
+                : "Project phase pending",
+              actionLabel: item.missingGroup ? "Go to Project Group" : "Go to Project Phase",
+              navigateTo: item.missingGroup
+                ? `/student/courses/${item.course?.id}?tab=project&projectTab=my-group`
+                : `/student/courses/${item.course?.id}?tab=project&projectTab=workflow&phaseId=${item.phaseId || item.id}`,
+            }))
+          : [];
+
+        const pendingItems = [...labPendingItems, ...projectPendingItems]
+          .filter((item) => isPendingSubmissionActive(item, Date.now()))
+          .sort((a, b) => {
+            const aDue = getDueTime(a.dueDate) || Number.MAX_SAFE_INTEGER;
+            const bDue = getDueTime(b.dueDate) || Number.MAX_SAFE_INTEGER;
+            return aDue - bDue;
+          });
+
+        setPendingSubmissionItems(pendingItems.slice(0, 8));
       } catch (err) {
         console.error(err);
         setError(err?.response?.data?.message || "Failed to load dashboard data");
@@ -267,11 +297,11 @@ function StudentDashboard() {
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-                Pending Assessments
+                Pending Submissions
               </h3>
 
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Submission tasks created by your teachers appear here.
+                Lab assessments and project phases created by your teachers appear here.
               </p>
             </div>
 
@@ -282,7 +312,7 @@ function StudentDashboard() {
 
           {loading ? (
             <div className="mt-5 text-sm text-slate-500 dark:text-slate-400">
-              Loading pending assessments...
+              Loading pending submissions...
             </div>
           ) : (
             <div className="mt-5 grid gap-4 xl:grid-cols-2">
@@ -301,8 +331,19 @@ function StudentDashboard() {
                         {item.course?.code} • Section {item.course?.section}
                       </div>
 
-                      <div className="mt-3 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
-                        You have an assessment
+                      <div className="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                        {item.taskLabel || "Submission Task"}
+                      </div>
+
+                      <div
+                        className={[
+                          "mt-3 inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold",
+                          item.taskType === "project_phase"
+                            ? "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300"
+                            : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300",
+                        ].join(" ")}
+                      >
+                        {item.badgeLabel || "Pending submission"}
                       </div>
 
                       <div className="mt-3 text-sm text-slate-500 dark:text-slate-400">
@@ -310,7 +351,9 @@ function StudentDashboard() {
                         {item.dueDate
                           ? new Date(item.dueDate).toLocaleString()
                           : "No deadline set"}{" "}
-                        • Max {item.maxFileSizeMB || 10} MB
+                        {item.taskType === "project_phase"
+                          ? ` • Marks ${item.fullMarks ?? item.totalMarks ?? 0}`
+                          : ` • Max ${item.maxFileSizeMB || 10} MB`}
                       </div>
 
                       <div className="mt-2 inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300">
@@ -322,12 +365,12 @@ function StudentDashboard() {
                       type="button"
                       onClick={() =>
                         navigate(
-                          `/student/courses/${item.course?.id}?tab=submissions`
+                          item.navigateTo || `/student/courses/${item.course?.id}?tab=submissions`
                         )
                       }
                       className="inline-flex items-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-700"
                     >
-                      Go to Submission Page
+                      {item.actionLabel || "Go to Submission Page"}
                     </button>
                   </div>
                 </div>

@@ -486,7 +486,7 @@ export default function StudentCoursePage() {
   //                 <button
   //                   key={tab.key}
   //                   type="button"
-  //                   onClick={() => setProjectTab(tab.key)}
+  //                   onClick={() => handleProjectTabChange(tab.key)}
   //                   className={[
   //                     "rounded-2xl border px-4 py-2.5 text-sm font-semibold transition",
   //                     active
@@ -527,15 +527,45 @@ export default function StudentCoursePage() {
   // }
 
   function StudentProjectSection({ course }) {
-  const [projectTab, setProjectTab] = useState("my-group");
-  const [selectedPhaseId, setSelectedPhaseId] = useState("");
-
   const tabs = [
     { key: "my-group", label: "My Group" },
     { key: "project-info", label: "Project Info" },
     { key: "workflow", label: "Phases & Workflow" },
     { key: "marks", label: "Marks" },
   ];
+
+  const getValidProjectTab = (value) =>
+    tabs.some((tab) => tab.key === value) ? value : "my-group";
+
+  const [projectTab, setProjectTab] = useState(() =>
+    getValidProjectTab(searchParams.get("projectTab"))
+  );
+  const [selectedPhaseId, setSelectedPhaseId] = useState(
+    searchParams.get("phaseId") || ""
+  );
+
+  useEffect(() => {
+    const nextProjectTab = getValidProjectTab(searchParams.get("projectTab"));
+    const nextPhaseId = searchParams.get("phaseId") || "";
+
+    setProjectTab((prev) => (prev === nextProjectTab ? prev : nextProjectTab));
+    setSelectedPhaseId((prev) => (prev === nextPhaseId ? prev : nextPhaseId));
+  }, [searchParams]);
+
+  const handleProjectTabChange = (nextTab) => {
+    setProjectTab(nextTab);
+
+    const next = new URLSearchParams(searchParams);
+    next.set("tab", "project");
+    next.set("projectTab", nextTab);
+
+    if (nextTab !== "workflow") {
+      next.delete("phaseId");
+      setSelectedPhaseId("");
+    }
+
+    setSearchParams(next, { replace: true });
+  };
 
   return (
     <div className="space-y-6">
@@ -566,7 +596,7 @@ export default function StudentCoursePage() {
                 <button
                   key={tab.key}
                   type="button"
-                  onClick={() => setProjectTab(tab.key)}
+                  onClick={() => handleProjectTabChange(tab.key)}
                   className={[
                     "rounded-2xl border px-4 py-2.5 text-sm font-semibold transition",
                     active

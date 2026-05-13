@@ -18,6 +18,15 @@ export default function StudentProjectSubmissions({
   const [selectedPhaseId, setSelectedPhaseId] = useState(initialPhaseId || "");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [nowTick, setNowTick] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowTick(Date.now());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!courseId) return;
@@ -77,8 +86,18 @@ export default function StudentProjectSubmissions({
     return items.find((item) => item.phase.id === selectedPhaseId) || null;
   }, [items, selectedPhaseId]);
 
+  const selectedDeadlinePassed = isPhaseDeadlinePassed(
+    selectedItem?.phase,
+    nowTick
+  );
+
   const handleSubmit = async () => {
     if (!selectedItem) return;
+
+    if (selectedDeadlinePassed) {
+      setError("Submission deadline has passed. You can no longer submit or update this phase.");
+      return;
+    }
 
     try {
       const phaseId = selectedItem.phase.id;
@@ -106,7 +125,7 @@ export default function StudentProjectSubmissions({
           Project Phases & Workflow
         </h2>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Select a phase, review its instructions, resource links, deadline, and complete the submission from the same place.
+          Select a phase, check the deadline, and submit before the timer ends.
         </p>
       </div>
 
@@ -145,6 +164,7 @@ export default function StudentProjectSubmissions({
               {items.map((item, index) => {
                 const active = item.phase.id === selectedPhaseId;
                 const submitted = Boolean(item.submission);
+                const deadlinePassed = isPhaseDeadlinePassed(item.phase, nowTick);
 
                 return (
                   <button
@@ -177,6 +197,10 @@ export default function StudentProjectSubmissions({
                         <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
                           Submitted
                         </span>
+                      ) : deadlinePassed ? (
+                        <span className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
+                          Closed
+                        </span>
                       ) : (
                         <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
                           Pending
@@ -187,6 +211,17 @@ export default function StudentProjectSubmissions({
                     <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">
                       {item.phase.totalMarks} Marks •{" "}
                       {item.phase.dueDate ? formatDateTime(item.phase.dueDate) : "No due date"}
+                    </div>
+
+                    <div
+                      className={[
+                        "mt-2 inline-flex rounded-full border px-3 py-1 text-xs font-semibold",
+                        deadlinePassed
+                          ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300"
+                          : "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300",
+                      ].join(" ")}
+                    >
+                      {formatRemainingTime(item.phase, nowTick)}
                     </div>
                   </button>
                 );
@@ -214,6 +249,17 @@ export default function StudentProjectSubmissions({
                         : "No due date"}
                     </div>
                   </div>
+
+                  <div
+                    className={[
+                      "rounded-2xl border px-4 py-2 text-sm font-semibold",
+                      selectedDeadlinePassed
+                        ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300"
+                        : "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300",
+                    ].join(" ")}
+                  >
+                    {formatRemainingTime(selectedItem.phase, nowTick)}
+                  </div>
                 </div>
 
                 {selectedItem.phase.instructions ? (
@@ -223,7 +269,7 @@ export default function StudentProjectSubmissions({
                 ) : null}
 
                 {Array.isArray(selectedItem.phase.resourceLinks) &&
-                  selectedItem.phase.resourceLinks.length > 0 ? (
+                selectedItem.phase.resourceLinks.length > 0 ? (
                   <div className="mt-4 space-y-2">
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                       Reference Links
@@ -242,34 +288,45 @@ export default function StudentProjectSubmissions({
                   </div>
                 ) : null}
 
-                {!selectedItem.canSubmit ? (
+                {selectedItem.submission?.fileUrl ? (
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-900">
+                    <div className="font-semibold text-slate-900 dark:text-slate-100">
+                      Uploaded File
+                    </div>
+                    <a
+                      href={selectedItem.submission.fileUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 block text-violet-600 hover:underline dark:text-violet-300"
+                    >
+                      {selectedItem.submission.fileName || "Open uploaded file"}
+                    </a>
+                  </div>
+                ) : null}
+
+                {selectedItem.submission ? (
+                  <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+                    Last updated: {formatDateTime(selectedItem.submission.lastUpdatedAt)}
+                  </div>
+                ) : null}
+
+                {selectedDeadlinePassed ? (
+                  <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
+                    Submission deadline has passed. The submission form is now closed.
+                  </div>
+                ) : !selectedItem.canSubmit ? (
                   <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
                     This group phase requires a project group first.
                   </div>
                 ) : (
                   <>
                     <div className="mt-5 grid grid-cols-1 gap-4">
-                      {/*                      <div>
-                        <div className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                          Submission Link
-                        </div>
-                        <input
-                          type="url"
-                          value={drafts[selectedItem.phase.id]?.link || ""}
-                          onChange={(e) =>
-                            handleChangeDraft(selectedItem.phase.id, "link", e.target.value)
-                          }
-                          className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-800 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                          placeholder="Paste Google Drive / OneDrive / GitHub link"
-                        />
-                      </div>*/}
-
                       <div>
                         <div className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
                           Upload File
                         </div>
                         <div className="mb-2 text-xs text-slate-500 dark:text-slate-400">
-                          You must upload a file, or later a submission link can also be used.
+                          Upload your phase file before the deadline.
                         </div>
                         <input
                           type="file"
@@ -305,28 +362,6 @@ export default function StudentProjectSubmissions({
                       </div>
                     </div>
 
-                    {selectedItem.submission?.fileUrl ? (
-                      <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-900">
-                        <div className="font-semibold text-slate-900 dark:text-slate-100">
-                          Uploaded File
-                        </div>
-                        <a
-                          href={selectedItem.submission.fileUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="mt-1 block text-violet-600 hover:underline dark:text-violet-300"
-                        >
-                          {selectedItem.submission.fileName || "Open uploaded file"}
-                        </a>
-                      </div>
-                    ) : null}
-
-                    {selectedItem.submission ? (
-                      <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
-                        Last updated: {formatDateTime(selectedItem.submission.lastUpdatedAt)}
-                      </div>
-                    ) : null}
-
                     <div className="mt-5">
                       <button
                         type="button"
@@ -350,6 +385,44 @@ export default function StudentProjectSubmissions({
       </div>
     </section>
   );
+}
+
+function getDueTime(dueDate) {
+  if (!dueDate) return null;
+  const parsed = new Date(dueDate).getTime();
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function isPhaseDeadlinePassed(phase, now = Date.now()) {
+  const dueTime = getDueTime(phase?.dueDate);
+  if (!dueTime) return false;
+  return dueTime <= now;
+}
+
+function formatRemainingTime(phase, now = Date.now()) {
+  const dueTime = getDueTime(phase?.dueDate);
+
+  if (!dueTime) return "No deadline set";
+
+  const diff = Math.max(0, dueTime - now);
+
+  if (diff <= 0) return "Deadline passed";
+
+  const totalSeconds = Math.floor(diff / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (days > 0) {
+    return `Time remaining: ${days}d ${hours}h ${minutes}m`;
+  }
+
+  if (hours > 0) {
+    return `Time remaining: ${hours}h ${minutes}m ${seconds}s`;
+  }
+
+  return `Time remaining: ${minutes}m ${seconds}s`;
 }
 
 function formatDateTime(value) {
