@@ -16,6 +16,9 @@ import TeacherRegisterPage from "./pages/TeacherRegisterPage";
 import TeacherCoursesPage from "./pages/TeacherCoursesPage";
 import TeacherRoutinePage from "./pages/TeacherRoutinePage.jsx";
 import TeacherRoutineBuilderPage from "./pages/TeacherRoutineBuilderPage.jsx";
+import AcademicCalendarPage from "./pages/AcademicCalendarPage.jsx";
+import AcademicCalendarManagePage from "./pages/AcademicCalendarManagePage.jsx";
+
 
 import AppLayout from './layouts/AppLayout.jsx';
 import TeacherAttendanceSheetPage from './pages/TeacherAttendanceSheetPage.jsx';
@@ -61,6 +64,12 @@ function App() {
         <Route path="/teacher/attendance-sheet" element={<TeacherAttendanceSheetPage />} />
         <Route path="/teacher/routine" element={<TeacherRoutinePage />} />
         <Route path="/teacher/routine/manage" element={<TeacherRoutineBuilderPage />} />
+
+        <Route path="/academic-calendar" element={<AcademicCalendarPage />} />
+        <Route
+          path="/teacher/academic-calendar/manage"
+          element={<AcademicCalendarManagePage />}
+        />
 
         {/* Shared */}
         <Route

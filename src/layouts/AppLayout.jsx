@@ -73,7 +73,7 @@ function AppLayout() {
   const teacherLinks = [
     { to: "/teacher/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
     { to: "/teacher/courses", label: "Courses", icon: <BookIcon /> },
-    
+
     { to: "/teacher/attendance", label: "Attendance", icon: <CalendarIcon /> },
     {
       to: "/teacher/attendance-sheet",
@@ -82,8 +82,14 @@ function AppLayout() {
     },
     { to: "/teacher/complaints", label: "Complaints", icon: <AlertIcon /> },
     { to: "/teacher/routine", label: "Routine", icon: <RoutineIcon /> },
+    {
+      to: "/academic-calendar",
+      label: "Academic Calendar",
+      icon: <AcademicCalendarIcon />,
+    },
     { to: "/teacher/create-course", label: "Create Course", icon: <PlusIcon /> },
     { to: "/change-password", label: "Account", icon: <UserIcon /> },
+
   ];
 
   const studentLinks = [
@@ -91,7 +97,13 @@ function AppLayout() {
     { to: "/student/courses", label: "My Courses", icon: <BookIcon /> },
     { to: "/student/complaints", label: "Complaints", icon: <AlertIcon /> },
     { to: "/student/attendance", label: "Attendance", icon: <CalendarIcon /> },
+    {
+      to: "/academic-calendar",
+      label: "Academic Calendar",
+      icon: <AcademicCalendarIcon />,
+    },
     { to: "/change-password", label: "Account", icon: <UserIcon /> },
+
   ];
 
   const links = useMemo(() => {
@@ -640,6 +652,30 @@ function RoutineIcon() {
       <path d="M4 4h16v16H4z" />
       <path d="M4 9h16M4 14h16" />
       <path d="M9 4v16M15 4v16" />
+    </svg>
+  );
+}
+
+function AcademicCalendarIcon() {
+  return (
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3" y="4" width="18" height="17" rx="3" />
+      <path d="M8 2v4" />
+      <path d="M16 2v4" />
+      <path d="M3 10h18" />
+      <path d="M8 14h.01" />
+      <path d="M12 14h.01" />
+      <path d="M16 14h.01" />
+      <path d="M8 18h.01" />
+      <path d="M12 18h.01" />
     </svg>
   );
 }
