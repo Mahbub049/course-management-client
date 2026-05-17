@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { useTheme } from "../context/ThemeContext";
+import { clearAuthData, getAuthItem } from "../utils/authStorage";
 
 function AppLayout() {
   const navigate = useNavigate();
@@ -17,12 +18,12 @@ function AppLayout() {
   const [profileImage, setProfileImage] = useState("");
 
   useEffect(() => {
-    const r = localStorage.getItem("marksPortalRole");
-    const n = localStorage.getItem("marksPortalName") || "";
+const r = getAuthItem("marksPortalRole");
+const n = getAuthItem("marksPortalName") || "";
     setRole(r);
     setUserName(n);
 
-    const img = localStorage.getItem("marksPortalProfileImage") || "";
+    const img = getAuthItem("marksPortalProfileImage") || "";
     setProfileImage(img);
 
     if (!r) {
@@ -32,8 +33,8 @@ function AppLayout() {
 
   useEffect(() => {
     const syncProfileData = () => {
-      const n = localStorage.getItem("marksPortalName") || "";
-      const img = localStorage.getItem("marksPortalProfileImage") || "";
+const n = getAuthItem("marksPortalName") || "";
+const img = getAuthItem("marksPortalProfileImage") || "";
 
       setUserName(n);
       setProfileImage(img);
@@ -62,13 +63,11 @@ function AppLayout() {
     localStorage.setItem("marksPortalSidebarCollapsed", String(collapsed));
   }, [collapsed]);
 
-  const handleLogout = () => {
-    localStorage.removeItem("marksPortalToken");
-    localStorage.removeItem("marksPortalRole");
-    localStorage.removeItem("marksPortalName");
-    localStorage.removeItem("marksPortalProfileImage");
-    navigate("/login", { replace: true });
-  };
+const handleLogout = () => {
+  clearAuthData();
+  localStorage.removeItem("marksPortalRememberMe");
+  navigate("/login", { replace: true });
+};
 
   const teacherLinks = [
     { to: "/teacher/dashboard", label: "Dashboard", icon: <DashboardIcon /> },

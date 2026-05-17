@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { loginRequest } from "../services/authService";
+import { saveAuthData } from "../utils/authStorage";
 
 function LoginPage() {
   const navigate = useNavigate();
@@ -11,6 +12,7 @@ function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -18,26 +20,9 @@ function LoginPage() {
     setLoading(true);
 
     try {
-      const data = await loginRequest(username, password);
+      const data = await loginRequest(username, password, rememberMe);
 
-      localStorage.setItem("marksPortalToken", data.token);
-      localStorage.setItem("marksPortalRole", data.role);
-
-      if (data.name) {
-        localStorage.setItem("marksPortalName", data.name);
-      }
-
-      if (data.username) {
-        localStorage.setItem("marksPortalUsername", data.username);
-      } else {
-        localStorage.removeItem("marksPortalUsername");
-      }
-
-      if (data.profileImage) {
-        localStorage.setItem("marksPortalProfileImage", data.profileImage);
-      } else {
-        localStorage.removeItem("marksPortalProfileImage");
-      }
+      saveAuthData(data, rememberMe);
 
       if (data.role === "teacher") {
         navigate("/teacher/dashboard");
@@ -182,6 +167,18 @@ function LoginPage() {
                       </button>
                     </div>
                   </Field>
+
+                  <div className="flex items-center justify-between">
+                    <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={rememberMe}
+                        onChange={(e) => setRememberMe(e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-900"
+                      />
+                      Keep me logged in
+                    </label>
+                  </div>
 
                   <button
                     type="submit"
