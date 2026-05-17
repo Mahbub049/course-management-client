@@ -1,18 +1,40 @@
-// client/src/pages/LoginPage.jsx
-
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { loginRequest } from "../services/authService";
-import { saveAuthData } from "../utils/authStorage";
+import { getAuthItem, saveAuthData } from "../utils/authStorage";
 
 function LoginPage() {
   const navigate = useNavigate();
+
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [checkingLogin, setCheckingLogin] = useState(true);
   const [error, setError] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
+
+  const goToDashboard = (role) => {
+    if (role === "teacher") {
+      navigate("/teacher/dashboard", { replace: true });
+    } else if (role === "student") {
+      navigate("/student/dashboard", { replace: true });
+    } else {
+      navigate("/login", { replace: true });
+    }
+  };
+
+  useEffect(() => {
+    const token = getAuthItem("marksPortalToken");
+    const role = getAuthItem("marksPortalRole");
+
+    if (token && role) {
+      goToDashboard(role);
+      return;
+    }
+
+    setCheckingLogin(false);
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -20,17 +42,11 @@ function LoginPage() {
     setLoading(true);
 
     try {
-      const data = await loginRequest(username, password, rememberMe);
+      const data = await loginRequest(username.trim(), password, rememberMe);
 
       saveAuthData(data, rememberMe);
 
-      if (data.role === "teacher") {
-        navigate("/teacher/dashboard");
-      } else if (data.role === "student") {
-        navigate("/student/dashboard");
-      } else {
-        navigate("/login");
-      }
+      goToDashboard(data.role);
     } catch (err) {
       console.error(err);
       setError(err?.response?.data?.message || "Invalid username or password");
@@ -38,6 +54,17 @@ function LoginPage() {
       setLoading(false);
     }
   };
+
+  if (checkingLogin) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-medium text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+          <SpinnerIcon />
+          Checking login...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
@@ -52,11 +79,10 @@ function LoginPage() {
         <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-7xl items-center justify-center px-4 py-8 sm:px-6 lg:px-8">
           <div className="grid w-full max-w-6xl overflow-hidden rounded-3xl border border-slate-200 bg-white/90 shadow-2xl backdrop-blur dark:border-slate-800 dark:bg-slate-900/90 lg:grid-cols-2">
             {/* Left side branding */}
-            {/* Left side branding (clean version) */}
-            <div className="relative hidden lg:flex lg:flex-col lg:items-center lg:justify-center bg-gradient-to-br from-indigo-600 via-indigo-700 to-sky-600 p-10 text-white">
+            <div className="relative hidden bg-gradient-to-br from-indigo-600 via-indigo-700 to-sky-600 p-10 text-white lg:flex lg:flex-col lg:items-center lg:justify-center">
               <div className="text-center">
-                <div className="flex justify-center mb-6">
-                  <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-white/20 backdrop-blur border border-white/30">
+                <div className="mb-6 flex justify-center">
+                  <div className="flex h-20 w-20 items-center justify-center rounded-3xl border border-white/30 bg-white/20 backdrop-blur">
                     <img
                       className="h-12 w-12 object-contain"
                       src="/logo.png"
@@ -128,6 +154,7 @@ function LoginPage() {
                       <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
                         <UserIcon />
                       </span>
+
                       <input
                         type="text"
                         inputMode="text"
@@ -146,6 +173,7 @@ function LoginPage() {
                       <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
                         <LockIcon />
                       </span>
+
                       <input
                         type={showPassword ? "text" : "password"}
                         autoComplete="current-password"
@@ -155,6 +183,7 @@ function LoginPage() {
                         placeholder="Enter your password"
                         className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-12 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
                       />
+
                       <button
                         type="button"
                         onClick={() => setShowPassword((prev) => !prev)}
@@ -204,7 +233,9 @@ function LoginPage() {
                     </span>{" "}
                     students should use the temporary username and password
                     provided by the teacher. After logging in, change your
-                    password from the <span className="font-semibold">Change Password</span> page.
+                    password from the{" "}
+                    <span className="font-semibold">Change Password</span>{" "}
+                    page.
                   </div>
                 </form>
 
@@ -238,21 +269,14 @@ function Field({ label, hint, children }) {
       <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">
         {label}
       </label>
+
       {children}
+
       {hint ? (
         <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
           {hint}
         </p>
       ) : null}
-    </div>
-  );
-}
-
-function FeatureItem({ title, text }) {
-  return (
-    <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur">
-      <div className="text-sm font-semibold">{title}</div>
-      <div className="mt-1 text-sm leading-6 text-white/80">{text}</div>
     </div>
   );
 }
