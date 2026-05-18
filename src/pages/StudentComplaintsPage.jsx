@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { getAuthItem } from "../utils/authStorage";
 import {
   createStudentComplaint,
   fetchStudentComplaints,
@@ -37,7 +38,7 @@ function formatDateGB(iso) {
 
 export default function StudentComplaintsPage() {
   const navigate = useNavigate();
-  const role = localStorage.getItem("marksPortalRole");
+  const [role, setRole] = useState(() => getAuthItem("marksPortalRole"));
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -61,8 +62,13 @@ export default function StudentComplaintsPage() {
     course?.complaintSettings?.allowStudentComplaints !== false;
 
   useEffect(() => {
-    if (role !== "student") navigate("/login");
-  }, [role, navigate]);
+    const currentRole = getAuthItem("marksPortalRole");
+    setRole(currentRole);
+
+    if (currentRole !== "student") {
+      navigate("/login", { replace: true });
+    }
+  }, [navigate]);
 
   const loadComplaints = async () => {
     setLoading(true);
@@ -105,9 +111,13 @@ export default function StudentComplaintsPage() {
   };
 
   useEffect(() => {
-    if (role !== "student") return;
+    const currentRole = getAuthItem("marksPortalRole");
+
+    if (currentRole !== "student") return;
+
     loadComplaints();
     loadCourses();
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role]);
 
@@ -317,9 +327,9 @@ export default function StudentComplaintsPage() {
                     courses.map((c) => {
                       const isOpen = isComplaintsOpenForCourse(c);
                       return (
-                      <option key={c._id || c.id} value={c._id || c.id} disabled={!isOpen}>
-                        {c.code} — {c.title}{isOpen ? "" : " (Closed)"}
-                      </option>
+                        <option key={c._id || c.id} value={c._id || c.id} disabled={!isOpen}>
+                          {c.code} — {c.title}{isOpen ? "" : " (Closed)"}
+                        </option>
                       );
                     })
                   )}
@@ -634,10 +644,9 @@ export default function StudentComplaintsPage() {
                       </span>
 
                       <span
-                        className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold capitalize ${
-                          STATUS_BADGE_CLASSES[selected.status] ||
+                        className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold capitalize ${STATUS_BADGE_CLASSES[selected.status] ||
                           "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                        }`}
+                          }`}
                       >
                         {(selected.status || "open").replace("_", " ")}
                       </span>
