@@ -5,7 +5,6 @@ import { createStudentComplaint } from "../services/complaintService";
 import { fetchStudentAttendanceSheet } from "../services/attendanceService";
 import { fetchStudentCourseMaterials } from "../services/materialService";
 import StudentProjectGroups from "./studentCourse/StudentProjectGroups";
-// import StudentProjectPhases from "./studentCourse/StudentProjectPhases";
 import StudentProjectSubmissions from "./studentCourse/StudentProjectSubmissions";
 import StudentProjectMarks from "./studentCourse/StudentProjectMarks";
 import StudentProjectTotalSummary from "./studentCourse/StudentProjectTotalSummary";
@@ -111,6 +110,7 @@ function getAssessmentHint(assessment, courseType) {
     const mode = String(assessment?.labFinalConfig?.mode || "")
       .replaceAll("_", " ")
       .trim();
+
     return mode ? `Advanced Lab Final • ${mode}` : "Advanced Lab Final";
   }
 
@@ -166,7 +166,11 @@ export default function StudentCoursePage() {
   const [materialsError, setMaterialsError] = useState("");
   const [materials, setMaterials] = useState([]);
 
-  const [activeTab, setActiveTab] = useState(searchParams.get("tab") || "assessment");
+  const [activeTab, setActiveTab] = useState(
+    searchParams.get("tab") || "assessment"
+  );
+
+  const complaintRef = useRef(null);
 
   useEffect(() => {
     const showProjectTab =
@@ -177,13 +181,12 @@ export default function StudentCoursePage() {
       setActiveTab("assessment");
     }
   }, [course, activeTab]);
+
   useEffect(() => {
     const next = new URLSearchParams(searchParams);
     next.set("tab", activeTab);
     setSearchParams(next, { replace: true });
   }, [activeTab, setSearchParams]);
-
-  const complaintRef = useRef(null);
 
   useEffect(() => {
     const load = async () => {
@@ -256,7 +259,10 @@ export default function StudentCoursePage() {
   }, [courseId]);
 
   const courseType = useMemo(() => getCourseType(course), [course]);
-  const complaintsOpen = course?.complaintSettings?.allowStudentComplaints !== false;
+
+  const complaintsOpen =
+    course?.complaintSettings?.allowStudentComplaints !== false;
+
   const complaintClosedMessage =
     course?.complaintSettings?.closedMessage ||
     "Complaint submission is currently closed by the course teacher.";
@@ -266,7 +272,6 @@ export default function StudentCoursePage() {
     displayGrade,
     displayCtMain,
     displayLabMain,
-    neededForAPlusText,
     statusColor,
     totalTone,
   } = useMemo(() => {
@@ -275,35 +280,11 @@ export default function StudentCoursePage() {
     const ctMain = safeNum(summary?.ctMain, 0);
     const labMain = safeNum(summary?.labMain, 0);
 
-    const maxPossible = summary?.maxPossible ?? baseAPlusInfo?.maxPossible ?? 100;
-    const needed =
-      summary?.aPlusInfo?.needed ??
-      summary?.aPlusNeeded ??
-      (safeNum(total) >= 80 ? 0 : Math.max(0, 80 - safeNum(total)));
-
     const safeTotal = safeNum(total, 0);
-    const safeMaxPossible = safeNum(maxPossible, 100);
-    const safeNeeded = safeNum(needed, 0);
-
-    let text;
-    if (safeNeeded <= 0 || safeTotal >= 80) {
-      text = "You already meet the A+ threshold (80/100).";
-    } else {
-      if (safeMaxPossible < 80) {
-        text = `Even with full marks in remaining items, maximum possible is ${safeMaxPossible.toFixed(
-          1
-        )}/100 — so A+ is not reachable.`;
-      } else {
-        text = `To reach A+, you need ${safeNeeded.toFixed(
-          1
-        )} marks in the remaining assessments (max possible: ${safeMaxPossible.toFixed(
-          1
-        )}/100).`;
-      }
-    }
 
     let color = "";
     let tone = "neutral";
+
     if (safeTotal >= 80) {
       color = STATUS_COLORS.APlus;
       tone = "good";
@@ -317,11 +298,10 @@ export default function StudentCoursePage() {
       displayGrade: grade,
       displayCtMain: ctMain % 1 === 0 ? String(ctMain) : ctMain.toFixed(1),
       displayLabMain: labMain % 1 === 0 ? String(labMain) : labMain.toFixed(1),
-      neededForAPlusText: text,
       statusColor: color,
       totalTone: tone,
     };
-  }, [summary, baseTotal, baseGrade, baseAPlusInfo]);
+  }, [summary, baseTotal, baseGrade]);
 
   const attComputed = useMemo(() => {
     if (!attData) return null;
@@ -344,6 +324,7 @@ export default function StudentCoursePage() {
 
     return assessments.filter((a) => {
       const n = String(a?.name || "").toLowerCase();
+
       return (
         a?.structureType !== "lab_final" &&
         !n.includes("mid") &&
@@ -357,6 +338,7 @@ export default function StudentCoursePage() {
     if (courseType === "lab") {
       return assessments.filter((a) => {
         const n = String(a?.name || "").toLowerCase();
+
         return (
           a?.structureType === "lab_final" ||
           n.includes("mid") ||
@@ -371,10 +353,12 @@ export default function StudentCoursePage() {
 
   const breakdownMap = useMemo(() => {
     const map = {};
+
     (assessments || []).forEach((a) => {
       const key = a.id || a._id;
       map[key] = buildAdvancedBreakdown(a);
     });
+
     return map;
   }, [assessments]);
 
@@ -414,13 +398,17 @@ export default function StudentCoursePage() {
         }
 
         const p = Number(complaintAttPeriod);
+
         if (!p || p < 1) {
           setComplaintError("Please provide a valid period (>=1).");
           setComplaintLoading(false);
           return;
         }
 
-        payload.attendanceRef = { date: complaintAttDate, period: p };
+        payload.attendanceRef = {
+          date: complaintAttDate,
+          period: p,
+        };
       }
 
       await createStudentComplaint(payload);
@@ -440,203 +428,122 @@ export default function StudentCoursePage() {
     }
   };
 
-  // function StudentProjectSection({ course }) {
-  //   const [projectTab, setProjectTab] = useState("my-group");
-  //   const [selectedPhaseId, setSelectedPhaseId] = useState("");
-
-  //   const tabs = [
-  //     { key: "my-group", label: "My Group" },
-  //     { key: "project-info", label: "Project Info" },
-  //     { key: "phases", label: "Phases" },
-  //     { key: "submissions", label: "Workflow" },
-  //     { key: "marks", label: "Marks" },
-  //   ];
-
-  //   const openSubmissionForPhase = (phaseId) => {
-  //     setSelectedPhaseId(phaseId);
-  //     setProjectTab("submissions");
-  //   };
-
-  //   return (
-  //     <div className="space-y-6">
-  //       <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-  //         <div className="border-b border-slate-100 px-6 py-5 dark:border-slate-800">
-  //           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-  //             <div>
-  //               <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-  //                 Project Workspace
-  //               </h3>
-  //               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-  //                 View phases, open a selected phase, and complete submission from one clean workflow.
-  //               </p>
-  //             </div>
-
-  //             <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
-  //               Student View
-  //             </div>
-  //           </div>
-  //         </div>
-
-  //         <div className="px-6 py-4">
-  //           <div className="flex flex-wrap gap-2">
-  //             {tabs.map((tab) => {
-  //               const active = projectTab === tab.key;
-
-  //               return (
-  //                 <button
-  //                   key={tab.key}
-  //                   type="button"
-  //                   onClick={() => handleProjectTabChange(tab.key)}
-  //                   className={[
-  //                     "rounded-2xl border px-4 py-2.5 text-sm font-semibold transition",
-  //                     active
-  //                       ? "border-violet-600 bg-violet-600 text-white shadow-lg shadow-violet-600/20"
-  //                       : "border-slate-200 bg-white text-slate-700 hover:border-violet-200 hover:bg-violet-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-violet-500/30 dark:hover:bg-slate-800",
-  //                   ].join(" ")}
-  //                 >
-  //                   {tab.label}
-  //                 </button>
-  //               );
-  //             })}
-  //           </div>
-  //         </div>
-  //       </section>
-
-  //       {projectTab === "my-group" && <StudentProjectGroups course={course} />}
-  //       {projectTab === "project-info" && <StudentProjectInfo course={course} />}
-  //       {projectTab === "phases" && (
-  //         <StudentProjectPhases
-  //           course={course}
-  //           onOpenSubmission={openSubmissionForPhase}
-  //         />
-  //       )}
-  //       {projectTab === "submissions" && (
-  //         <StudentProjectSubmissions
-  //           course={course}
-  //           initialPhaseId={selectedPhaseId}
-  //         />
-  //       )}
-  //       {projectTab === "marks" && (
-  //         <div className="space-y-6">
-  //           <StudentProjectMarks course={course} />
-  //           <StudentProjectTotalSummary course={course} />
-  //         </div>
-  //       )}
-  //     </div>
-  //   );
-  // }
-
   function StudentProjectSection({ course }) {
-  const tabs = [
-    { key: "my-group", label: "My Group" },
-    { key: "project-info", label: "Project Info" },
-    { key: "workflow", label: "Phases & Workflow" },
-    { key: "marks", label: "Marks" },
-  ];
+    const tabs = [
+      { key: "my-group", label: "My Group" },
+      { key: "project-info", label: "Project Info" },
+      { key: "workflow", label: "Phases & Workflow" },
+      { key: "marks", label: "Marks" },
+    ];
 
-  const getValidProjectTab = (value) =>
-    tabs.some((tab) => tab.key === value) ? value : "my-group";
+    const getValidProjectTab = (value) =>
+      tabs.some((tab) => tab.key === value) ? value : "my-group";
 
-  const [projectTab, setProjectTab] = useState(() =>
-    getValidProjectTab(searchParams.get("projectTab"))
-  );
-  const [selectedPhaseId, setSelectedPhaseId] = useState(
-    searchParams.get("phaseId") || ""
-  );
+    const [projectTab, setProjectTab] = useState(() =>
+      getValidProjectTab(searchParams.get("projectTab"))
+    );
 
-  useEffect(() => {
-    const nextProjectTab = getValidProjectTab(searchParams.get("projectTab"));
-    const nextPhaseId = searchParams.get("phaseId") || "";
+    const [selectedPhaseId, setSelectedPhaseId] = useState(
+      searchParams.get("phaseId") || ""
+    );
 
-    setProjectTab((prev) => (prev === nextProjectTab ? prev : nextProjectTab));
-    setSelectedPhaseId((prev) => (prev === nextPhaseId ? prev : nextPhaseId));
-  }, [searchParams]);
+    useEffect(() => {
+      const nextProjectTab = getValidProjectTab(searchParams.get("projectTab"));
+      const nextPhaseId = searchParams.get("phaseId") || "";
 
-  const handleProjectTabChange = (nextTab) => {
-    setProjectTab(nextTab);
+      setProjectTab((prev) => (prev === nextProjectTab ? prev : nextProjectTab));
+      setSelectedPhaseId((prev) => (prev === nextPhaseId ? prev : nextPhaseId));
+    }, [searchParams]);
 
-    const next = new URLSearchParams(searchParams);
-    next.set("tab", "project");
-    next.set("projectTab", nextTab);
+    const handleProjectTabChange = (nextTab) => {
+      setProjectTab(nextTab);
 
-    if (nextTab !== "workflow") {
-      next.delete("phaseId");
-      setSelectedPhaseId("");
-    }
+      const next = new URLSearchParams(searchParams);
+      next.set("tab", "project");
+      next.set("projectTab", nextTab);
 
-    setSearchParams(next, { replace: true });
-  };
+      if (nextTab !== "workflow") {
+        next.delete("phaseId");
+        setSelectedPhaseId("");
+      }
 
-  return (
-    <div className="space-y-6">
-      <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="border-b border-slate-100 px-6 py-5 dark:border-slate-800">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-                Project Workspace
-              </h3>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Manage your group, update project information, and complete phase submissions from one organized workspace.
-              </p>
-            </div>
+      setSearchParams(next, { replace: true });
+    };
 
-            <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
-              Student View
+    return (
+      <div className="space-y-6">
+        <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="border-b border-slate-100 px-6 py-5 dark:border-slate-800">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+                  Project Workspace
+                </h3>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Manage your group, update project information, and complete phase
+                  submissions from one organized workspace.
+                </p>
+              </div>
+
+              <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+                Student View
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="px-6 py-4">
-          <div className="flex flex-wrap gap-2">
-            {tabs.map((tab) => {
-              const active = projectTab === tab.key;
+          <div className="px-6 py-4">
+            <div className="flex flex-wrap gap-2">
+              {tabs.map((tab) => {
+                const active = projectTab === tab.key;
 
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => handleProjectTabChange(tab.key)}
-                  className={[
-                    "rounded-2xl border px-4 py-2.5 text-sm font-semibold transition",
-                    active
-                      ? "border-violet-600 bg-violet-600 text-white shadow-lg shadow-violet-600/20"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-violet-200 hover:bg-violet-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-violet-500/30 dark:hover:bg-slate-800",
-                  ].join(" ")}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => handleProjectTabChange(tab.key)}
+                    className={[
+                      "rounded-2xl border px-4 py-2.5 text-[15px] font-semibold transition",
+                      active
+                        ? "border-violet-600 bg-violet-600 text-white shadow-lg shadow-violet-600/20"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-violet-200 hover:bg-violet-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-violet-500/30 dark:hover:bg-slate-800",
+                    ].join(" ")}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {projectTab === "my-group" && <StudentProjectGroups course={course} />}
+        {projectTab === "my-group" && <StudentProjectGroups course={course} />}
+        {projectTab === "project-info" && <StudentProjectInfo course={course} />}
 
-      {projectTab === "project-info" && <StudentProjectInfo course={course} />}
+        {projectTab === "workflow" && (
+          <StudentProjectSubmissions
+            course={course}
+            initialPhaseId={selectedPhaseId}
+          />
+        )}
 
-      {projectTab === "workflow" && (
-        <StudentProjectSubmissions
-          course={course}
-          initialPhaseId={selectedPhaseId}
-        />
-      )}
-
-      {projectTab === "marks" && (
-        <div className="space-y-6">
-          <StudentProjectMarks course={course} />
-          <StudentProjectTotalSummary course={course} />
-        </div>
-      )}
-    </div>
-  );
-}
+        {projectTab === "marks" && (
+          <div className="space-y-6">
+            <StudentProjectMarks course={course} />
+            <StudentProjectTotalSummary course={course} />
+          </div>
+        )}
+      </div>
+    );
+  }
 
   const openComplaintTab = () => {
     setActiveTab("complaint");
+
     setTimeout(() => {
-      complaintRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      complaintRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
     }, 50);
   };
 
@@ -691,29 +598,28 @@ export default function StudentCoursePage() {
   }
 
   return (
-    <div className="mx-auto space-y-6">
-      <section className="relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-gradient-to-br from-white via-violet-50/60 to-sky-50/70 shadow-sm dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-slate-950">
-        <div className="pointer-events-none absolute -top-16 right-0 h-44 w-44 rounded-full bg-violet-300/20 blur-3xl dark:bg-violet-500/10" />
-        <div className="pointer-events-none absolute -bottom-16 left-0 h-44 w-44 rounded-full bg-sky-300/20 blur-3xl dark:bg-sky-500/10" />
-
-        <div className="relative p-4 sm:p-6 lg:p-8">
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.45fr_0.85fr]">
+    <div className="mx-auto space-y-5">
+      <section className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="p-4 sm:p-5 lg:p-6">
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_560px] xl:items-center">
             <div className="min-w-0">
-              <button
-                type="button"
-                className="inline-flex items-center gap-2 rounded-xl border border-transparent text-sm font-semibold text-violet-700 transition hover:text-violet-800 dark:text-violet-300 dark:hover:text-violet-200"
-                onClick={() => navigate("/student/dashboard")}
-              >
-                <ArrowLeftIcon />
-                Back to My Courses
-              </button>
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigate("/student/dashboard")}
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                >
+                  <ArrowLeftIcon />
+                  Back
+                </button>
 
-              <div className="ml-2 mt-4 inline-flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-[11px] font-semibold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
-                <BookIcon />
-                Course Details
+                <span className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3.5 py-2 text-sm font-semibold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
+                  <BookIcon />
+                  Course Details
+                </span>
               </div>
 
-              <h1 className="mt-4 text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl lg:text-4xl">
+              <h1 className="max-w-5xl text-2xl font-bold leading-snug tracking-tight text-slate-900 dark:text-white sm:text-[28px] lg:text-[30px]">
                 {course.code} — {course.title}
               </h1>
 
@@ -723,94 +629,84 @@ export default function StudentCoursePage() {
                 <Pill label={`Year: ${formatYear(course.year)}`} />
                 <Pill label={`Type: ${courseType === "lab" ? "Lab" : "Theory"}`} />
               </div>
-
-              <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-                View your marks, track your overall performance, check advanced lab final
-                breakdowns, review attendance, and submit course-specific complaints from one page.
-              </p>
             </div>
 
             <div
               className={[
-                "rounded-[28px] border bg-white/90 p-5 shadow-sm backdrop-blur-sm dark:bg-slate-950/80",
+                "rounded-3xl border p-4 shadow-sm",
                 totalTone === "good"
-                  ? "border-emerald-200 dark:border-emerald-500/20"
+                  ? "border-emerald-200 bg-emerald-50/50 dark:border-emerald-500/20 dark:bg-emerald-500/5"
                   : totalTone === "danger"
-                    ? "border-rose-200 dark:border-rose-500/20"
-                    : "border-slate-200/80 dark:border-slate-800",
+                    ? "border-rose-200 bg-rose-50/50 dark:border-rose-500/20 dark:bg-rose-500/5"
+                    : "border-slate-200 bg-slate-50/80 dark:border-slate-700 dark:bg-slate-800/50",
               ].join(" ")}
             >
-              <div className="flex items-start justify-between gap-3">
+              <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
                     Current Result
-                  </div>
-                  <div className="mt-1 text-sm font-medium text-slate-600 dark:text-slate-400">
-                    Out of 100
-                  </div>
+                  </p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Course performance summary
+                  </p>
                 </div>
 
                 <button
                   type="button"
-                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                   onClick={() => navigate("/student/complaints")}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                 >
                   My Complaints
                   <ChevronIcon />
                 </button>
               </div>
 
-              <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    Grade
-                  </div>
-                  <div
-                    className={[
-                      "mt-2 text-5xl font-black tracking-tight sm:text-6xl",
-                      statusColor || "text-slate-900 dark:text-white",
-                    ].join(" ")}
-                  >
-                    {displayGrade || "-"}
-                  </div>
-                </div>
-
-                <div className="sm:text-right">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    Marks
-                  </div>
-                  <div
-                    className={[
-                      "mt-2 text-4xl font-black tracking-tight sm:text-5xl",
-                      statusColor || "text-slate-900 dark:text-white",
-                    ].join(" ")}
-                  >
-                    {displayTotal}
-                    <span className="ml-1 text-base font-bold text-slate-400 dark:text-slate-500 sm:text-lg">
-                      /100
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300">
-                {neededForAPlusText}
-              </div>
-
-              <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <ActionMiniCard
-                  label="Assessments"
-                  value={String(assessments.length)}
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <ResultMiniCard
+                  label="Grade"
+                  value={displayGrade || "-"}
+                  valueClassName={[
+                    "text-4xl",
+                    statusColor || "text-slate-900 dark:text-white",
+                  ].join(" ")}
                 />
-                <ActionMiniCard
+
+                <ResultMiniCard
+                  label="Marks"
+                  value={
+                    <>
+                      {displayTotal}
+                      <span className="ml-1 text-xs font-bold text-slate-400">
+                        /100
+                      </span>
+                    </>
+                  }
+                  valueClassName={[
+                    "text-3xl",
+                    statusColor || "text-slate-900 dark:text-white",
+                  ].join(" ")}
+                />
+
+                <ResultMiniCard
                   label={courseType === "lab" ? "Lab Main" : "CT Main"}
-                  value={courseType === "lab" ? `${displayLabMain}/25` : `${displayCtMain}/15`}
+                  value={
+                    courseType === "lab"
+                      ? `${displayLabMain}/25`
+                      : `${displayCtMain}/15`
+                  }
+                  valueClassName="text-2xl text-slate-900 dark:text-white"
                 />
-                <ActionMiniCard
+
+                <ResultMiniCard
                   label="Attendance"
                   value={
-                    attComputed ? `${attComputed.percentage}%` : attLoading ? "..." : "—"
+                    attComputed
+                      ? `${attComputed.percentage}%`
+                      : attLoading
+                        ? "..."
+                        : "—"
                   }
+                  valueClassName="text-2xl text-slate-900 dark:text-white"
                 />
               </div>
             </div>
@@ -828,10 +724,10 @@ export default function StudentCoursePage() {
         <section className="rounded-[28px] border border-slate-200/80 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-5 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
                 Assessment Breakdown
               </h2>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              <p className="mt-1 text-[15px] text-slate-500 dark:text-slate-400">
                 Published marks for this course. Advanced lab final now shows detailed breakdown.
               </p>
             </div>
@@ -973,7 +869,8 @@ export default function StudentCoursePage() {
                                 </div>
                               </div>
                               <div className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300">
-                                {regularLabAssessments.length} item{regularLabAssessments.length > 1 ? "s" : ""}
+                                {regularLabAssessments.length} item
+                                {regularLabAssessments.length > 1 ? "s" : ""}
                               </div>
                             </div>
 
@@ -1086,58 +983,59 @@ export default function StudentCoursePage() {
                             </td>
                           </tr>
 
-                          {a?.structureType === "lab_final" && advancedRows.length > 0 && (
-                            <tr className="bg-fuchsia-50/40 dark:bg-fuchsia-500/5">
-                              <td colSpan={4} className="px-6 py-4">
-                                <div className="rounded-2xl border border-fuchsia-200 bg-white p-4 dark:border-fuchsia-500/20 dark:bg-slate-950/60">
-                                  <div className="mb-3 flex items-center justify-between gap-3">
-                                    <div>
-                                      <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                                        Advanced Lab Final Breakdown
+                          {a?.structureType === "lab_final" &&
+                            advancedRows.length > 0 && (
+                              <tr className="bg-fuchsia-50/40 dark:bg-fuchsia-500/5">
+                                <td colSpan={4} className="px-6 py-4">
+                                  <div className="rounded-2xl border border-fuchsia-200 bg-white p-4 dark:border-fuchsia-500/20 dark:bg-slate-950/60">
+                                    <div className="mb-3 flex items-center justify-between gap-3">
+                                      <div>
+                                        <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                          Advanced Lab Final Breakdown
+                                        </div>
+                                        <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                          Project phases, project components, and lab final questions
+                                        </div>
                                       </div>
-                                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                        Project phases, project components, and lab final questions
+                                      <div className="rounded-full border border-fuchsia-200 bg-fuchsia-50 px-3 py-1 text-xs font-bold text-fuchsia-700 dark:border-fuchsia-500/20 dark:bg-fuchsia-500/10 dark:text-fuchsia-300">
+                                        Total: {round2(a.obtainedMarks || 0)} / {a.fullMarks}
                                       </div>
                                     </div>
-                                    <div className="rounded-full border border-fuchsia-200 bg-fuchsia-50 px-3 py-1 text-xs font-bold text-fuchsia-700 dark:border-fuchsia-500/20 dark:bg-fuchsia-500/10 dark:text-fuchsia-300">
-                                      Total: {round2(a.obtainedMarks || 0)} / {a.fullMarks}
-                                    </div>
-                                  </div>
 
-                                  <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">
-                                    <table className="min-w-full text-sm">
-                                      <thead className="bg-slate-50 dark:bg-slate-800/70">
-                                        <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                          <th className="px-4 py-3">Group</th>
-                                          <th className="px-4 py-3">Item</th>
-                                          <th className="px-4 py-3">Full</th>
-                                          <th className="px-4 py-3">Obtained</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                        {advancedRows.map((row) => (
-                                          <tr key={row.key}>
-                                            <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                                              {row.group}
-                                            </td>
-                                            <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">
-                                              {row.label}
-                                            </td>
-                                            <td className="px-4 py-3 text-slate-700 dark:text-slate-200">
-                                              {row.fullMarks}
-                                            </td>
-                                            <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">
-                                              {round2(row.obtainedMarks)}
-                                            </td>
+                                    <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">
+                                      <table className="min-w-full text-sm">
+                                        <thead className="bg-slate-50 dark:bg-slate-800/70">
+                                          <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                            <th className="px-4 py-3">Group</th>
+                                            <th className="px-4 py-3">Item</th>
+                                            <th className="px-4 py-3">Full</th>
+                                            <th className="px-4 py-3">Obtained</th>
                                           </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                          {advancedRows.map((row) => (
+                                            <tr key={row.key}>
+                                              <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                                                {row.group}
+                                              </td>
+                                              <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">
+                                                {row.label}
+                                              </td>
+                                              <td className="px-4 py-3 text-slate-700 dark:text-slate-200">
+                                                {row.fullMarks}
+                                              </td>
+                                              <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">
+                                                {round2(row.obtainedMarks)}
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
                                   </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
+                                </td>
+                              </tr>
+                            )}
                         </ReactFragment>
                       );
                     })}
@@ -1156,6 +1054,7 @@ export default function StudentCoursePage() {
               <>
                 {ctAssessments.map((a) => {
                   const key = a.id || a._id;
+
                   return (
                     <AssessmentCard
                       key={key}
@@ -1208,6 +1107,7 @@ export default function StudentCoursePage() {
 
                 {nonCtAssessments.map((a) => {
                   const key = a.id || a._id;
+
                   return (
                     <AssessmentCard
                       key={key}
@@ -1230,10 +1130,11 @@ export default function StudentCoursePage() {
         </section>
       )}
 
-
       {activeTab === "project" && <StudentProjectSection course={course} />}
 
-      {activeTab === "submissions" && <StudentLabSubmissions courseId={courseId} />}
+      {activeTab === "submissions" && (
+        <StudentLabSubmissions courseId={courseId} />
+      )}
 
       {activeTab === "materials" && (
         <section className="rounded-[28px] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -1352,51 +1253,25 @@ export default function StudentCoursePage() {
                 <p className="mt-1 leading-6">{complaintClosedMessage}</p>
               </div>
             ) : (
-            <form onSubmit={handleSubmitComplaint} className="space-y-5">
-              <div
-                className={[
-                  "grid grid-cols-1 gap-4",
-                  complaintCategory === "attendance" ? "md:grid-cols-3" : "md:grid-cols-2",
-                ].join(" ")}
-              >
-                <TopControlCard label="Category" hint="Choose complaint type.">
-                  <div className="relative">
-                    <select
-                      className="form-control h-12 w-full rounded-xl border border-slate-200 bg-white px-4 pr-10 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-violet-500"
-                      value={complaintCategory}
-                      onChange={(e) => setComplaintCategory(e.target.value)}
-                    >
-                      <option value="marks">Marks</option>
-                      <option value="attendance">Attendance</option>
-                      <option value="general">General</option>
-                    </select>
-
-                    <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400 dark:text-slate-500">
-                      <SelectChevronIcon />
-                    </span>
-                  </div>
-                </TopControlCard>
-
-                {complaintCategory === "marks" ? (
-                  <TopControlCard
-                    label="Related To"
-                    hint="Choose overall or a specific assessment."
-                  >
+              <form onSubmit={handleSubmitComplaint} className="space-y-5">
+                <div
+                  className={[
+                    "grid grid-cols-1 gap-4",
+                    complaintCategory === "attendance"
+                      ? "md:grid-cols-3"
+                      : "md:grid-cols-2",
+                  ].join(" ")}
+                >
+                  <TopControlCard label="Category" hint="Choose complaint type.">
                     <div className="relative">
                       <select
                         className="form-control h-12 w-full rounded-xl border border-slate-200 bg-white px-4 pr-10 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-violet-500"
-                        value={relatedTo}
-                        onChange={(e) => setRelatedTo(e.target.value)}
+                        value={complaintCategory}
+                        onChange={(e) => setComplaintCategory(e.target.value)}
                       >
-                        <option value="overall">Overall Result</option>
-                        {assessments.map((a) => {
-                          const key = a.id || a._id;
-                          return (
-                            <option key={key} value={key}>
-                              {a.name}
-                            </option>
-                          );
-                        })}
+                        <option value="marks">Marks</option>
+                        <option value="attendance">Attendance</option>
+                        <option value="general">General</option>
                       </select>
 
                       <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400 dark:text-slate-500">
@@ -1404,87 +1279,116 @@ export default function StudentCoursePage() {
                       </span>
                     </div>
                   </TopControlCard>
-                ) : complaintCategory === "attendance" ? (
-                  <>
+
+                  {complaintCategory === "marks" ? (
                     <TopControlCard
-                      label="Date"
-                      hint="Select the attendance session date."
+                      label="Related To"
+                      hint="Choose overall or a specific assessment."
                     >
-                      <DatePickerField
-                        value={complaintAttDate}
-                        onChange={setComplaintAttDate}
-                      />
+                      <div className="relative">
+                        <select
+                          className="form-control h-12 w-full rounded-xl border border-slate-200 bg-white px-4 pr-10 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-violet-500"
+                          value={relatedTo}
+                          onChange={(e) => setRelatedTo(e.target.value)}
+                        >
+                          <option value="overall">Overall Result</option>
+                          {assessments.map((a) => {
+                            const key = a.id || a._id;
+
+                            return (
+                              <option key={key} value={key}>
+                                {a.name}
+                              </option>
+                            );
+                          })}
+                        </select>
+
+                        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400 dark:text-slate-500">
+                          <SelectChevronIcon />
+                        </span>
+                      </div>
                     </TopControlCard>
+                  ) : complaintCategory === "attendance" ? (
+                    <>
+                      <TopControlCard
+                        label="Date"
+                        hint="Select the attendance session date."
+                      >
+                        <DatePickerField
+                          value={complaintAttDate}
+                          onChange={setComplaintAttDate}
+                        />
+                      </TopControlCard>
 
-                    <TopControlCard
-                      label="Period"
-                      hint="Enter the class period number."
-                    >
-                      <input
-                        type="number"
-                        min={1}
-                        max={20}
-                        className="form-control h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-violet-500"
-                        value={complaintAttPeriod}
-                        onChange={(e) => setComplaintAttPeriod(e.target.value)}
-                      />
-                    </TopControlCard>
-                  </>
-                ) : null}
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200">
-                  Your message
-                </label>
-
-                <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-                  <textarea
-                    rows={7}
-                    className="min-h-[180px] w-full resize-y border-0 bg-transparent p-0 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:ring-0 dark:text-slate-100 dark:placeholder:text-slate-500"
-                    placeholder={
-                      complaintCategory === "marks"
-                        ? "Example: My Mid mark seems missing, breakdown is wrong, or the total looks incorrect. Please review."
-                        : complaintCategory === "attendance"
-                          ? "Example: I was present but marked absent. Please check this class session."
-                          : "Example: Assessment missing, marks not visible, or another course-related issue."
-                    }
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                  />
+                      <TopControlCard
+                        label="Period"
+                        hint="Enter the class period number."
+                      >
+                        <input
+                          type="number"
+                          min={1}
+                          max={20}
+                          className="form-control h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-violet-500"
+                          value={complaintAttPeriod}
+                          onChange={(e) => setComplaintAttPeriod(e.target.value)}
+                        />
+                      </TopControlCard>
+                    </>
+                  ) : null}
                 </div>
 
-                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                  Write the issue clearly and briefly. Mention exact component, phase,
-                  question, date, or period where relevant.
-                </p>
-              </div>
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200">
+                    Your message
+                  </label>
 
-              <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900/80 sm:flex-row sm:items-center sm:justify-between">
-                <div className="text-xs leading-5 text-slate-500 dark:text-slate-400">
-                  Your teacher will review this complaint from the complaints panel and
-                  may respond there.
+                  <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                    <textarea
+                      rows={7}
+                      className="min-h-[180px] w-full resize-y border-0 bg-transparent p-0 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:ring-0 dark:text-slate-100 dark:placeholder:text-slate-500"
+                      placeholder={
+                        complaintCategory === "marks"
+                          ? "Example: My Mid mark seems missing, breakdown is wrong, or the total looks incorrect. Please review."
+                          : complaintCategory === "attendance"
+                            ? "Example: I was present but marked absent. Please check this class session."
+                            : "Example: Assessment missing, marks not visible, or another course-related issue."
+                      }
+                      value={message}
+                      onChange={(e) => setMessage(e.target.value)}
+                    />
+                  </div>
+
+                  <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    Write the issue clearly and briefly. Mention exact component,
+                    phase, question, date, or period where relevant.
+                  </p>
                 </div>
 
-                <button
-                  type="submit"
-                  disabled={complaintLoading}
-                  className="inline-flex min-w-[210px] items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:opacity-60"
-                >
-                  {complaintLoading ? (
-                    <>
-                      <SpinnerIcon />
-                      Submitting…
-                    </>
-                  ) : (
-                    <>
-                      <SendIcon />
-                      Submit Complaint
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
+                <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900/80 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+                    Your teacher will review this complaint from the complaints panel
+                    and may respond there.
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={complaintLoading}
+                    className="inline-flex min-w-[210px] items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:opacity-60"
+                  >
+                    {complaintLoading ? (
+                      <>
+                        <SpinnerIcon />
+                        Submitting…
+                      </>
+                    ) : (
+                      <>
+                        <SendIcon />
+                        Submit Complaint
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
             )}
           </div>
         </section>
@@ -1561,28 +1465,57 @@ export default function StudentCoursePage() {
                             <th className="px-4 py-3">Date</th>
                             <th className="px-4 py-3 text-center">Period</th>
                             <th className="px-4 py-3 text-center">Status</th>
+                            <th className="px-4 py-3 text-right">Action</th>
                           </tr>
                         </thead>
+
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                           {attComputed.latest.map((r) => (
-                            <tr key={`${r.date}-P${r.period}`}>
+                            <tr
+                              key={`${r.date}-P${r.period}`}
+                              className="transition hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                            >
                               <td className="px-4 py-3 text-slate-700 dark:text-slate-200">
                                 {r.date}
                               </td>
+
                               <td className="px-4 py-3 text-center text-slate-700 dark:text-slate-200">
                                 {r.period}
                               </td>
+
                               <td className="px-4 py-3 text-center">
                                 <span
                                   className={[
                                     "inline-flex rounded-full px-2.5 py-1 text-xs font-bold",
-                                    String(r.status).toLowerCase() === "present"
+                                    String(r.status).toLowerCase() === "present" ||
+                                      String(r.status).toLowerCase() === "p"
                                       ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
                                       : "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300",
                                   ].join(" ")}
                                 >
                                   {r.status}
                                 </span>
+                              </td>
+
+                              <td className="px-4 py-3 text-right">
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-xs font-semibold text-violet-700 transition hover:bg-violet-100 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300 dark:hover:bg-violet-500/15"
+                                  onClick={() => {
+                                    setComplaintCategory("attendance");
+                                    setComplaintAttDate(r.date);
+                                    setComplaintAttPeriod(r.period);
+                                    setComplaintError("");
+                                    setComplaintSuccess("");
+                                    setMessage(
+                                      `I want to report an attendance issue for Date: ${r.date}, Period: ${r.period}.`
+                                    );
+                                    openComplaintTab();
+                                  }}
+                                >
+                                  Report Issue
+                                  <ChatIcon />
+                                </button>
                               </td>
                             </tr>
                           ))}
@@ -1608,31 +1541,42 @@ export default function StudentCoursePage() {
 
 function CourseSectionTabs({ tabs, activeTab, onChange }) {
   return (
-    <section className="rounded-[28px] border border-slate-200/80 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div className="overflow-x-auto">
-        <div className="flex min-w-max gap-2 p-3 sm:p-4">
-          {tabs.map((tab) => {
-            const isActive = activeTab === tab.key;
+    <section className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex flex-wrap gap-2">
+        {tabs.map((tab) => {
+          const isActive = activeTab === tab.key;
 
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => onChange(tab.key)}
-                className={[
-                  "inline-flex items-center justify-center whitespace-nowrap rounded-2xl px-4 py-2.5 text-sm font-semibold transition",
-                  isActive
-                    ? "bg-violet-600 text-white shadow-sm"
-                    : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700",
-                ].join(" ")}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => onChange(tab.key)}
+              className={[
+                "inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-[15px] font-semibold transition",
+                isActive
+                  ? "bg-violet-600 text-white shadow-md shadow-violet-600/20"
+                  : "border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700",
+              ].join(" ")}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
     </section>
+  );
+}
+
+function ResultMiniCard({ label, value, valueClassName = "" }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+      <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
+        {label}
+      </p>
+      <div className={`mt-2 font-black leading-none ${valueClassName}`}>
+        {value}
+      </div>
+    </div>
   );
 }
 
@@ -1714,7 +1658,7 @@ function AssessmentCard({ assessment, courseType, advancedRows = [], onComplaint
 
 function Pill({ label }) {
   return (
-    <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+    <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
       {label}
     </span>
   );
@@ -1780,6 +1724,7 @@ function DatePickerField({ value, onChange }) {
     </div>
   );
 }
+
 function TopControlCard({ label, hint, children }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/40">
@@ -1816,7 +1761,13 @@ function SelectChevronIcon() {
 
 function ArrowLeftIcon() {
   return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M19 12H5" />
       <path d="M12 19l-7-7 7-7" />
     </svg>
@@ -1825,7 +1776,13 @@ function ArrowLeftIcon() {
 
 function BookIcon() {
   return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
       <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5V4.5A2.5 2.5 0 0 1 6.5 2z" />
     </svg>
@@ -1834,7 +1791,13 @@ function BookIcon() {
 
 function ChevronIcon() {
   return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M9 18l6-6-6-6" />
     </svg>
   );
@@ -1842,7 +1805,13 @@ function ChevronIcon() {
 
 function ChatIcon() {
   return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
     </svg>
   );
@@ -1870,7 +1839,13 @@ function SpinnerIcon() {
 
 function SendIcon() {
   return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M22 2L11 13" />
       <path d="M22 2L15 22l-4-9-9-4 20-7z" />
     </svg>
