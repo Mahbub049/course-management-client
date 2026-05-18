@@ -1,5 +1,5 @@
-import { useParams, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
 
 import TeacherCourseLayout from "./teacherCourse/TeacherCourseLayout";
 import TabStudents from "./teacherCourse/TabStudents";
@@ -14,22 +14,53 @@ import TabObe from "./teacherCourse/TabObe";
 
 import { fetchCourseById } from "../services/courseService";
 
+const DEFAULT_TAB = "marks";
+
+const BASE_TABS = [
+  "marks",
+  "assessments",
+  "materials",
+  "obe",
+  "submissions",
+  "students",
+  "attendance",
+  "settings",
+];
+
+function getSafeTab(tab, course) {
+  const isProjectMode = course?.projectFeature?.mode === "project";
+
+  const allowedTabs = isProjectMode
+    ? [...BASE_TABS, "projects"]
+    : BASE_TABS;
+
+  if (!tab || !allowedTabs.includes(tab)) {
+    return DEFAULT_TAB;
+  }
+
+  return tab;
+}
+
 export default function TeacherCoursePage() {
   const { courseId } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [activeTab, setActiveTab] = useState("marks");
   const [course, setCourse] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const role = localStorage.getItem("marksPortalRole");
 
   useEffect(() => {
-    if (role !== "teacher") navigate("/login");
+    if (role !== "teacher") {
+      navigate("/login", { replace: true });
+    }
   }, [role, navigate]);
 
   useEffect(() => {
     async function load() {
+      setLoading(true);
+
       try {
         const data = await fetchCourseById(courseId);
         setCourse(data);
@@ -40,15 +71,38 @@ export default function TeacherCoursePage() {
         setLoading(false);
       }
     }
-    load();
+
+    if (courseId) {
+      load();
+    }
   }, [courseId]);
 
+  const rawTab = searchParams.get("tab");
+
+  const activeTab = useMemo(() => {
+    return getSafeTab(rawTab, course);
+  }, [rawTab, course]);
+
   useEffect(() => {
-    const isProjectMode = course?.projectFeature?.mode === "project";
-    if (!isProjectMode && activeTab === "projects") {
-      setActiveTab("settings");
+    if (loading || !course) return;
+
+    const safeTab = getSafeTab(rawTab, course);
+
+    if (rawTab !== safeTab) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.set("tab", safeTab);
+      setSearchParams(nextParams, { replace: true });
     }
-  }, [course, activeTab]);
+  }, [rawTab, course, loading, searchParams, setSearchParams]);
+
+  const handleTabChange = (tabId) => {
+    const safeTab = getSafeTab(tabId, course);
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("tab", safeTab);
+
+    setSearchParams(nextParams);
+  };
 
   if (loading) {
     return <div className="p-6 text-sm text-slate-500">Loading...</div>;
@@ -62,7 +116,7 @@ export default function TeacherCoursePage() {
     <TeacherCourseLayout
       course={course}
       activeTab={activeTab}
-      setActiveTab={setActiveTab}
+      setActiveTab={handleTabChange}
     >
       {activeTab === "students" && <TabStudents courseId={courseId} />}
 
@@ -74,11 +128,22 @@ export default function TeacherCoursePage() {
         />
       )}
 
-      {activeTab === "marks" && <TabMarks courseId={courseId} course={course} />}
+      {activeTab === "marks" && (
+        <TabMarks courseId={courseId} course={course} />
+      )}
+
       {activeTab === "attendance" && <TabAttendance courseId={courseId} />}
+
       {activeTab === "materials" && <TabMaterials courseId={courseId} />}
-      {activeTab === "obe" && <TabObe courseId={courseId} course={course} />}
-      {activeTab === "submissions" && <TeacherLabSubmissions courseId={courseId} />}
+
+      {activeTab === "obe" && (
+        <TabObe courseId={courseId} course={course} />
+      )}
+
+      {activeTab === "submissions" && (
+        <TeacherLabSubmissions courseId={courseId} />
+      )}
+
       {activeTab === "projects" && <TabProjects course={course} />}
 
       {activeTab === "settings" && (
@@ -86,7 +151,7 @@ export default function TeacherCoursePage() {
           courseId={courseId}
           course={course}
           onCourseUpdated={setCourse}
-          onOpenProjects={() => setActiveTab("projects")}
+          onOpenProjects={() => handleTabChange("projects")}
         />
       )}
     </TeacherCourseLayout>

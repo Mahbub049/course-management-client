@@ -18,8 +18,8 @@ function AppLayout() {
   const [profileImage, setProfileImage] = useState("");
 
   useEffect(() => {
-const r = getAuthItem("marksPortalRole");
-const n = getAuthItem("marksPortalName") || "";
+    const r = getAuthItem("marksPortalRole");
+    const n = getAuthItem("marksPortalName") || "";
     setRole(r);
     setUserName(n);
 
@@ -33,8 +33,8 @@ const n = getAuthItem("marksPortalName") || "";
 
   useEffect(() => {
     const syncProfileData = () => {
-const n = getAuthItem("marksPortalName") || "";
-const img = getAuthItem("marksPortalProfileImage") || "";
+      const n = getAuthItem("marksPortalName") || "";
+      const img = getAuthItem("marksPortalProfileImage") || "";
 
       setUserName(n);
       setProfileImage(img);
@@ -63,11 +63,11 @@ const img = getAuthItem("marksPortalProfileImage") || "";
     localStorage.setItem("marksPortalSidebarCollapsed", String(collapsed));
   }, [collapsed]);
 
-const handleLogout = () => {
-  clearAuthData();
-  localStorage.removeItem("marksPortalRememberMe");
-  navigate("/login", { replace: true });
-};
+  const handleLogout = () => {
+    clearAuthData();
+    localStorage.removeItem("marksPortalRememberMe");
+    navigate("/login", { replace: true });
+  };
 
   const teacherLinks = [
     { to: "/teacher/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
@@ -286,11 +286,11 @@ const handleLogout = () => {
   );
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 transition-colors duration-300 dark:bg-[#020617] dark:text-slate-100">
-      <div className="flex min-h-screen">
+    <div className="h-screen overflow-hidden bg-slate-100 text-slate-900 transition-colors duration-300 dark:bg-[#020617] dark:text-slate-100">
+      <div className="flex h-screen overflow-hidden">
         <aside
           className={[
-            "relative hidden border-r border-slate-200/80 bg-white/90 backdrop-blur-sm transition-all duration-300 dark:border-slate-800 dark:bg-slate-950/80 md:flex md:flex-col",
+            "sticky left-0 top-0 hidden h-screen shrink-0 overflow-hidden border-r border-slate-200/80 bg-white/90 backdrop-blur-sm transition-all duration-300 dark:border-slate-800 dark:bg-slate-950/80 md:flex md:flex-col",
             collapsed ? "md:w-20" : "md:w-72",
           ].join(" ")}
         >
@@ -324,8 +324,8 @@ const handleLogout = () => {
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/85 px-4 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/75 sm:px-6 md:px-8">
+        <div className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
+          <header className="z-30 shrink-0 border-b border-slate-200/80 bg-white/85 px-4 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/75 sm:px-6 md:px-8">
             <div className="flex h-16 items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
                 <button
@@ -401,7 +401,7 @@ const handleLogout = () => {
             </div>
           </header>
 
-          <main className="flex-1 min-w-0 px-4 py-5 sm:px-6 sm:py-6 md:px-8">
+          <main className="min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6 md:px-8">
             <Outlet />
           </main>
         </div>
