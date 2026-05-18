@@ -12,6 +12,18 @@ import {
 } from "../services/attendanceService";
 import Swal from "sweetalert2";
 
+const sortStudentsByRoll = (studentList = []) => {
+  return [...studentList].sort((a, b) => {
+    const rollA = String(a?.roll ?? "").trim();
+    const rollB = String(b?.roll ?? "").trim();
+
+    return rollA.localeCompare(rollB, undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
+  });
+};
+
 export default function TeacherAttendancePage() {
   const dateInputRef = useRef(null);
 
@@ -128,7 +140,7 @@ export default function TeacherAttendancePage() {
 
     try {
       const data = await getCourseStudents(form.courseId);
-      const list = data || [];
+      const list = sortStudentsByRoll(Array.isArray(data) ? data : []);
       setStudents(list);
       setShowSheet(list.length > 0);
 
