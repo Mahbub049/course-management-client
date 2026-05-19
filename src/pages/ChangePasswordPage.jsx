@@ -17,6 +17,7 @@ function ChangePasswordPage() {
   const [displayName, setDisplayName] = useState(
     localStorage.getItem("marksPortalName") || ""
   );
+
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState("");
   const [profileSuccess, setProfileSuccess] = useState("");
@@ -34,10 +35,11 @@ function ChangePasswordPage() {
   );
   const [profileImageBase64, setProfileImageBase64] = useState("");
 
-
   const handleProfileImageChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    setProfileError("");
 
     if (!file.type.startsWith("image/")) {
       setProfileError("Please select a valid image file.");
@@ -51,8 +53,8 @@ function ChangePasswordPage() {
 
     const reader = new FileReader();
     reader.onloadend = () => {
-      setProfileImage(reader.result); // preview
-      setProfileImageBase64(reader.result); // send to server
+      setProfileImage(reader.result);
+      setProfileImageBase64(reader.result);
     };
     reader.readAsDataURL(file);
   };
@@ -80,6 +82,7 @@ function ChangePasswordPage() {
     try {
       setLoading(true);
       await changePasswordRequest(currentPassword, newPassword);
+
       setSuccess("Password changed successfully.");
       setCurrentPassword("");
       setNewPassword("");
@@ -111,7 +114,6 @@ function ChangePasswordPage() {
 
       setProfileSuccess("Profile updated successfully.");
 
-      // ✅ update localStorage
       if (data.username) {
         localStorage.setItem("marksPortalUsername", data.username);
       }
@@ -124,9 +126,7 @@ function ChangePasswordPage() {
         localStorage.setItem("marksPortalProfileImage", data.profileImage);
       }
 
-      // 🔥 THIS LINE (very important)
       window.dispatchEvent(new Event("marksPortalProfileUpdated"));
-
     } catch (err) {
       console.error(err);
       const msg = err.response?.data?.message || "Failed to update profile.";
@@ -153,6 +153,7 @@ function ChangePasswordPage() {
             <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
               Manage Your Account
             </h1>
+
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
               Update your password securely. Teachers can also change username
               and display name from this page.
@@ -172,8 +173,9 @@ function ChangePasswordPage() {
 
       {/* Cards */}
       <div
-        className={`grid grid-cols-1 gap-5 ${role === "teacher" ? "xl:grid-cols-2" : ""
-          }`}
+        className={`grid grid-cols-1 gap-5 ${
+          role === "teacher" ? "xl:grid-cols-2" : ""
+        }`}
       >
         {/* Change Password */}
         <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -182,6 +184,7 @@ function ChangePasswordPage() {
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-indigo-100 bg-indigo-50 dark:border-indigo-500/20 dark:bg-indigo-500/10">
                 <LockIcon />
               </div>
+
               <div>
                 <h2 className="text-base font-semibold text-slate-900 dark:text-white">
                   Change Password
@@ -197,15 +200,14 @@ function ChangePasswordPage() {
             {error && (
               <AlertBox tone="danger" title="Action required" message={error} />
             )}
+
             {success && (
               <AlertBox tone="success" title="Success" message={success} />
             )}
 
             <form onSubmit={handleSubmit} className="mt-4 space-y-4">
               <Field label="Current Password">
-                <input
-                  type="password"
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
+                <PasswordInput
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
                   autoComplete="current-password"
@@ -217,9 +219,7 @@ function ChangePasswordPage() {
                 label="New Password"
                 hint="Minimum 6 characters. Use a stronger password if possible."
               >
-                <input
-                  type="password"
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
+                <PasswordInput
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   autoComplete="new-password"
@@ -228,9 +228,7 @@ function ChangePasswordPage() {
               </Field>
 
               <Field label="Confirm New Password">
-                <input
-                  type="password"
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
+                <PasswordInput
                   value={confirmNewPassword}
                   onChange={(e) => setConfirmNewPassword(e.target.value)}
                   autoComplete="new-password"
@@ -269,46 +267,13 @@ function ChangePasswordPage() {
                 <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-violet-100 bg-violet-50 dark:border-violet-500/20 dark:bg-violet-500/10">
                   <UserBadgeIcon />
                 </div>
+
                 <div>
                   <h2 className="text-base font-semibold text-slate-900 dark:text-white">
                     Account Details
                   </h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     Update your teacher username and display name.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/60">
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
-                Profile Picture
-              </label>
-
-              <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-center">
-                <div className="h-24 w-24 overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-                  {profileImage ? (
-                    <img
-                      src={profileImage}
-                      alt="Profile preview"
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
-                      No image
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex-1">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleProfileImageChange}
-                    className="block w-full cursor-pointer text-sm text-slate-600 file:mr-4 file:cursor-pointer file:rounded-xl file:border-0 file:bg-indigo-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-indigo-700 dark:text-slate-300"
-                  />
-                  <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                    JPG, PNG, WEBP supported. Keep image under 5MB.
                   </p>
                 </div>
               </div>
@@ -322,6 +287,7 @@ function ChangePasswordPage() {
                   message={profileError}
                 />
               )}
+
               {profileSuccess && (
                 <AlertBox
                   tone="success"
@@ -331,6 +297,40 @@ function ChangePasswordPage() {
               )}
 
               <form onSubmit={handleProfileSave} className="mt-4 space-y-4">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/60">
+                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
+                    Profile Picture
+                  </label>
+
+                  <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-center">
+                    <div className="h-24 w-24 overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+                      {profileImage ? (
+                        <img
+                          src={profileImage}
+                          alt="Profile preview"
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
+                          No image
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex-1">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleProfileImageChange}
+                        className="block w-full cursor-pointer text-sm text-slate-600 file:mr-4 file:cursor-pointer file:rounded-xl file:border-0 file:bg-indigo-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-indigo-700 dark:text-slate-300"
+                      />
+                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                        JPG, PNG, WEBP supported. Keep image under 5MB.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 <Field
                   label="Teacher Username"
                   hint="This is the ID you use to log in as teacher."
@@ -402,12 +402,41 @@ function Field({ label, hint, children }) {
       <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
         {label}
       </label>
+
       <div className="mt-1.5">{children}</div>
+
       {hint ? (
         <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
           {hint}
         </p>
       ) : null}
+    </div>
+  );
+}
+
+function PasswordInput({ value, onChange, autoComplete, required = false }) {
+  const [showPassword, setShowPassword] = useState(false);
+
+  return (
+    <div className="relative">
+      <input
+        type={showPassword ? "text" : "password"}
+        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-12 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
+        value={value}
+        onChange={onChange}
+        autoComplete={autoComplete}
+        required={required}
+      />
+
+      <button
+        type="button"
+        onClick={() => setShowPassword((prev) => !prev)}
+        className="absolute inset-y-0 right-3 flex items-center justify-center rounded-xl px-2 text-slate-500 transition hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:text-slate-400 dark:hover:text-slate-200"
+        aria-label={showPassword ? "Hide password" : "Show password"}
+        title={showPassword ? "Hide password" : "Show password"}
+      >
+        {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+      </button>
     </div>
   );
 }
@@ -519,6 +548,38 @@ function SpinnerIcon() {
         fill="currentColor"
         d="M4 12a8 8 0 0 1 8-8v3a5 5 0 0 0-5 5H4z"
       />
+    </svg>
+  );
+}
+
+function EyeIcon() {
+  return (
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function EyeOffIcon() {
+  return (
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M3 3l18 18" />
+      <path d="M10.6 10.6A2 2 0 0 0 12 14a2 2 0 0 0 1.4-.6" />
+      <path d="M9.9 4.2A10.4 10.4 0 0 1 12 4c6 0 10 8 10 8a18.5 18.5 0 0 1-3.2 4.2" />
+      <path d="M6.6 6.6A18.5 18.5 0 0 0 2 12s4 8 10 8a10.4 10.4 0 0 0 4.4-1" />
     </svg>
   );
 }
