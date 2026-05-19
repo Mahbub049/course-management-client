@@ -18,7 +18,7 @@ import TeacherRoutinePage from "./pages/TeacherRoutinePage.jsx";
 import TeacherRoutineBuilderPage from "./pages/TeacherRoutineBuilderPage.jsx";
 import AcademicCalendarPage from "./pages/AcademicCalendarPage.jsx";
 import AcademicCalendarManagePage from "./pages/AcademicCalendarManagePage.jsx";
-
+import ForgotPasswordPage from "./pages/ForgotPasswordPage.jsx";
 
 import AppLayout from './layouts/AppLayout.jsx';
 import TeacherAttendanceSheetPage from './pages/TeacherAttendanceSheetPage.jsx';
@@ -30,6 +30,8 @@ function App() {
     <Routes>
       {/* Public route */}
       <Route path="/login" element={<LoginPage />} />
+
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
       {/* Layout for all authenticated pages */}
       <Route element={<AppLayout />}>

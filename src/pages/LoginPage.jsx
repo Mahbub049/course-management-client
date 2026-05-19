@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { loginRequest } from "../services/authService";
 import { getAuthItem, saveAuthData } from "../utils/authStorage";
 
@@ -131,7 +131,7 @@ function LoginPage() {
                   </div>
 
                   <h2 className="mt-4 text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
-                    Welcome back
+                    Welcome!
                   </h2>
                   <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
                     Enter your credentials to access your dashboard.
@@ -148,7 +148,7 @@ function LoginPage() {
                 <form onSubmit={handleSubmit} className="space-y-5">
                   <Field
                     label="Username"
-                    hint="Use your student roll or teacher ID"
+                    
                   >
                     <div className="relative">
                       <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
@@ -197,7 +197,7 @@ function LoginPage() {
                     </div>
                   </Field>
 
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-3">
                     <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
                       <input
                         type="checkbox"
@@ -207,6 +207,13 @@ function LoginPage() {
                       />
                       Keep me logged in
                     </label>
+
+                    <Link
+                      to="/forgot-password"
+                      className="text-sm font-semibold text-indigo-600 transition hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
+                    >
+                      Forgot password?
+                    </Link>
                   </div>
 
                   <button
@@ -227,7 +234,7 @@ function LoginPage() {
                     )}
                   </button>
 
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-6 text-slate-600 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300">
+                  {/* <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-6 text-slate-600 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300">
                     <span className="font-semibold text-slate-800 dark:text-slate-100">
                       First-time login:
                     </span>{" "}
@@ -236,7 +243,7 @@ function LoginPage() {
                     password from the{" "}
                     <span className="font-semibold">Change Password</span>{" "}
                     page.
-                  </div>
+                  </div> */}
                 </form>
 
                 <p className="mt-6 text-center text-[14px] text-slate-400 dark:text-slate-500">
