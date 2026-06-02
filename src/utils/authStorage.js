@@ -7,7 +7,30 @@ const AUTH_KEYS = [
 ];
 
 export function getAuthItem(key) {
-  return localStorage.getItem(key) || sessionStorage.getItem(key);
+  return localStorage.getItem(key) || sessionStorage.getItem(key) || "";
+}
+
+export function getActiveAuthStorage() {
+  const rememberMe = localStorage.getItem("marksPortalRememberMe") === "true";
+
+  if (rememberMe) return localStorage;
+
+  if (sessionStorage.getItem("marksPortalToken")) return sessionStorage;
+
+  if (localStorage.getItem("marksPortalToken")) return localStorage;
+
+  return sessionStorage;
+}
+
+export function setAuthItem(key, value) {
+  if (value === undefined || value === null || value === "") {
+    localStorage.removeItem(key);
+    sessionStorage.removeItem(key);
+    return;
+  }
+
+  const storage = getActiveAuthStorage();
+  storage.setItem(key, value);
 }
 
 export function saveAuthData(data, rememberMe) {
@@ -38,4 +61,6 @@ export function clearAuthData() {
     localStorage.removeItem(key);
     sessionStorage.removeItem(key);
   });
+
+  localStorage.removeItem("marksPortalRememberMe");
 }

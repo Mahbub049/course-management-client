@@ -6,16 +6,17 @@ import {
   changePasswordRequest,
   updateProfileRequest,
 } from "../services/authService";
+import { getAuthItem, setAuthItem } from "../utils/authStorage";
 
 function ChangePasswordPage() {
   const navigate = useNavigate();
-  const role = localStorage.getItem("marksPortalRole");
+  const role = getAuthItem("marksPortalRole");
 
   const [username, setUsername] = useState(
-    localStorage.getItem("marksPortalUsername") || ""
+    getAuthItem("marksPortalUsername") || ""
   );
   const [displayName, setDisplayName] = useState(
-    localStorage.getItem("marksPortalName") || ""
+    getAuthItem("marksPortalName") || ""
   );
 
   const [profileLoading, setProfileLoading] = useState(false);
@@ -31,7 +32,7 @@ function ChangePasswordPage() {
   const [success, setSuccess] = useState("");
 
   const [profileImage, setProfileImage] = useState(
-    localStorage.getItem("marksPortalProfileImage") || ""
+    getAuthItem("marksPortalProfileImage") || ""
   );
   const [profileImageBase64, setProfileImageBase64] = useState("");
 
@@ -115,15 +116,15 @@ function ChangePasswordPage() {
       setProfileSuccess("Profile updated successfully.");
 
       if (data.username) {
-        localStorage.setItem("marksPortalUsername", data.username);
+        setAuthItem("marksPortalUsername", data.username);
       }
 
       if (data.name) {
-        localStorage.setItem("marksPortalName", data.name);
+        setAuthItem("marksPortalName", data.name);
       }
 
       if (data.profileImage) {
-        localStorage.setItem("marksPortalProfileImage", data.profileImage);
+        setAuthItem("marksPortalProfileImage", data.profileImage);
       }
 
       window.dispatchEvent(new Event("marksPortalProfileUpdated"));

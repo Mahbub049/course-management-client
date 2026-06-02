@@ -1,5 +1,6 @@
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
+import { getAuthItem } from "../utils/authStorage";
 
 import TeacherCourseLayout from "./teacherCourse/TeacherCourseLayout";
 import TabStudents from "./teacherCourse/TabStudents";
@@ -49,7 +50,7 @@ export default function TeacherCoursePage() {
   const [course, setCourse] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const role = localStorage.getItem("marksPortalRole");
+  const role = getAuthItem("marksPortalRole");
 
   useEffect(() => {
     if (role !== "teacher") {

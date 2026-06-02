@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { getAuthItem } from "../utils/authStorage";
 import {
   fetchTeacherComplaints,
   replyTeacherComplaint,
@@ -73,7 +74,7 @@ function getComponentText(c) {
 
 export default function TeacherComplaintsPage() {
   const navigate = useNavigate();
-  const role = localStorage.getItem("marksPortalRole");
+  const role = getAuthItem("marksPortalRole");
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

@@ -2,14 +2,18 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchTeacherCourses } from "../services/courseService";
 import { fetchTeacherComplaints } from "../services/complaintService";
+import { getAuthItem } from "../utils/authStorage";
 
 export default function TeacherDashboard() {
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const role = localStorage.getItem("marksPortalRole");
-    if (role !== "teacher") navigate("/login", { replace: true });
-  }, [navigate]);
+const role = getAuthItem("marksPortalRole");
+
+useEffect(() => {
+  if (role !== "teacher") {
+    navigate("/login", { replace: true });
+  }
+}, [role, navigate]);
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
@@ -18,15 +22,14 @@ export default function TeacherDashboard() {
     return "Good evening";
   }, []);
 
-  const teacherName = localStorage.getItem("marksPortalName") || "Teacher";
+  const teacherName = getAuthItem("marksPortalName") || "Teacher";
 
   const [statsLoading, setStatsLoading] = useState(true);
   const [coursesCount, setCoursesCount] = useState(0);
   const [pendingComplaintsCount, setPendingComplaintsCount] = useState(0);
 
   useEffect(() => {
-    const role = localStorage.getItem("marksPortalRole");
-    if (role !== "teacher") return;
+if (role !== "teacher") return;
 
     const loadStats = async () => {
       setStatsLoading(true);
@@ -54,7 +57,7 @@ export default function TeacherDashboard() {
     };
 
     loadStats();
-  }, []);
+  }, [role]);
 
   return (
     <div className="space-y-5 sm:space-y-6">

@@ -37,7 +37,7 @@ function getMonthLabel(dateText = "") {
 export default function AcademicCalendarPage() {
   const navigate = useNavigate();
 
-  const [role] = useState(localStorage.getItem("marksPortalRole"));
+  const [role] = useState(getAuthItem("marksPortalRole"));
   const [calendar, setCalendar] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState("All");
