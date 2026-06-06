@@ -16,18 +16,33 @@ const DEFAULT_ALLOWED_EXTENSIONS = [
   "pptx",
   "txt",
   "zip",
+  "c",
+  "cpp",
+  "java",
+  "py",
+  "js",
+  "jsx",
+  "html",
+  "css",
 ];
+
+const EXTENSION_PATTERN = /^[a-z0-9][a-z0-9_+-]{0,15}$/;
+
+function sanitizeExtension(value = "") {
+  const ext = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^\.+/, "");
+
+  return EXTENSION_PATTERN.test(ext) ? ext : "";
+}
 
 function normalizeAllowedExtensions(value) {
   const selected = Array.isArray(value)
-    ? value.map((item) => String(item || "").trim().toLowerCase())
+    ? value.map((item) => sanitizeExtension(item)).filter(Boolean)
     : [];
 
-  const valid = selected.filter((item) =>
-    DEFAULT_ALLOWED_EXTENSIONS.includes(item)
-  );
-
-  return valid.length ? Array.from(new Set(valid)) : DEFAULT_ALLOWED_EXTENSIONS;
+  return selected.length ? Array.from(new Set(selected)) : DEFAULT_ALLOWED_EXTENSIONS;
 }
 
 function getAcceptString(value) {

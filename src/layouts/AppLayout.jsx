@@ -8,14 +8,16 @@ function AppLayout() {
   const location = useLocation();
   const { isDark, toggleTheme } = useTheme();
 
-  const [role, setRole] = useState(null);
-  const [userName, setUserName] = useState("");
+const [role, setRole] = useState(() => getAuthItem("marksPortalRole"));
+const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") || "");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => {
     return localStorage.getItem("marksPortalSidebarCollapsed") === "true";
   });
 
-  const [profileImage, setProfileImage] = useState("");
+  const [profileImage, setProfileImage] = useState(
+  () => getAuthItem("marksPortalProfileImage") || ""
+);
 
   useEffect(() => {
     const r = getAuthItem("marksPortalRole");

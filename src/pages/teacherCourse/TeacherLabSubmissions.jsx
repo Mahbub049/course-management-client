@@ -23,9 +23,28 @@ const FILE_TYPE_OPTIONS = [
   { value: "pptx", label: "PPTX" },
   { value: "txt", label: "TXT" },
   { value: "zip", label: "ZIP" },
+  { value: "c", label: "C" },
+  { value: "cpp", label: "CPP" },
+  { value: "java", label: "JAVA" },
+  { value: "py", label: "PY" },
+  { value: "js", label: "JS" },
+  { value: "jsx", label: "JSX" },
+  { value: "html", label: "HTML" },
+  { value: "css", label: "CSS" },
 ];
 
 const DEFAULT_ALLOWED_EXTENSIONS = FILE_TYPE_OPTIONS.map((item) => item.value);
+const FIXED_FILE_TYPE_VALUES = new Set(DEFAULT_ALLOWED_EXTENSIONS);
+const EXTENSION_PATTERN = /^[a-z0-9][a-z0-9_+-]{0,15}$/;
+
+function sanitizeExtension(value = "") {
+  const ext = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^\.+/, "");
+
+  return EXTENSION_PATTERN.test(ext) ? ext : "";
+}
 
 const initialForm = {
   name: "Lab Assessment Submission",
@@ -38,6 +57,7 @@ const initialForm = {
   resourceTitle: "View Resource",
   resourceUrl: "",
   allowedExtensions: DEFAULT_ALLOWED_EXTENSIONS,
+  customExtension: "",
 };
 
 function formatDateTime(value) {
@@ -90,14 +110,12 @@ function formatFileSize(size = 0) {
 
 function normalizeAllowedExtensions(value, fallbackToDefault = true) {
   const selected = Array.isArray(value)
-    ? value.map((item) => String(item || "").trim().toLowerCase())
+    ? value.map((item) => sanitizeExtension(item)).filter(Boolean)
     : [];
 
-  const valid = selected.filter((item) =>
-    DEFAULT_ALLOWED_EXTENSIONS.includes(item)
-  );
+  const unique = Array.from(new Set(selected));
 
-  if (valid.length) return Array.from(new Set(valid));
+  if (unique.length) return unique;
   return fallbackToDefault ? DEFAULT_ALLOWED_EXTENSIONS : [];
 }
 
@@ -105,6 +123,39 @@ function formatAllowedExtensions(value) {
   return normalizeAllowedExtensions(value, true)
     .map((item) => item.toUpperCase())
     .join(", ");
+}
+
+function getDateMs(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+function sortSubmissions(rows = [], sortBy = "roll-asc") {
+  const sorted = [...rows];
+
+  if (sortBy === "roll-desc") {
+    return sorted.sort((a, b) =>
+      String(b?.roll || "").localeCompare(String(a?.roll || ""), undefined, {
+        numeric: true,
+        sensitivity: "base",
+      })
+    );
+  }
+
+  if (sortBy === "time-newest") {
+    return sorted.sort((a, b) => getDateMs(b?.submittedAt) - getDateMs(a?.submittedAt));
+  }
+
+  if (sortBy === "time-oldest") {
+    return sorted.sort((a, b) => getDateMs(a?.submittedAt) - getDateMs(b?.submittedAt));
+  }
+
+  return sorted.sort((a, b) =>
+    String(a?.roll || "").localeCompare(String(b?.roll || ""), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    })
+  );
 }
 
 function getSubmissionStatusMeta(item) {
@@ -160,6 +211,7 @@ export default function TeacherLabSubmissions({ courseId }) {
   const [loading, setLoading] = useState(true);
   const [savingForm, setSavingForm] = useState(false);
   const [actionLoading, setActionLoading] = useState("");
+  const [submissionSortBy, setSubmissionSortBy] = useState("roll-asc");
 
   const dateInputRef = useRef(null);
   const timeInputRef = useRef(null);
@@ -170,6 +222,28 @@ export default function TeacherLabSubmissions({ courseId }) {
   );
 
   const selectedStatusMeta = getSubmissionStatusMeta(selectedAssessment);
+
+  const sortedSubmissions = useMemo(
+    () => sortSubmissions(selectedData?.submissions || [], submissionSortBy),
+    [selectedData, submissionSortBy]
+  );
+
+  const selectedAllowedExtensions = normalizeAllowedExtensions(
+    form.allowedExtensions,
+    false
+  );
+
+  const allSelectableExtensions = Array.from(
+    new Set([...DEFAULT_ALLOWED_EXTENSIONS, ...selectedAllowedExtensions])
+  );
+
+  const allAllowedSelected =
+    allSelectableExtensions.length > 0 &&
+    allSelectableExtensions.every((ext) => selectedAllowedExtensions.includes(ext));
+
+  const customSelectedExtensions = selectedAllowedExtensions.filter(
+    (ext) => !FIXED_FILE_TYPE_VALUES.has(ext)
+  );
 
   const loadAssessments = async (preferredId = null) => {
     setLoading(true);
@@ -348,6 +422,7 @@ export default function TeacherLabSubmissions({ courseId }) {
       resourceTitle: item.resourceTitle || "View Resource",
       resourceUrl: item.resourceUrl || "",
       allowedExtensions: normalizeAllowedExtensions(item.allowedExtensions),
+      customExtension: "",
     });
 
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -480,6 +555,28 @@ export default function TeacherLabSubmissions({ courseId }) {
     }
   };
 
+  const handleUncheckSubmission = async (row) => {
+    setActionLoading(`uncheck-${row.id}`);
+    try {
+      await updateLabSubmissionStatus(row.id, {
+        status: "submitted",
+        awardedMarks: "",
+      });
+
+      await loadSelectedSubmissions(selectedId);
+      await loadAssessments(selectedId);
+    } catch (err) {
+      console.error(err);
+      Swal.fire(
+        "Failed",
+        err?.response?.data?.message || "Could not uncheck submission.",
+        "error"
+      );
+    } finally {
+      setActionLoading("");
+    }
+  };
+
   const handleSaveAllMarks = async () => {
     if (!selectedId || !selectedData?.submissions?.length) return;
 
@@ -542,16 +639,57 @@ export default function TeacherLabSubmissions({ courseId }) {
     : "open";
 
   const toggleAllowedExtension = (extension) => {
+    const cleanExtension = sanitizeExtension(extension);
+    if (!cleanExtension) return;
+
     setForm((prev) => {
       const current = normalizeAllowedExtensions(prev.allowedExtensions, false);
-      const exists = current.includes(extension);
+      const exists = current.includes(cleanExtension);
       const next = exists
-        ? current.filter((item) => item !== extension)
-        : [...current, extension];
+        ? current.filter((item) => item !== cleanExtension)
+        : [...current, cleanExtension];
 
       return {
         ...prev,
         allowedExtensions: next,
+      };
+    });
+  };
+
+  const toggleAllAllowedExtensions = () => {
+    setForm((prev) => {
+      const current = normalizeAllowedExtensions(prev.allowedExtensions, false);
+      const selectable = Array.from(new Set([...DEFAULT_ALLOWED_EXTENSIONS, ...current]));
+      const isAllSelected =
+        selectable.length > 0 && selectable.every((ext) => current.includes(ext));
+
+      return {
+        ...prev,
+        allowedExtensions: isAllSelected ? [] : selectable,
+      };
+    });
+  };
+
+  const handleAddCustomExtension = () => {
+    const extension = sanitizeExtension(form.customExtension);
+
+    if (!extension) {
+      Swal.fire(
+        "Invalid file type",
+        "Enter a valid extension like c, java, cpp, py, js, html, or css. Do not include any space.",
+        "warning"
+      );
+      return;
+    }
+
+    setForm((prev) => {
+      const current = normalizeAllowedExtensions(prev.allowedExtensions, false);
+      return {
+        ...prev,
+        allowedExtensions: current.includes(extension)
+          ? current
+          : [...current, extension],
+        customExtension: "",
       };
     });
   };
@@ -789,24 +927,16 @@ export default function TeacherLabSubmissions({ courseId }) {
 
               <button
                 type="button"
-                onClick={() =>
-                  setForm((prev) => ({
-                    ...prev,
-                    allowedExtensions: DEFAULT_ALLOWED_EXTENSIONS,
-                  }))
-                }
+                onClick={toggleAllAllowedExtensions}
                 className="w-fit rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-700"
               >
-                Select all
+                {allAllowedSelected ? "Unselect all" : "Select all"}
               </button>
             </div>
 
             <div className="flex flex-wrap gap-2">
               {FILE_TYPE_OPTIONS.map((option) => {
-                const checked = normalizeAllowedExtensions(
-                  form.allowedExtensions,
-                  false
-                ).includes(option.value);
+                const checked = selectedAllowedExtensions.includes(option.value);
 
                 return (
                   <label
@@ -825,6 +955,49 @@ export default function TeacherLabSubmissions({ courseId }) {
                   </label>
                 );
               })}
+
+              {customSelectedExtensions.map((extension) => (
+                <label
+                  key={extension}
+                  className="flex cursor-pointer items-center gap-2 rounded-xl border border-indigo-300 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300"
+                >
+                  <input
+                    type="checkbox"
+                    checked
+                    onChange={() => toggleAllowedExtension(extension)}
+                  />
+                  {extension.toUpperCase()}
+                </label>
+              ))}
+            </div>
+
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+              <input
+                type="text"
+                value={form.customExtension}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    customExtension: e.target.value,
+                  }))
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleAddCustomExtension();
+                  }
+                }}
+                className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                placeholder="Add custom type: c, java, cpp"
+              />
+
+              <button
+                type="button"
+                onClick={handleAddCustomExtension}
+                className="rounded-xl border border-indigo-300 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
+              >
+                Add Type
+              </button>
             </div>
           </div>
         </div>
@@ -1017,6 +1190,17 @@ export default function TeacherLabSubmissions({ courseId }) {
 
             {selectedAssessment ? (
               <div className="flex flex-wrap gap-2">
+                <select
+                  value={submissionSortBy}
+                  onChange={(e) => setSubmissionSortBy(e.target.value)}
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                >
+                  <option value="roll-asc">Sort: Roll number</option>
+                  <option value="roll-desc">Sort: Roll number desc</option>
+                  <option value="time-newest">Sort: Newest submitted</option>
+                  <option value="time-oldest">Sort: Oldest submitted</option>
+                </select>
+
                 <button
                   type="button"
                   onClick={() =>
@@ -1093,7 +1277,7 @@ export default function TeacherLabSubmissions({ courseId }) {
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
               No assessment selected.
             </div>
-          ) : !selectedData?.submissions?.length ? (
+          ) : !sortedSubmissions.length ? (
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
               No student has submitted yet.
             </div>
@@ -1111,7 +1295,7 @@ export default function TeacherLabSubmissions({ courseId }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {selectedData.submissions.map((row) => (
+                  {sortedSubmissions.map((row) => (
                     <tr
                       key={row.id}
                       className="border-b border-slate-100 align-top dark:border-slate-800"
@@ -1194,9 +1378,14 @@ export default function TeacherLabSubmissions({ courseId }) {
 
                       <td className="px-3 py-4">
                         {row.status === "checked" ? (
-                          <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-300">
-                            Checked
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleUncheckSubmission(row)}
+                            disabled={actionLoading === `uncheck-${row.id}`}
+                            className="rounded-xl border border-rose-300 bg-white px-4 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-60 dark:border-rose-500/30 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                          >
+                            Uncheck
+                          </button>
                         ) : (
                           <button
                             type="button"
