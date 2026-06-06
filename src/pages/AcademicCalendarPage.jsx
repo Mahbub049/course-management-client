@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { academicCalendarService } from "../services/academicCalendarService";
+import { getAuthItem } from "../utils/authStorage";
 
 const CATEGORIES = [
   "All",
@@ -37,7 +38,7 @@ function getMonthLabel(dateText = "") {
 export default function AcademicCalendarPage() {
   const navigate = useNavigate();
 
-  const [role] = useState(getAuthItem("marksPortalRole"));
+  const [role] = useState(() => getAuthItem("marksPortalRole"));
   const [calendar, setCalendar] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState("All");
