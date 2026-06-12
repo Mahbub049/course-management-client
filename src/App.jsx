@@ -19,6 +19,7 @@ import TeacherRoutineBuilderPage from "./pages/TeacherRoutineBuilderPage.jsx";
 import AcademicCalendarPage from "./pages/AcademicCalendarPage.jsx";
 import AcademicCalendarManagePage from "./pages/AcademicCalendarManagePage.jsx";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage.jsx";
+import TeacherNotebookPage from "./pages/TeacherNotebookPage.jsx";
 
 import AppLayout from './layouts/AppLayout.jsx';
 import TeacherAttendanceSheetPage from './pages/TeacherAttendanceSheetPage.jsx';
@@ -65,6 +66,7 @@ function App() {
         <Route path="/teacher/courses" element={<TeacherCoursesPage />} />
         <Route path="/teacher/attendance-sheet" element={<TeacherAttendanceSheetPage />} />
         <Route path="/teacher/routine" element={<TeacherRoutinePage />} />
+        <Route path="/teacher/notebook" element={<TeacherNotebookPage />} />
         <Route path="/teacher/routine/manage" element={<TeacherRoutineBuilderPage />} />
 
         <Route path="/academic-calendar" element={<AcademicCalendarPage />} />

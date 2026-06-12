@@ -18,6 +18,7 @@ import { fetchAttendanceSummary } from "../../services/attendanceSummaryService"
 
 function getCourseType(course) {
   const t = (course?.courseType || course?.type || "").toLowerCase();
+  if (t === "hybrid") return "hybrid";
   if (t.includes("lab")) return "lab";
   return "theory";
 }
@@ -183,6 +184,50 @@ function normalizeCtPolicy(course) {
       ? raw.manualSelectedAssessmentIds.map(String)
       : [],
   };
+}
+
+function getCtMainWeight(course) {
+  return Number(normalizeCtPolicy(course).totalWeight || 0);
+}
+
+function getHybridAssignmentWeight(course) {
+  return Math.max(0, 25 - getCtMainWeight(course));
+}
+
+function findAssessmentByName(assessments = [], matcher) {
+  return (assessments || []).find((assessment) =>
+    matcher(String(assessment?.name || "").toLowerCase())
+  );
+}
+
+function findHybridTheoryMid(assessments = []) {
+  return (
+    findAssessmentByName(assessments, (n) => n.includes("theory") && n.includes("mid")) ||
+    findAssessmentByName(assessments, (n) => n.includes("mid") && !n.includes("lab") && !n.includes("final"))
+  );
+}
+
+function findHybridLabMid(assessments = []) {
+  return findAssessmentByName(assessments, (n) => n.includes("lab") && n.includes("mid"));
+}
+
+function findHybridTheoryFinal(assessments = []) {
+  return (
+    findAssessmentByName(assessments, (n) => n.includes("theory") && n.includes("final")) ||
+    findAssessmentByName(assessments, (n) => n.includes("final") && !n.includes("lab") && !n.includes("mid"))
+  );
+}
+
+function findHybridLabFinal(assessments = []) {
+  return findAssessmentByName(assessments, (n) => n.includes("lab") && n.includes("final"));
+}
+
+function getMainColumnLabel(courseType) {
+  return courseType === "lab" ? "Lab Assessment (Main)" : "CT Main";
+}
+
+function getMainColumnFullMarks(course, courseType) {
+  return courseType === "lab" ? 25 : getCtMainWeight(course);
 }
 
 function isCtAssessment(nameRaw) {
@@ -414,6 +459,47 @@ function computeTotal100(course, assessments, rowMarks, attendanceMarks5 = 0) {
       : 0;
 
     return roundPolicyTotal(labScore25 + midScore30 + finalScore40 + attScore5);
+  }
+
+  if (courseType === "hybrid") {
+    const theoryMid = findHybridTheoryMid(list);
+    const labMid = findHybridLabMid(list);
+    const theoryFinal = findHybridTheoryFinal(list);
+    const labFinal = findHybridLabFinal(list);
+    const assignment = list.find((a) => name(a).includes("assign"));
+
+    const ctScore = computeCtScore(course, list, rowMarks);
+    const assignmentWeight = getHybridAssignmentWeight(course);
+
+    const theoryMidScore20 = theoryMid
+      ? pct(getMainMarkValue(rowMarks?.[theoryMid._id]), theoryMid.fullMarks) * 20
+      : 0;
+
+    const labMidScore10 = labMid
+      ? pct(getMainMarkValue(rowMarks?.[labMid._id]), labMid.fullMarks) * 10
+      : 0;
+
+    const theoryFinalScore30 = theoryFinal
+      ? pct(getMainMarkValue(rowMarks?.[theoryFinal._id]), theoryFinal.fullMarks) * 30
+      : 0;
+
+    const labFinalScore10 = labFinal
+      ? pct(getMainMarkValue(rowMarks?.[labFinal._id]), labFinal.fullMarks) * 10
+      : 0;
+
+    const assignmentScore = assignment
+      ? pct(getMainMarkValue(rowMarks?.[assignment._id]), assignment.fullMarks) * assignmentWeight
+      : 0;
+
+    return roundPolicyTotal(
+      ctScore +
+        theoryMidScore20 +
+        labMidScore10 +
+        theoryFinalScore30 +
+        labFinalScore10 +
+        assignmentScore +
+        attScore5
+    );
   }
 
   const mid = list.find((a) => name(a).includes("mid"));
@@ -1508,7 +1594,7 @@ export default function TabMarks({ courseId, course }) {
       ...(courseType === "lab"
         ? labRegularAssessments.map((a) => `${a.name} (${a.fullMarks})`)
         : ctAssessments.map((a) => `${a.name} (${a.fullMarks})`)),
-      courseType === "lab" ? "Lab Assessment (Main) /25" : "CT Main /15",
+      `${getMainColumnLabel(courseType)} /${getMainColumnFullMarks(course, courseType)}`,
       ...nonCtAssessments.map((a) => `${a.name} (${a.fullMarks})`),
       ...advancedExportColumns.map((col) => `${col.label} (${col.fullMarks})`),
       "Total /100",
@@ -1675,6 +1761,13 @@ export default function TabMarks({ courseId, course }) {
       getAssessmentByName(["final"]);
 
     const assignmentAssessment = getAssessmentByName(["assign", "present"]);
+    const hybridTheoryMid = findHybridTheoryMid(sortedAssessments);
+    const hybridLabMid = findHybridLabMid(sortedAssessments);
+    const hybridTheoryFinal = findHybridTheoryFinal(sortedAssessments);
+    const hybridLabFinal = findHybridLabFinal(sortedAssessments);
+    const hybridAssignment = getAssessmentByName(["assign"]);
+    const ctWeight = getCtMainWeight(course);
+    const hybridAssignmentWeight = getHybridAssignmentWeight(course);
 
     const header =
       courseType === "lab"
@@ -1690,19 +1783,35 @@ export default function TabMarks({ courseId, course }) {
           "Total Marks\n100",
           "Letter Grade",
         ]
-        : [
-          "SL",
-          "Student ID",
-          "Student Name",
-          "Intake",
-          "Class Test\n15",
-          "Assignment /\nPresentation\n10",
-          "Mid Term\n30",
-          "Final\n40",
-          "Attendance\n5",
-          "Total Marks\n100",
-          "Letter Grade",
-        ];
+        : courseType === "hybrid"
+          ? [
+            "SL",
+            "Student ID",
+            "Student Name",
+            "Intake",
+            `Class Test\n${ctWeight}`,
+            `Assignment\n${hybridAssignmentWeight}`,
+            "Theory Mid\n20",
+            "Lab Mid\n10",
+            "Theory Final\n30",
+            "Lab Final\n10",
+            "Attendance\n5",
+            "Total Marks\n100",
+            "Letter Grade",
+          ]
+          : [
+            "SL",
+            "Student ID",
+            "Student Name",
+            "Intake",
+            "Class Test\n15",
+            "Assignment /\nPresentation\n10",
+            "Mid Term\n30",
+            "Final\n40",
+            "Attendance\n5",
+            "Total Marks\n100",
+            "Letter Grade",
+          ];
 
     const body = sortedStudents.map((s, index) => {
       const row = marksMap[s.id] || {};
@@ -1724,6 +1833,29 @@ export default function TabMarks({ courseId, course }) {
           finalAssessment
             ? formatMarkForReport(row[finalAssessment._id])
             : "0.00",
+          attendance.toFixed(2),
+          Number(total).toFixed(2),
+          grade,
+        ];
+      }
+
+      if (courseType === "hybrid") {
+        const scaled = (assessment, weight) =>
+          assessment
+            ? (pct(getMainMarkValue(row[assessment._id]), assessment.fullMarks) * weight).toFixed(2)
+            : "0.00";
+
+        return [
+          index + 1,
+          s.roll || "",
+          s.name || "",
+          intakeValue,
+          roundPolicyTotal(computeCtScore(course, assessments, row)).toFixed(2),
+          scaled(hybridAssignment, hybridAssignmentWeight),
+          scaled(hybridTheoryMid, 20),
+          scaled(hybridLabMid, 10),
+          scaled(hybridTheoryFinal, 30),
+          scaled(hybridLabFinal, 10),
           attendance.toFixed(2),
           Number(total).toFixed(2),
           grade,
@@ -1781,7 +1913,7 @@ export default function TabMarks({ courseId, course }) {
         ["Semester", `${course?.semester || ""} ${course?.year || ""}`],
         [
           "Course No & Title",
-          `[ ${course?.code || ""} ] ${course?.title || course?.name || ""}-${courseType === "lab" ? "Lab" : "Theory"
+          `[ ${course?.code || ""} ] ${course?.title || course?.name || ""}-${courseType === "lab" ? "Lab" : courseType === "hybrid" ? "Hybrid" : "Theory"
           }`,
         ],
         ["Intake & Section", `Intake # ${intakeValue}, Section # ${sectionValue}`],
@@ -1905,8 +2037,8 @@ export default function TabMarks({ courseId, course }) {
         3: { cellWidth: 16 },
       },
       didParseCell: (data) => {
-        const totalColIndex = courseType === "lab" ? 8 : 9;
-        const gradeColIndex = courseType === "lab" ? 9 : 10;
+        const totalColIndex = header.length - 2;
+        const gradeColIndex = header.length - 1;
 
         if (
           data.section === "body" &&
@@ -1975,7 +2107,9 @@ export default function TabMarks({ courseId, course }) {
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                   {courseType === "lab"
                     ? "Lab Assessment Main is calculated from total obtained marks divided by total lab assessment marks, then converted to 25."
-                    : "Theory course marks entry with CT policy, Mid, Final, Assignment, Presentation, and Attendance."}
+                    : courseType === "hybrid"
+                      ? "Hybrid marks entry: CT policy, Theory Mid, Lab Mid, Theory Final, Lab Final, Assignment, and Attendance."
+                      : "Theory course marks entry with CT policy, Mid, Final, Assignment, Presentation, and Attendance."}
                 </p>
               </div>
 
@@ -2134,7 +2268,7 @@ export default function TabMarks({ courseId, course }) {
                       )}
 
                       <th className="sticky top-0 z-20 min-w-[150px] bg-slate-50 dark:bg-slate-800 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                        {courseType === "lab" ? "Lab Assessment (Main)" : "CT Main"}
+                        {getMainColumnLabel(courseType)}
                       </th>
 
                       {nonCtAssessments.map((a) => (

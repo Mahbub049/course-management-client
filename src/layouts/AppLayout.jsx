@@ -74,6 +74,7 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
   const teacherLinks = [
     { to: "/teacher/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
     { to: "/teacher/courses", label: "Courses", icon: <BookIcon /> },
+    { to: "/teacher/notebook", label: "Notebook", icon: <NotebookIcon /> },
 
     { to: "/teacher/attendance", label: "Attendance", icon: <CalendarIcon /> },
     {
@@ -498,6 +499,26 @@ function BookIcon() {
     >
       <path d="M4 19a2 2 0 0 0 2 2h14V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2z" />
       <path d="M4 7h16" />
+    </svg>
+  );
+}
+
+
+function NotebookIcon() {
+  return (
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M6 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
+      <path d="M8 7h8" />
+      <path d="M8 11h8" />
+      <path d="M8 15h5" />
     </svg>
   );
 }

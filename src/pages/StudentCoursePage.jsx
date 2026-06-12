@@ -46,6 +46,19 @@ function getCourseType(course) {
   return (course?.courseType || "theory").toLowerCase();
 }
 
+function getCtMainWeight(course) {
+  const raw = course?.classTestPolicy || {};
+  return Number(raw.totalWeight) >= 0 ? Number(raw.totalWeight) : 15;
+}
+
+function getMainComponentLabel(courseType) {
+  return courseType === "lab" ? "Lab Assessment (Main)" : "CT (Main)";
+}
+
+function getMainComponentFullMarks(course, courseType) {
+  return courseType === "lab" ? 25 : getCtMainWeight(course);
+}
+
 function round2(num) {
   return Math.round(Number(num || 0) * 100) / 100;
 }
@@ -121,6 +134,14 @@ function getAssessmentHint(assessment, courseType) {
     if (name.includes("final")) return "Regular Lab Final";
     if (name.includes("att")) return "Attendance Component";
     return "Regular Lab Assessment";
+  }
+
+  if (courseType === "hybrid") {
+    if (isCtAssessment(assessment?.name)) return "Theory Class Test Component";
+    if (name.includes("theory") && name.includes("mid")) return "Theory Mid Component";
+    if (name.includes("lab") && name.includes("mid")) return "Lab Mid Component";
+    if (name.includes("theory") && name.includes("final")) return "Theory Final Component";
+    if (name.includes("lab") && name.includes("final")) return "Lab Final Component";
   }
 
   if (isCtAssessment(assessment?.name)) return "Class Test Component";
@@ -627,7 +648,7 @@ export default function StudentCoursePage() {
                 <Pill label={`Section: ${course.section || "—"}`} />
                 <Pill label={`Semester: ${course.semester || "—"}`} />
                 <Pill label={`Year: ${formatYear(course.year)}`} />
-                <Pill label={`Type: ${courseType === "lab" ? "Lab" : "Theory"}`} />
+                <Pill label={`Type: ${courseType === "lab" ? "Lab" : courseType === "hybrid" ? "Hybrid" : "Theory"}`} />
               </div>
             </div>
 
@@ -692,7 +713,7 @@ export default function StudentCoursePage() {
                   value={
                     courseType === "lab"
                       ? `${displayLabMain}/25`
-                      : `${displayCtMain}/15`
+                      : `${displayCtMain}/${getMainComponentFullMarks(course, courseType)}`
                   }
                   valueClassName="text-2xl text-slate-900 dark:text-white"
                 />
@@ -771,7 +792,7 @@ export default function StudentCoursePage() {
                   </tr>
                 ) : (
                   <>
-                    {courseType === "theory" &&
+                    {courseType !== "lab" &&
                       ctAssessments.map((a) => {
                         const key = a.id || a._id;
                         const missing = a.obtainedMarks == null;
@@ -829,7 +850,7 @@ export default function StudentCoursePage() {
                     <tr className="bg-violet-50/40 dark:bg-violet-500/5">
                       <td className="px-6 py-5">
                         <div className="font-semibold text-slate-900 dark:text-white">
-                          {courseType === "lab" ? "Lab Assessment (Main)" : "CT (Main)"}
+                          {getMainComponentLabel(courseType)}
                         </div>
                         <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                           {courseType === "lab"
@@ -839,7 +860,7 @@ export default function StudentCoursePage() {
                       </td>
 
                       <td className="px-6 py-5 font-semibold text-slate-900 dark:text-white">
-                        {courseType === "lab" ? 25 : 15}
+                        {getMainComponentFullMarks(course, courseType)}
                       </td>
 
                       <td className="px-6 py-5">
@@ -1075,7 +1096,7 @@ export default function StudentCoursePage() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="font-semibold text-slate-900 dark:text-white">
-                        {courseType === "lab" ? "Lab Assessment (Main)" : "CT (Main)"}
+                        {getMainComponentLabel(courseType)}
                       </div>
                       <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                         {courseType === "lab"
@@ -1085,7 +1106,7 @@ export default function StudentCoursePage() {
                     </div>
 
                     <div className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-bold text-violet-700 dark:border-violet-500/20 dark:bg-slate-900 dark:text-violet-300">
-                      {courseType === "lab" ? 25 : 15}
+                      {getMainComponentFullMarks(course, courseType)}
                     </div>
                   </div>
 

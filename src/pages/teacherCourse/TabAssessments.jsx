@@ -44,6 +44,13 @@ function classifyForBadge(assessment, courseType) {
     return "lab";
   }
 
+  if (courseType === "hybrid") {
+    if (name.includes("lab") && name.includes("mid")) return "lab_mid";
+    if ((name.includes("theory") || name.includes("written")) && name.includes("mid")) return "theory_mid";
+    if (name.includes("lab") && name.includes("final")) return "lab_final_regular";
+    if ((name.includes("theory") || name.includes("written")) && name.includes("final")) return "theory_final";
+  }
+
   if (name.includes("ct") || name.includes("class test") || name.includes("class-test")) return "ct";
   if (name.includes("mid")) return "mid";
   if (name.includes("final")) return "final";
@@ -55,6 +62,10 @@ function classifyForBadge(assessment, courseType) {
 
 function badgeLabel(type) {
   if (type === "advanced_lab_final") return "Advanced Lab Final";
+  if (type === "lab_final_regular") return "Lab Final";
+  if (type === "theory_final") return "Theory Final";
+  if (type === "lab_mid") return "Lab Mid";
+  if (type === "theory_mid") return "Theory Mid";
   if (type === "ct") return "CT";
   if (type === "mid") return "Mid";
   if (type === "final") return "Final";
@@ -69,10 +80,10 @@ function badgeClass(type) {
   if (type === "advanced_lab_final") {
     return "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700 dark:border-fuchsia-500/20 dark:bg-fuchsia-500/10 dark:text-fuchsia-300";
   }
-  if (type === "final") {
+  if (type === "final" || type === "theory_final" || type === "lab_final_regular") {
     return "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300";
   }
-  if (type === "mid") {
+  if (type === "mid" || type === "theory_mid" || type === "lab_mid") {
     return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300";
   }
   if (type === "ct") {
@@ -484,19 +495,31 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
         { value: "final", label: "Final" },
         { value: "attendance", label: "Attendance" },
       ]
-      : [
-        { value: "ct", label: "Class Test (CT)" },
-        { value: "mid", label: "Mid" },
-        { value: "final", label: "Final" },
-        { value: "attendance", label: "Attendance" },
-        { value: "assignment", label: "Assignment" },
-        { value: "presentation", label: "Presentation" },
-      ];
+      : courseType === "hybrid"
+        ? [
+          { value: "ct", label: "Class Test (Theory)" },
+          { value: "theory_mid", label: "Theory Mid" },
+          { value: "lab_mid", label: "Lab Mid" },
+          { value: "theory_final", label: "Theory Final" },
+          { value: "lab_final", label: "Lab Final" },
+          { value: "assignment", label: "Assignment" },
+          { value: "attendance", label: "Attendance" },
+        ]
+        : [
+          { value: "ct", label: "Class Test (CT)" },
+          { value: "mid", label: "Mid" },
+          { value: "final", label: "Final" },
+          { value: "attendance", label: "Attendance" },
+          { value: "assignment", label: "Assignment" },
+          { value: "presentation", label: "Presentation" },
+        ];
 
   const headerHint =
     courseType === "lab"
       ? "Lab Assessments (average → 25), Mid (30), Attendance (5), and Advanced Lab Final (40) with Project / Exam / Mixed structure."
-      : `${getCtPolicyLabel(policyForm)}, Mid (30), Final (40), Assignment/Presentation (10), Attendance (5).`;
+      : courseType === "hybrid"
+        ? `${getCtPolicyLabel(policyForm)}, Theory Mid (20), Lab Mid (10), Theory Final (30), Lab Final (10), Assignment (remaining theory practice marks), Attendance (5).`
+        : `${getCtPolicyLabel(policyForm)}, Mid (30), Final (40), Assignment/Presentation (10), Attendance (5).`;
 
   const projectComponentTotal = useMemo(
     () => sumByMarks(advancedForm.projectComponents || []),
@@ -944,10 +967,12 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
               <span
                 className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${courseType === "lab"
                     ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
-                    : "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300"
+                    : courseType === "hybrid"
+                      ? "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300"
+                      : "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300"
                   }`}
               >
-                {courseType === "lab" ? "Lab Course" : "Theory Course"}
+                {courseType === "lab" ? "Lab Course" : courseType === "hybrid" ? "Hybrid Course" : "Theory Course"}
               </span>
 
               <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
@@ -1637,7 +1662,9 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
                     placeholder={
                       courseType === "lab"
                         ? "Lab Assessment 01 / Experiment 01"
-                        : "CT1 / Mid / Final"
+                        : courseType === "hybrid"
+                          ? "CT1 / Theory Mid / Lab Mid / Theory Final / Lab Final"
+                          : "CT1 / Mid / Final"
                     }
                     className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                   />
@@ -1686,15 +1713,29 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
                       <QuickPill label="Attendance (5)" onClick={() => quickAdd("Attendance", 5, "attendance")} />
                     </>
                   ) : (
-                    <>
-                      <QuickPill label="CT1 (10)" onClick={() => quickAdd("CT1", 10, "ct")} />
-                      <QuickPill label="CT2 (10)" onClick={() => quickAdd("CT2", 10, "ct")} />
-                      <QuickPill label="Mid (30)" onClick={() => quickAdd("Mid", 30, "mid")} />
-                      <QuickPill label="Final (40)" onClick={() => quickAdd("Final", 40, "final")} />
-                      <QuickPill label="Presentation (10)" onClick={() => quickAdd("Presentation", 10, "presentation")} />
-                      <QuickPill label="Assignment (10)" onClick={() => quickAdd("Assignment", 10, "assignment")} />
-                      <QuickPill label="Attendance (5)" onClick={() => quickAdd("Attendance", 5, "attendance")} />
-                    </>
+                    courseType === "hybrid" ? (
+                      <>
+                        <QuickPill label="CT1 (10)" onClick={() => quickAdd("CT1", 10, "ct")} />
+                        <QuickPill label="CT2 (10)" onClick={() => quickAdd("CT2", 10, "ct")} />
+                        <QuickPill label="Theory Mid (20)" onClick={() => quickAdd("Theory Mid", 20, "theory_mid")} />
+                        <QuickPill label="Lab Mid (10)" onClick={() => quickAdd("Lab Mid", 10, "lab_mid")} />
+                        <QuickPill label="Theory Final (30)" onClick={() => quickAdd("Theory Final", 30, "theory_final")} />
+                        <QuickPill label="Lab Final (10)" onClick={() => quickAdd("Lab Final", 10, "lab_final")} />
+                        <QuickPill label="Assignment (10)" onClick={() => quickAdd("Assignment", 10, "assignment")} />
+                        <QuickPill label="Assignment (15)" onClick={() => quickAdd("Assignment", 15, "assignment")} />
+                        <QuickPill label="Attendance (5)" onClick={() => quickAdd("Attendance", 5, "attendance")} />
+                      </>
+                    ) : (
+                      <>
+                        <QuickPill label="CT1 (10)" onClick={() => quickAdd("CT1", 10, "ct")} />
+                        <QuickPill label="CT2 (10)" onClick={() => quickAdd("CT2", 10, "ct")} />
+                        <QuickPill label="Mid (30)" onClick={() => quickAdd("Mid", 30, "mid")} />
+                        <QuickPill label="Final (40)" onClick={() => quickAdd("Final", 40, "final")} />
+                        <QuickPill label="Presentation (10)" onClick={() => quickAdd("Presentation", 10, "presentation")} />
+                        <QuickPill label="Assignment (10)" onClick={() => quickAdd("Assignment", 10, "assignment")} />
+                        <QuickPill label="Attendance (5)" onClick={() => quickAdd("Attendance", 5, "attendance")} />
+                      </>
+                    )
                   )}
                 </div>
               )}

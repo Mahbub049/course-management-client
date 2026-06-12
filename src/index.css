@@ -44,3 +44,43 @@ select.form-control {
 select.form-control::-ms-expand {
   display: none;
 }
+@layer components {
+  .input-soft {
+    @apply h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-violet-400 dark:border-slate-800 dark:bg-slate-950 dark:text-white dark:focus:border-violet-500;
+  }
+
+  .btn-soft {
+    @apply inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center rounded-2xl border border-red-200 bg-white px-4 py-3 text-sm font-black text-red-600 transition hover:bg-red-50 dark:border-red-500/30 dark:bg-slate-900 dark:text-red-300 dark:hover:bg-red-500/10;
+  }
+}
+
+[contenteditable][data-placeholder]:empty:before {
+  content: attr(data-placeholder);
+  color: rgb(148 163 184);
+}
+
+
+.notebook-rich-editor ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+}
+
+.notebook-rich-editor ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+}
+
+.notebook-rich-editor li {
+  margin: 0.2rem 0;
+}
+
+.notebook-rich-editor b,
+.notebook-rich-editor strong {
+  font-weight: 800;
+}
