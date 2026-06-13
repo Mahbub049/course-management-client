@@ -24,20 +24,32 @@ const DEFAULT_MCQ_FIELD = {
   options: ["High", "Medium", "Low"],
 };
 
+const DEFAULT_BLANK_FIELD = {
+  id: "blank_1",
+  label: "Marks",
+};
+
 const DEFAULT_SETTINGS = {
   includeRoll: true,
   includeName: true,
   includeFeedback: true,
   includeMcq: true,
+  includeBlankFields: false,
   mcqLabel: DEFAULT_MCQ_FIELD.label,
   mcqOptions: DEFAULT_MCQ_FIELD.options,
   mcqFields: [DEFAULT_MCQ_FIELD],
+  blankFields: [DEFAULT_BLANK_FIELD],
 };
 
 const makeMcqField = (index = 1) => ({
   id: `mcq_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
   label: index === 1 ? "Marking Category" : `Category ${index}`,
   options: ["High", "Medium", "Low"],
+});
+
+const makeBlankField = (index = 1) => ({
+  id: `blank_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+  label: index === 1 ? "Marks" : `Blank Field ${index}`,
 });
 
 const cleanMcqOptions = (options) => {
@@ -65,8 +77,21 @@ const normalizeMcqFields = (settings = {}) => {
   }));
 };
 
+const normalizeBlankFields = (settings = {}) => {
+  const rawFields =
+    Array.isArray(settings.blankFields) && settings.blankFields.length > 0
+      ? settings.blankFields
+      : [DEFAULT_BLANK_FIELD];
+
+  return rawFields.map((field, index) => ({
+    id: String(field?.id || `blank_${index + 1}`),
+    label: String(field?.label || `Blank Field ${index + 1}`).trim() || `Blank Field ${index + 1}`,
+  }));
+};
+
 const normalizeSettings = (settings = {}) => {
   const mcqFields = normalizeMcqFields(settings);
+  const blankFields = normalizeBlankFields(settings);
   const firstField = mcqFields[0] || DEFAULT_MCQ_FIELD;
 
   return {
@@ -74,9 +99,11 @@ const normalizeSettings = (settings = {}) => {
     includeName: settings.includeName === undefined ? true : Boolean(settings.includeName),
     includeFeedback: settings.includeFeedback === undefined ? true : Boolean(settings.includeFeedback),
     includeMcq: settings.includeMcq === undefined ? true : Boolean(settings.includeMcq),
+    includeBlankFields: settings.includeBlankFields === undefined ? false : Boolean(settings.includeBlankFields),
     mcqLabel: firstField.label,
     mcqOptions: firstField.options,
     mcqFields,
+    blankFields,
   };
 };
 
@@ -84,6 +111,11 @@ const getRowMcqValue = (row, field, fieldIndex = 0) => {
   const selectedOptions = row?.selectedOptions || {};
   if (selectedOptions[field.id] !== undefined) return selectedOptions[field.id] || "";
   return fieldIndex === 0 ? row?.selectedOption || "" : "";
+};
+
+const getRowBlankValue = (row, field) => {
+  const blankValues = row?.blankValues || {};
+  return blankValues[field.id] !== undefined ? blankValues[field.id] || "" : "";
 };
 
 const todayInput = () => new Date().toISOString().slice(0, 10);
@@ -661,6 +693,37 @@ function CreateNotebookModal({ courses, onClose, onCreate }) {
     });
   };
 
+  const updateBlankField = (fieldId, patch) => {
+    setSettings((prev) => {
+      const normalized = normalizeSettings(prev);
+      const blankFields = normalized.blankFields.map((field) =>
+        field.id === fieldId ? { ...field, ...patch } : field
+      );
+      return { ...normalized, blankFields };
+    });
+  };
+
+  const addBlankField = () => {
+    setSettings((prev) => {
+      const normalized = normalizeSettings(prev);
+      const nextIndex = normalized.blankFields.length + 1;
+      return normalizeSettings({
+        ...normalized,
+        blankFields: [...normalized.blankFields, makeBlankField(nextIndex)],
+      });
+    });
+  };
+
+  const removeBlankField = (fieldId) => {
+    setSettings((prev) => {
+      const normalized = normalizeSettings(prev);
+      return normalizeSettings({
+        ...normalized,
+        blankFields: normalized.blankFields.filter((field) => field.id !== fieldId),
+      });
+    });
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     setCreateError("");
@@ -681,6 +744,10 @@ function CreateNotebookModal({ courses, onClose, onCreate }) {
       label: String(field.label || `Category ${index + 1}`).trim() || `Category ${index + 1}`,
       options: cleanMcqOptions(field.options),
     }));
+    const cleanBlankFields = normalizedSettings.blankFields.map((field, index) => ({
+      id: field.id || `blank_${index + 1}`,
+      label: String(field.label || `Blank Field ${index + 1}`).trim() || `Blank Field ${index + 1}`,
+    }));
 
     if (type === "evaluation" && normalizedSettings.includeMcq && cleanMcqFields.length === 0) {
       setCreateError("Please add at least one MCQ/category column.");
@@ -698,6 +765,7 @@ function CreateNotebookModal({ courses, onClose, onCreate }) {
         settings: normalizeSettings({
           ...normalizedSettings,
           mcqFields: cleanMcqFields,
+          blankFields: cleanBlankFields,
         }),
         content: type === "simple" ? "" : undefined,
       });
@@ -733,7 +801,7 @@ function CreateNotebookModal({ courses, onClose, onCreate }) {
             <TemplateButton
               active={type === "evaluation"}
               title="Evaluation Sheet"
-              subtitle="Course-wise roll, multiple category columns and feedback table"
+              subtitle="Course-wise roll, blank marks/text columns, dropdowns and feedback table"
               onClick={() => setType("evaluation")}
             />
             <TemplateButton
@@ -810,11 +878,61 @@ function CreateNotebookModal({ courses, onClose, onCreate }) {
                     onChange={(value) => updateSetting("includeFeedback", value)}
                   />
                   <CheckboxField
+                    checked={normalizedSettings.includeBlankFields}
+                    label="Blank Fields / Marks/Text"
+                    onChange={(value) => updateSetting("includeBlankFields", value)}
+                  />
+                  <CheckboxField
                     checked={normalizedSettings.includeMcq}
                     label="MCQ / Category Dropdown"
                     onChange={(value) => updateSetting("includeMcq", value)}
                   />
                 </div>
+
+                {normalizedSettings.includeBlankFields && (
+                  <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h4 className="text-sm font-black text-slate-950 dark:text-white">Blank Fields / Marks/Text Columns</h4>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          Add columns where the teacher can type marks, digits, short notes, or any value.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={addBlankField}
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-violet-200 px-3 py-2 text-xs font-black text-violet-700 hover:bg-violet-50 dark:border-violet-500/30 dark:text-violet-300 dark:hover:bg-violet-500/10"
+                      >
+                        <PlusIcon /> Add Blank Field
+                      </button>
+                    </div>
+
+                    {normalizedSettings.blankFields.map((field, fieldIndex) => (
+                      <div key={field.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/70">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="flex-1">
+                            <Field label={`Blank Field ${fieldIndex + 1} Column Name`}>
+                              <input
+                                value={field.label}
+                                onChange={(e) => updateBlankField(field.id, { label: e.target.value })}
+                                className="input-soft"
+                                placeholder={`Blank Field ${fieldIndex + 1}`}
+                              />
+                            </Field>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeBlankField(field.id)}
+                            disabled={normalizedSettings.blankFields.length <= 1}
+                            className="rounded-2xl border border-red-200 px-3 py-2 text-xs font-black text-red-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-500/30 dark:text-red-300 sm:mt-6"
+                          >
+                            Remove Field
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {normalizedSettings.includeMcq && (
                   <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
@@ -1001,6 +1119,7 @@ function EvaluationEditor({ note, onChange }) {
   const settings = normalizeSettings(note.settings || {});
   const rows = Array.isArray(note.evaluationRows) ? note.evaluationRows : [];
   const mcqFields = settings.mcqFields || [];
+  const blankFields = settings.blankFields || [];
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [rowSearch, setRowSearch] = useState("");
 
@@ -1018,6 +1137,13 @@ function EvaluationEditor({ note, onChange }) {
       selectedOptions,
       selectedOption: fieldIndex === 0 ? value : row.selectedOption || "",
     });
+  };
+
+  const updateRowBlank = (rowIndex, field, value) => {
+    const row = rows[rowIndex] || {};
+    const blankValues = { ...(row.blankValues || {}) };
+    blankValues[field.id] = value;
+    updateRow(rowIndex, { blankValues });
   };
 
   const updateSetting = (key, value) => {
@@ -1095,6 +1221,26 @@ function EvaluationEditor({ note, onChange }) {
     onChange({ settings: normalizeSettings({ ...settings, mcqFields: nextFields }), evaluationRows: nextRows });
   };
 
+  const updateBlankField = (fieldId, patch) => {
+    const nextFields = blankFields.map((field) => (field.id === fieldId ? { ...field, ...patch } : field));
+    onChange({ settings: normalizeSettings({ ...settings, blankFields: nextFields }) });
+  };
+
+  const addBlankField = () => {
+    const nextField = makeBlankField(blankFields.length + 1);
+    onChange({ settings: normalizeSettings({ ...settings, blankFields: [...blankFields, nextField] }) });
+  };
+
+  const removeBlankField = (fieldId) => {
+    const nextFields = blankFields.filter((field) => field.id !== fieldId);
+    const nextRows = rows.map((row) => {
+      const blankValues = { ...(row.blankValues || {}) };
+      delete blankValues[fieldId];
+      return { ...row, blankValues };
+    });
+    onChange({ settings: normalizeSettings({ ...settings, blankFields: nextFields }), evaluationRows: nextRows });
+  };
+
   const filteredRows = useMemo(() => {
     const term = rowSearch.trim().toLowerCase();
     const withIndex = rows.map((row, rowIndex) => ({ row, rowIndex }));
@@ -1102,17 +1248,19 @@ function EvaluationEditor({ note, onChange }) {
 
     return withIndex.filter(({ row }) => {
       const selectedValues = mcqFields.map((field, fieldIndex) => getRowMcqValue(row, field, fieldIndex)).join(" ");
-      return [row.roll, row.name, row.feedback, selectedValues]
+      const blankValues = blankFields.map((field) => getRowBlankValue(row, field)).join(" ");
+      return [row.roll, row.name, row.feedback, selectedValues, blankValues]
         .join(" ")
         .toLowerCase()
         .includes(term);
     });
-  }, [rows, rowSearch, mcqFields]);
+  }, [rows, rowSearch, mcqFields, blankFields]);
 
   const visibleColumnCount =
     1 +
     (settings.includeRoll ? 1 : 0) +
     (settings.includeName ? 1 : 0) +
+    (settings.includeBlankFields ? blankFields.length : 0) +
     (settings.includeMcq ? mcqFields.length : 0) +
     (settings.includeFeedback ? 1 : 0);
 
@@ -1127,7 +1275,7 @@ function EvaluationEditor({ note, onChange }) {
           <div>
             <h3 className="text-sm font-black text-slate-950 dark:text-white">Sheet Settings</h3>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Add multiple MCQ/category columns and change each column’s options independently.
+              Add blank marks/text columns, MCQ/category dropdown columns, and feedback columns independently.
             </p>
           </div>
           <span className="rounded-2xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 dark:border-slate-700 dark:text-slate-300 sm:hidden">
@@ -1136,12 +1284,57 @@ function EvaluationEditor({ note, onChange }) {
         </button>
 
         <div className={`${settingsOpen ? "mt-4 block" : "hidden"} sm:mt-4 sm:block`}>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
             <CheckboxField checked={settings.includeRoll} label="Roll" onChange={(v) => updateSetting("includeRoll", v)} />
             <CheckboxField checked={settings.includeName} label="Name" onChange={(v) => updateSetting("includeName", v)} />
+            <CheckboxField checked={settings.includeBlankFields} label="Blank Fields" onChange={(v) => updateSetting("includeBlankFields", v)} />
             <CheckboxField checked={settings.includeMcq} label="Category" onChange={(v) => updateSetting("includeMcq", v)} />
             <CheckboxField checked={settings.includeFeedback} label="Feedback" onChange={(v) => updateSetting("includeFeedback", v)} />
           </div>
+
+          {settings.includeBlankFields && (
+            <div className="mt-4 space-y-3">
+              <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h4 className="text-sm font-black text-slate-950 dark:text-white">Blank Fields / Marks/Text Columns</h4>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Current columns: {blankFields.length}. These columns accept digits, marks, short text, or any value.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={addBlankField}
+                  className="rounded-2xl border border-violet-200 px-3 py-2 text-xs font-black text-violet-700 hover:bg-violet-50 dark:border-violet-500/30 dark:text-violet-300 dark:hover:bg-violet-500/10"
+                >
+                  + Add Blank Field
+                </button>
+              </div>
+
+              {blankFields.map((field, fieldIndex) => (
+                <div key={field.id} className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                  <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
+                    <Field label={`Blank Field ${fieldIndex + 1} Column Name`}>
+                      <input
+                        value={field.label || ""}
+                        onChange={(e) => updateBlankField(field.id, { label: e.target.value })}
+                        className="input-soft"
+                        placeholder={`Blank Field ${fieldIndex + 1}`}
+                      />
+                    </Field>
+
+                    <button
+                      type="button"
+                      onClick={() => removeBlankField(field.id)}
+                      disabled={blankFields.length <= 1}
+                      className="rounded-2xl border border-red-200 px-3 py-2 text-xs font-black text-red-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-500/30 dark:text-red-300"
+                    >
+                      Remove Field
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {settings.includeMcq && (
             <div className="mt-4 space-y-3">
@@ -1234,7 +1427,7 @@ function EvaluationEditor({ note, onChange }) {
                 <input
                   value={rowSearch}
                   onChange={(e) => setRowSearch(e.target.value)}
-                  placeholder="Search roll, name, feedback, category..."
+                  placeholder="Search roll, name, blank fields, feedback, category..."
                   className="input-soft h-11 pl-10 text-sm"
                 />
               </div>
@@ -1254,6 +1447,12 @@ function EvaluationEditor({ note, onChange }) {
                   </th>
                 )}
                 {settings.includeName && <th className="min-w-56 px-4 py-3 font-black">Name</th>}
+                {settings.includeBlankFields &&
+                  blankFields.map((field) => (
+                    <th key={field.id} className="min-w-44 px-4 py-3 font-black">
+                      {field.label || "Blank Field"}
+                    </th>
+                  ))}
                 {settings.includeMcq &&
                   mcqFields.map((field) => (
                     <th key={field.id} className="min-w-52 px-4 py-3 font-black">
@@ -1286,6 +1485,17 @@ function EvaluationEditor({ note, onChange }) {
                       </td>
                     )}
                     {settings.includeName && <td className="px-4 py-3 text-slate-700 dark:text-slate-200">{row.name || "-"}</td>}
+                    {settings.includeBlankFields &&
+                      blankFields.map((field) => (
+                        <td key={field.id} className="px-4 py-3">
+                          <input
+                            value={getRowBlankValue(row, field)}
+                            onChange={(e) => updateRowBlank(rowIndex, field, e.target.value)}
+                            placeholder="Write value..."
+                            className="input-soft min-w-40"
+                          />
+                        </td>
+                      ))}
                     {settings.includeMcq &&
                       mcqFields.map((field, fieldIndex) => (
                         <td key={field.id} className="px-4 py-3">
@@ -1418,10 +1628,14 @@ function exportEvaluationExcel(note) {
   const rows = Array.isArray(note.evaluationRows) ? note.evaluationRows : [];
   const course = formatCourseLabel(note.course);
   const mcqFields = settings.mcqFields || [];
+  const blankFields = settings.blankFields || [];
 
   const header = [];
   if (settings.includeRoll) header.push("Roll");
   if (settings.includeName) header.push("Name");
+  if (settings.includeBlankFields) {
+    blankFields.forEach((field) => header.push(field.label || "Blank Field"));
+  }
   if (settings.includeMcq) {
     mcqFields.forEach((field) => header.push(field.label || "Category"));
   }
@@ -1431,6 +1645,9 @@ function exportEvaluationExcel(note) {
     const item = [];
     if (settings.includeRoll) item.push(row.roll || "");
     if (settings.includeName) item.push(row.name || "");
+    if (settings.includeBlankFields) {
+      blankFields.forEach((field) => item.push(getRowBlankValue(row, field)));
+    }
     if (settings.includeMcq) {
       mcqFields.forEach((field, fieldIndex) => item.push(getRowMcqValue(row, field, fieldIndex)));
     }
@@ -1459,6 +1676,7 @@ function exportEvaluationPdf(note) {
   const settings = normalizeSettings(note.settings || {});
   const rows = Array.isArray(note.evaluationRows) ? note.evaluationRows : [];
   const mcqFields = settings.mcqFields || [];
+  const blankFields = settings.blankFields || [];
   const doc = new jsPDF({ orientation: "landscape" });
 
   doc.setFontSize(16);
@@ -1470,6 +1688,9 @@ function exportEvaluationPdf(note) {
   const head = [];
   if (settings.includeRoll) head.push("Roll");
   if (settings.includeName) head.push("Name");
+  if (settings.includeBlankFields) {
+    blankFields.forEach((field) => head.push(field.label || "Blank Field"));
+  }
   if (settings.includeMcq) {
     mcqFields.forEach((field) => head.push(field.label || "Category"));
   }
@@ -1479,6 +1700,9 @@ function exportEvaluationPdf(note) {
     const item = [];
     if (settings.includeRoll) item.push(row.roll || "");
     if (settings.includeName) item.push(row.name || "");
+    if (settings.includeBlankFields) {
+      blankFields.forEach((field) => item.push(getRowBlankValue(row, field)));
+    }
     if (settings.includeMcq) {
       mcqFields.forEach((field, fieldIndex) => item.push(getRowMcqValue(row, field, fieldIndex)));
     }
