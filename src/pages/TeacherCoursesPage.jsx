@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   fetchTeacherCourses,
+  createCourseRequest,
   deleteCourseRequest,
   archiveCourseRequest,
   unarchiveCourseRequest,
@@ -10,6 +11,7 @@ import Swal from "sweetalert2";
 
 export default function TeacherCoursesPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [courses, setCourses] = useState([]);
   const [loadingCourses, setLoadingCourses] = useState(true);
@@ -19,8 +21,31 @@ export default function TeacherCoursesPage() {
   const [archivingId, setArchivingId] = useState(null);
   const [unarchivingId, setUnarchivingId] = useState(null);
 
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [creatingCourse, setCreatingCourse] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const [createForm, setCreateForm] = useState(() => getInitialCourseForm());
+
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all"); // all | theory | lab | hybrid
+
+  const yearOptions = useMemo(() => {
+    const current = new Date().getFullYear();
+    const years = [];
+    for (let y = current + 10; y >= current - 10; y -= 1) years.push(y);
+    return years;
+  }, []);
+
+  useEffect(() => {
+    if (searchParams.get("create") !== "1") return;
+
+    setCreateError("");
+    setShowCreateModal(true);
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("create");
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     const loadCourses = async () => {
@@ -219,6 +244,90 @@ export default function TeacherCoursesPage() {
     }
   };
 
+  const openCreateModal = () => {
+    setCreateError("");
+    setShowCreateModal(true);
+  };
+
+  const closeCreateModal = () => {
+    if (creatingCourse) return;
+    setShowCreateModal(false);
+    setCreateError("");
+  };
+
+  const handleCreateFormChange = (e) => {
+    const { name, value } = e.target;
+    setCreateForm((prev) => ({
+      ...prev,
+      [name]: name === "year" ? Number(value) : value,
+    }));
+  };
+
+  const resetCreateForm = (keepAcademicTerm = true) => {
+    setCreateForm((prev) => ({
+      ...getInitialCourseForm(),
+      semester: keepAcademicTerm ? prev.semester : "Spring",
+      year: keepAcademicTerm ? prev.year : new Date().getFullYear(),
+      courseType: keepAcademicTerm ? prev.courseType : "theory",
+    }));
+  };
+
+  const handleCreateCourse = async (e) => {
+    e.preventDefault();
+    setCreateError("");
+
+    const payload = {
+      code: createForm.code.trim(),
+      title: createForm.title.trim(),
+      section: createForm.section.trim(),
+      intake: createForm.intake.trim(),
+      semester: createForm.semester,
+      year: Number(createForm.year),
+      courseType: createForm.courseType,
+    };
+
+    if (!payload.code || !payload.title || !payload.section || !payload.semester || !payload.year) {
+      setCreateError("Please fill in course code, title, section, semester, and year.");
+      return;
+    }
+
+    try {
+      setCreatingCourse(true);
+      const created = await createCourseRequest(payload);
+
+      if (viewMode !== "active") {
+        setViewMode("active");
+      } else {
+        setCourses((prev) => [created, ...prev]);
+      }
+
+      setShowCreateModal(false);
+      resetCreateForm(true);
+
+      await Swal.fire({
+        icon: "success",
+        title: "Course Created",
+        text: `${created?.code || payload.code} has been added successfully.`,
+        timer: 1600,
+        showConfirmButton: false,
+        background: document.documentElement.classList.contains("dark")
+          ? "#0f172a"
+          : "#ffffff",
+        color: document.documentElement.classList.contains("dark")
+          ? "#e2e8f0"
+          : "#0f172a",
+      });
+    } catch (err) {
+      console.error(err);
+      const message =
+        err?.response?.data?.message ||
+        "Failed to create course. Please try again.";
+      setCreateError(message);
+    } finally {
+      setCreatingCourse(false);
+    }
+  };
+
   const counts = useMemo(() => {
     const c = { all: courses.length, theory: 0, lab: 0, hybrid: 0 };
     courses.forEach((x) => {
@@ -242,6 +351,7 @@ export default function TeacherCoursesPage() {
         (c.code || "").toLowerCase().includes(q) ||
         (c.title || "").toLowerCase().includes(q) ||
         (c.section || "").toLowerCase().includes(q) ||
+        (c.intake || "").toLowerCase().includes(q) ||
         (c.semester || "").toLowerCase().includes(q) ||
         String(c.year || "").toLowerCase().includes(q);
 
@@ -317,7 +427,7 @@ export default function TeacherCoursesPage() {
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:w-auto xl:min-w-[300px]">
               <button
                 type="button"
-                onClick={() => navigate("/teacher/create-course")}
+                onClick={openCreateModal}
                 className="inline-flex items-center justify-center gap-2 rounded-2xl bg-primary-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-primary-600/20 transition hover:bg-primary-700 dark:shadow-primary-900/30"
               >
                 <PlusIcon />
@@ -344,7 +454,7 @@ export default function TeacherCoursesPage() {
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search by code, title, section, semester, year..."
+                  placeholder="Search by code, title, intake, section, semester, year..."
                   className="w-full rounded-2xl border border-slate-200 bg-white/90 py-3 pl-11 pr-4 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-100 dark:placeholder:text-slate-500"
                 />
               </label>
@@ -417,7 +527,7 @@ export default function TeacherCoursesPage() {
             </p>
 
             <button
-              onClick={() => navigate("/teacher/create-course")}
+              onClick={openCreateModal}
               className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-primary-600 dark:hover:bg-primary-700"
             >
               <PlusIcon />
@@ -427,11 +537,12 @@ export default function TeacherCoursesPage() {
         ) : (
           <>
             <div className="hidden w-full overflow-x-auto md:block">
-              <table className="w-full min-w-[860px] table-fixed text-sm">
+              <table className="w-full min-w-[960px] table-fixed text-sm">
                 <colgroup>
                   <col className="w-[110px]" />
-                  <col className="w-[38%]" />
-                  <col className="w-[110px]" />
+                  <col className="w-[32%]" />
+                  <col className="w-[100px]" />
+                  <col className="w-[100px]" />
                   <col className="w-[120px]" />
                   <col className="w-[90px]" />
                   <col className="w-[220px]" />
@@ -447,6 +558,9 @@ export default function TeacherCoursesPage() {
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide whitespace-nowrap text-slate-600 dark:text-slate-400">
                       Section
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide whitespace-nowrap text-slate-600 dark:text-slate-400">
+                      Intake
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide whitespace-nowrap text-slate-600 dark:text-slate-400">
                       Semester
@@ -498,6 +612,294 @@ export default function TeacherCoursesPage() {
           </>
         )}
       </section>
+
+      {showCreateModal && (
+        <CreateCourseModal
+          form={createForm}
+          yearOptions={yearOptions}
+          creating={creatingCourse}
+          error={createError}
+          onChange={handleCreateFormChange}
+          onSubmit={handleCreateCourse}
+          onClose={closeCreateModal}
+          onReset={() => resetCreateForm(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+
+function getInitialCourseForm() {
+  return {
+    code: "",
+    title: "",
+    section: "",
+    intake: "",
+    semester: "Spring",
+    year: new Date().getFullYear(),
+    courseType: "theory",
+  };
+}
+
+function CreateCourseModal({
+  form,
+  yearOptions,
+  creating,
+  error,
+  onChange,
+  onSubmit,
+  onClose,
+  onReset,
+}) {
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-5">
+      <button
+        type="button"
+        className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
+        onClick={onClose}
+        aria-label="Close create course modal"
+      />
+
+      <form
+        onSubmit={onSubmit}
+        className="relative flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950"
+      >
+        <div className="relative overflow-hidden border-b border-slate-100 bg-gradient-to-br from-white via-slate-50 to-violet-50 px-4 py-4 dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-violet-950/40 sm:px-6 sm:py-5">
+          <div className="absolute -right-14 -top-16 h-40 w-40 rounded-full bg-violet-200/40 blur-3xl dark:bg-violet-500/10" />
+          <div className="absolute -left-10 bottom-0 h-32 w-32 rounded-full bg-sky-200/40 blur-3xl dark:bg-sky-500/10" />
+
+          <div className="relative flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="inline-flex items-center gap-2 rounded-full border border-primary-200 bg-white/90 px-3 py-1 text-xs font-semibold text-primary-700 shadow-sm dark:border-primary-900/50 dark:bg-slate-900/80 dark:text-primary-300">
+                <PlusIcon />
+                Course Setup
+              </div>
+              <h2 className="mt-3 text-xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-2xl">
+                Create New Course
+              </h2>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+                Add the course details here. After creation, teachers can open the course and update details later from Settings.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={creating}
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              aria-label="Close"
+            >
+              <XIcon />
+            </button>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+          <div className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+            <div className="border-b border-slate-100 px-4 py-4 dark:border-slate-800 sm:px-5">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-violet-100 bg-violet-50 text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
+                  <PlusIcon />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+                    Course Information
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Intake is optional, so older courses without intake will continue to work normally.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 sm:p-5">
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <ModalField label="Course Code" hint="Example: CSE-207">
+                  <input
+                    type="text"
+                    name="code"
+                    value={form.code}
+                    onChange={onChange}
+                    placeholder="CSE-207"
+                    className={modalInputClass}
+                    required
+                  />
+                </ModalField>
+
+                <ModalField label="Course Title" hint="Example: Database Systems">
+                  <input
+                    type="text"
+                    name="title"
+                    value={form.title}
+                    onChange={onChange}
+                    placeholder="Database Systems"
+                    className={modalInputClass}
+                    required
+                  />
+                </ModalField>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                <ModalField label="Course Type">
+                  <select
+                    name="courseType"
+                    value={form.courseType}
+                    onChange={onChange}
+                    className={modalInputClass}
+                  >
+                    <option value="theory">Theory Course</option>
+                    <option value="lab">Lab Course</option>
+                    <option value="hybrid">Hybrid Course</option>
+                  </select>
+                </ModalField>
+
+                <ModalField label="Section" hint="Example: 54/5">
+                  <input
+                    type="text"
+                    name="section"
+                    value={form.section}
+                    onChange={onChange}
+                    placeholder="54/5"
+                    className={modalInputClass}
+                    required
+                  />
+                </ModalField>
+
+                <ModalField label="Intake" hint="Example: 54">
+                  <input
+                    type="text"
+                    name="intake"
+                    value={form.intake || ""}
+                    onChange={onChange}
+                    placeholder="54"
+                    className={modalInputClass}
+                  />
+                </ModalField>
+
+                <ModalField label="Semester">
+                  <select
+                    name="semester"
+                    value={form.semester}
+                    onChange={onChange}
+                    className={modalInputClass}
+                    required
+                  >
+                    <option value="Spring">Spring</option>
+                    <option value="Summer">Summer</option>
+                    <option value="Fall">Fall</option>
+                  </select>
+                </ModalField>
+
+                <ModalField label="Year">
+                  <select
+                    name="year"
+                    value={form.year}
+                    onChange={onChange}
+                    className={modalInputClass}
+                    required
+                  >
+                    {yearOptions.map((y) => (
+                      <option key={y} value={y}>
+                        {y}
+                      </option>
+                    ))}
+                  </select>
+                </ModalField>
+              </div>
+
+              <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-slate-700 dark:bg-slate-950/80">
+                <div className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  Live Preview
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+                    {form.code || "Course Code"}
+                  </span>
+                  <span className="text-slate-700 dark:text-slate-200">
+                    {form.title || "Course Title"}
+                  </span>
+                  <span className="text-slate-400 dark:text-slate-500">•</span>
+                  <span className="text-slate-600 dark:text-slate-300">
+                    Section {form.section || "—"}
+                  </span>
+                  <span className="text-slate-400 dark:text-slate-500">•</span>
+                  <span className="text-slate-600 dark:text-slate-300">
+                    Intake {form.intake || "—"}
+                  </span>
+                  <span className="text-slate-400 dark:text-slate-500">•</span>
+                  <span className="text-slate-600 dark:text-slate-300">
+                    {form.semester} {form.year}
+                  </span>
+                </div>
+              </div>
+
+              {error && (
+                <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
+                  {error}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/80 px-4 py-4 dark:border-slate-800 dark:bg-slate-900/70 sm:px-6 md:flex-row md:items-center md:justify-between">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Course code is locked after creation. Other details, including intake, can be updated from course Settings.
+          </p>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onReset}
+              disabled={creating}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              Reset
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={creating}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={creating}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-primary-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary-600/20 transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-60 dark:shadow-primary-900/30"
+            >
+              {creating ? (
+                <>
+                  <SpinnerIcon />
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <PlusIcon />
+                  Create Course
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+const modalInputClass =
+  "h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 shadow-sm outline-none transition focus:border-primary-500 focus:bg-white focus:ring-4 focus:ring-primary-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900";
+
+function ModalField({ label, hint, children }) {
+  return (
+    <div>
+      <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">
+        {label}
+      </label>
+      {children}
+      {hint ? <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{hint}</p> : null}
     </div>
   );
 }
@@ -539,13 +941,16 @@ function DesktopCourseRow({
             </span>
           </div>
           <div className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
-            {course.semester || "-"} • {course.year || "-"} • Section {course.section || "-"}
+            {course.semester || "-"} • {course.year || "-"} • Section {course.section || "-"} • Intake {course.intake || "-"}
           </div>
         </button>
       </td>
 
       <td className="whitespace-nowrap px-4 py-4 text-slate-600 dark:text-slate-300">
         {course.section || "-"}
+      </td>
+      <td className="whitespace-nowrap px-4 py-4 text-slate-600 dark:text-slate-300">
+        {course.intake || "-"}
       </td>
       <td className="whitespace-nowrap px-4 py-4 text-slate-600 dark:text-slate-300">
         {course.semester || "-"}
@@ -660,8 +1065,9 @@ function MobileCourseCard({
         </span>
       </div>
 
-      <div className="mt-4 grid grid-cols-3 gap-3 rounded-2xl bg-slate-50 p-3 text-center dark:bg-slate-950/80">
+      <div className="mt-4 grid grid-cols-2 gap-3 rounded-2xl bg-slate-50 p-3 text-center dark:bg-slate-950/80">
         <InfoTile label="Section" value={course.section || "-"} />
+        <InfoTile label="Intake" value={course.intake || "-"} />
         <InfoTile label="Semester" value={course.semester || "-"} />
         <InfoTile label="Year" value={course.year || "-"} />
       </div>
@@ -817,6 +1223,15 @@ function BookIcon() {
     <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M4 19a2 2 0 0 0 2 2h14V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2z" />
       <path d="M4 7h16" />
+    </svg>
+  );
+}
+
+function XIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
     </svg>
   );
 }

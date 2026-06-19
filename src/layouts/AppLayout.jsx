@@ -84,12 +84,12 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
     },
     { to: "/teacher/complaints", label: "Complaints", icon: <AlertIcon /> },
     { to: "/teacher/routine", label: "Routine", icon: <RoutineIcon /> },
+    { to: "/teacher/counselling", label: "Counselling", icon: <CounsellingIcon /> },
     {
       to: "/academic-calendar",
       label: "Academic Calendar",
       icon: <AcademicCalendarIcon />,
     },
-    { to: "/teacher/create-course", label: "Create Course", icon: <PlusIcon /> },
     { to: "/change-password", label: "Account", icon: <UserIcon /> },
 
   ];
@@ -99,6 +99,7 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
     { to: "/student/courses", label: "My Courses", icon: <BookIcon /> },
     { to: "/student/complaints", label: "Complaints", icon: <AlertIcon /> },
     { to: "/student/attendance", label: "Attendance", icon: <CalendarIcon /> },
+    { to: "/student/counselling", label: "Counselling", icon: <CounsellingIcon /> },
     {
       to: "/academic-calendar",
       label: "Academic Calendar",
@@ -674,6 +675,24 @@ function RoutineIcon() {
       <path d="M4 4h16v16H4z" />
       <path d="M4 9h16M4 14h16" />
       <path d="M9 4v16M15 4v16" />
+    </svg>
+  );
+}
+
+function CounsellingIcon() {
+  return (
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 5h16v10H7l-3 3z" />
+      <path d="M9 9h6" />
+      <path d="M9 12h4" />
     </svg>
   );
 }

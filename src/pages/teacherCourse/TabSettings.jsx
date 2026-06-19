@@ -18,6 +18,7 @@ export default function TabSettings({
   const [form, setForm] = useState({
     title: "",
     section: "",
+    intake: "",
     semester: "Spring",
     year: "",
     courseType: "theory",
@@ -37,6 +38,7 @@ export default function TabSettings({
     setForm({
       title: course?.title || "",
       section: course?.section || "",
+      intake: course?.intake || "",
       semester: course?.semester || "Spring",
       year: course?.year || new Date().getFullYear(),
       courseType: (course?.courseType || "theory").toLowerCase(),
@@ -56,6 +58,7 @@ export default function TabSettings({
     return (
       (form.title || "").trim() !== (localCourse.title || "").trim() ||
       (form.section || "").trim() !== (localCourse.section || "").trim() ||
+      (form.intake || "").trim() !== (localCourse.intake || "").trim() ||
       String(form.semester || "") !== String(localCourse.semester || "") ||
       String(form.year || "") !== String(localCourse.year || "") ||
       String(form.courseType || "").toLowerCase() !==
@@ -94,6 +97,7 @@ export default function TabSettings({
     setForm({
       title: localCourse.title || "",
       section: localCourse.section || "",
+      intake: localCourse.intake || "",
       semester: localCourse.semester || "Spring",
       year: localCourse.year || new Date().getFullYear(),
       courseType: (localCourse.courseType || "theory").toLowerCase(),
@@ -137,6 +141,7 @@ export default function TabSettings({
       const payload = {
         title,
         section: (form.section || "").trim(),
+        intake: (form.intake || "").trim(),
         semester: form.semester,
         year: Number(form.year),
         courseType: (form.courseType || "theory").toLowerCase(),
@@ -226,12 +231,13 @@ export default function TabSettings({
               </h3>
 
               <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
-                Edit essential course details such as title, section, semester, year,
+                Edit essential course details such as title, section, intake, semester, year,
                 and course type.
               </p>
 
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <InfoPill label="Code" value={localCourse.code || "—"} />
+                <InfoPill label="Intake" value={localCourse.intake || "—"} />
                 <InfoPill label="Semester" value={localCourse.semester || "—"} />
                 <InfoPill label="Year" value={localCourse.year || "—"} />
                 <span
@@ -336,6 +342,19 @@ export default function TabSettings({
                   onChange={(e) => handleChange("section", e.target.value)}
                   className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-800 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                   placeholder="e.g. 54/5"
+                />
+              )}
+            </Field>
+
+            <Field label="Intake">
+              {!editMode ? (
+                <DisplayValue value={localCourse.intake || "—"} />
+              ) : (
+                <input
+                  value={form.intake}
+                  onChange={(e) => handleChange("intake", e.target.value)}
+                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-800 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  placeholder="e.g. 54"
                 />
               )}
             </Field>

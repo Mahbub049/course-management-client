@@ -10,7 +10,6 @@ import TeacherCoursePage from './pages/TeacherCoursePage.jsx';
 import StudentCoursePage from './pages/StudentCoursePage.jsx';
 import StudentComplaintsPage from './pages/StudentComplaintsPage.jsx';
 import TeacherComplaintsPage from "./pages/TeacherComplaintsPage.jsx";
-import TeacherCreateCoursePage from './pages/TeacherCreateCoursePage';
 import TeacherAttendancePage from "./pages/TeacherAttendancePage";
 import TeacherRegisterPage from "./pages/TeacherRegisterPage";
 import TeacherCoursesPage from "./pages/TeacherCoursesPage";
@@ -20,6 +19,8 @@ import AcademicCalendarPage from "./pages/AcademicCalendarPage.jsx";
 import AcademicCalendarManagePage from "./pages/AcademicCalendarManagePage.jsx";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage.jsx";
 import TeacherNotebookPage from "./pages/TeacherNotebookPage.jsx";
+import StudentCounsellingPage from "./pages/StudentCounsellingPage.jsx";
+import TeacherCounsellingPage from "./pages/TeacherCounsellingPage.jsx";
 
 import AppLayout from './layouts/AppLayout.jsx';
 import TeacherAttendanceSheetPage from './pages/TeacherAttendanceSheetPage.jsx';
@@ -55,10 +56,11 @@ function App() {
           element={<StudentComplaintsPage />}
         />
         <Route path="/student/attendance" element={<StudentAttendanceSheetPage />} />
+        <Route path="/student/counselling" element={<StudentCounsellingPage />} />
 
 
         <Route path="/teacher/dashboard" element={<TeacherDashboard />} />
-        <Route path="/teacher/create-course" element={<TeacherCreateCoursePage />} /> {/* ✅ new */}
+        <Route path="/teacher/create-course" element={<Navigate to="/teacher/courses" replace />} />
         <Route path="/teacher/courses/:courseId" element={<TeacherCoursePage />} />
         <Route path="/teacher/complaints" element={<TeacherComplaintsPage />} />
         <Route path="/teacher/attendance" element={<TeacherAttendancePage />} />
@@ -66,6 +68,7 @@ function App() {
         <Route path="/teacher/courses" element={<TeacherCoursesPage />} />
         <Route path="/teacher/attendance-sheet" element={<TeacherAttendanceSheetPage />} />
         <Route path="/teacher/routine" element={<TeacherRoutinePage />} />
+        <Route path="/teacher/counselling" element={<TeacherCounsellingPage />} />
         <Route path="/teacher/notebook" element={<TeacherNotebookPage />} />
         <Route path="/teacher/routine/manage" element={<TeacherRoutineBuilderPage />} />
 

@@ -47,6 +47,12 @@ function createRoutineShell(overrides = {}) {
     timeSlots,
     cells: ensureCells(overrides.cells || {}, days, timeSlots),
     courses: Array.isArray(overrides.courses) ? overrides.courses : [],
+    counsellingSlots: normalizeCounsellingSlots(
+      overrides.counsellingSlots || [],
+      days,
+      timeSlots,
+      ensureCells(overrides.cells || {}, days, timeSlots)
+    ),
     sourceFileName: overrides.sourceFileName || "",
     importedAt: overrides.importedAt || null,
   };
@@ -63,6 +69,53 @@ function ensureCells(cells = {}, days = DEFAULT_DAYS, timeSlots = DEFAULT_TIME_S
   });
 
   return next;
+}
+
+function makeCounsellingKey(day, slotId) {
+  return `${day}__${slotId}`;
+}
+
+function normalizeCounsellingSlots(counsellingSlots = [], days = DEFAULT_DAYS, timeSlots = DEFAULT_TIME_SLOTS, cells = {}) {
+  const daySet = new Set(days);
+  const slotSet = new Set(timeSlots.map((slot) => slot.id));
+  const seen = new Set();
+
+  return (Array.isArray(counsellingSlots) ? counsellingSlots : [])
+    .map((item) => ({
+      day: String(item?.day || "").trim(),
+      slotId: String(item?.slotId || item?.id || "").trim(),
+    }))
+    .filter((item) => {
+      const key = makeCounsellingKey(item.day, item.slotId);
+      if (!daySet.has(item.day) || !slotSet.has(item.slotId) || seen.has(key)) return false;
+      if (String(cells?.[item.day]?.[item.slotId] || "").trim()) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function getCounsellingSlotDetails(routine) {
+  const selected = normalizeCounsellingSlots(
+    routine?.counsellingSlots || [],
+    routine?.days || [],
+    routine?.timeSlots || [],
+    routine?.cells || {}
+  );
+
+  return selected.map((item) => {
+    const slot = (routine?.timeSlots || []).find((s) => s.id === item.slotId) || {};
+    return {
+      ...item,
+      label: slot.label || "",
+      start: slot.start || "",
+      end: slot.end || "",
+    };
+  });
+}
+
+function formatSlotTime(slot = {}) {
+  const startEnd = [slot.start, slot.end].filter(Boolean).join(" - ");
+  return startEnd || String(slot.label || "").replace(/\n/g, " ") || "Time slot";
 }
 
 function normalizeSpaces(text = "") {
@@ -230,6 +283,17 @@ function countFilledRoutineCells(routine) {
       ).length
     );
   }, 0);
+}
+
+function reorderItems(items = [], sourceIndex, targetIndex) {
+  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) {
+    return items;
+  }
+
+  const next = [...items];
+  const [moved] = next.splice(sourceIndex, 1);
+  next.splice(targetIndex, 0, moved);
+  return next;
 }
 
 async function renderFileToCanvas(file) {
@@ -763,10 +827,20 @@ function TeacherRoutineBuilderPage() {
   const [saving, setSaving] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [progress, setProgress] = useState("");
+  const [draggingDay, setDraggingDay] = useState(null);
+  const [draggingSlotId, setDraggingSlotId] = useState(null);
 
   const filledCells = useMemo(() => {
     return countFilledRoutineCells(routine);
   }, [routine]);
+
+  const counsellingSlotDetails = useMemo(() => {
+    return getCounsellingSlotDetails(routine);
+  }, [routine]);
+
+  const counsellingKeySet = useMemo(() => {
+    return new Set(counsellingSlotDetails.map((item) => makeCounsellingKey(item.day, item.slotId)));
+  }, [counsellingSlotDetails]);
 
   useEffect(() => {
     let ignore = false;
@@ -813,6 +887,30 @@ function TeacherRoutineBuilderPage() {
         },
       },
     }));
+  };
+
+  const toggleCounsellingSlot = (day, slotId) => {
+    setRoutine((prev) => {
+      const classCell = String(prev.cells?.[day]?.[slotId] || "").trim();
+      if (classCell) return prev;
+
+      const key = makeCounsellingKey(day, slotId);
+      const current = normalizeCounsellingSlots(
+        prev.counsellingSlots || [],
+        prev.days,
+        prev.timeSlots,
+        prev.cells
+      );
+      const isSelected = current.some((item) => makeCounsellingKey(item.day, item.slotId) === key);
+      const counsellingSlots = isSelected
+        ? current.filter((item) => makeCounsellingKey(item.day, item.slotId) !== key)
+        : [...current, { day, slotId }];
+
+      return {
+        ...prev,
+        counsellingSlots,
+      };
+    });
   };
 
   const updateSlot = (slotId, field, value) => {
@@ -937,6 +1035,68 @@ function TeacherRoutineBuilderPage() {
     });
   };
 
+  const reorderDays = (sourceDay, targetDay) => {
+    if (!sourceDay || !targetDay || sourceDay === targetDay) return;
+
+    setRoutine((prev) => {
+      const sourceIndex = prev.days.indexOf(sourceDay);
+      const targetIndex = prev.days.indexOf(targetDay);
+      const days = reorderItems(prev.days, sourceIndex, targetIndex);
+
+      return {
+        ...prev,
+        days,
+        cells: ensureCells(prev.cells, days, prev.timeSlots),
+        counsellingSlots: normalizeCounsellingSlots(
+          prev.counsellingSlots,
+          days,
+          prev.timeSlots,
+          prev.cells
+        ),
+      };
+    });
+  };
+
+  const reorderTimeSlots = (sourceSlotId, targetSlotId) => {
+    if (!sourceSlotId || !targetSlotId || sourceSlotId === targetSlotId) return;
+
+    setRoutine((prev) => {
+      const sourceIndex = prev.timeSlots.findIndex((slot) => slot.id === sourceSlotId);
+      const targetIndex = prev.timeSlots.findIndex((slot) => slot.id === targetSlotId);
+      const timeSlots = reorderItems(prev.timeSlots, sourceIndex, targetIndex);
+      const cells = ensureCells(prev.cells, prev.days, timeSlots);
+
+      return {
+        ...prev,
+        timeSlots,
+        cells,
+        counsellingSlots: normalizeCounsellingSlots(
+          prev.counsellingSlots,
+          prev.days,
+          timeSlots,
+          cells
+        ),
+      };
+    });
+  };
+
+  const handleDayDragStart = (event, day) => {
+    setDraggingDay(day);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", day);
+  };
+
+  const handleSlotDragStart = (event, slotId) => {
+    setDraggingSlotId(slotId);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", slotId);
+  };
+
+  const handleDragOver = (event) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  };
+
   const handleFileImport = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -998,9 +1158,16 @@ function TeacherRoutineBuilderPage() {
     try {
       setSaving(true);
 
+      const cells = ensureCells(routine.cells, routine.days, routine.timeSlots);
       const payload = {
         ...routine,
-        cells: ensureCells(routine.cells, routine.days, routine.timeSlots),
+        cells,
+        counsellingSlots: normalizeCounsellingSlots(
+          routine.counsellingSlots,
+          routine.days,
+          routine.timeSlots,
+          cells
+        ),
         importedAt: routine.importedAt || new Date().toISOString(),
       };
 
@@ -1110,7 +1277,7 @@ function TeacherRoutineBuilderPage() {
         <SummaryCard label="Days" value={routine.days.length} />
         <SummaryCard label="Time Slots" value={routine.timeSlots.length} />
         <SummaryCard label="Class Cells" value={filledCells} />
-        <SummaryCard label="Courses" value={routine.courses.length} />
+        <SummaryCard label="Counselling Hours" value={counsellingSlotDetails.length} />
       </section>
 
       <section className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
@@ -1149,7 +1316,7 @@ function TeacherRoutineBuilderPage() {
               Days
             </h2>
             <p className="text-sm text-slate-500 dark:text-slate-400">
-              Rename, add or remove days if the PDF format is different.
+              Rename, add, remove or drag days to reorder the routine rows.
             </p>
           </div>
 
@@ -1163,11 +1330,33 @@ function TeacherRoutineBuilderPage() {
         </div>
 
         <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-          {routine.days.map((day) => (
+          {routine.days.map((day, index) => (
             <div
               key={day}
-              className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900"
+              onDragOver={handleDragOver}
+              onDrop={(event) => {
+                event.preventDefault();
+                reorderDays(draggingDay || event.dataTransfer.getData("text/plain"), day);
+                setDraggingDay(null);
+              }}
+              className={[
+                "rounded-2xl border bg-slate-50 p-3 transition dark:bg-slate-900",
+                draggingDay === day
+                  ? "border-violet-400 ring-2 ring-violet-200 dark:border-violet-400 dark:ring-violet-500/20"
+                  : "border-slate-200 dark:border-slate-700",
+              ].join(" ")}
             >
+              <div
+                draggable
+                onDragStart={(event) => handleDayDragStart(event, day)}
+                onDragEnd={() => setDraggingDay(null)}
+                className="mb-3 flex cursor-grab items-center justify-between rounded-xl border border-dashed border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-500 active:cursor-grabbing dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400"
+                title="Drag to reorder"
+              >
+                <span>☰ Day {index + 1}</span>
+                <span className="text-[10px] uppercase tracking-wide">Drag</span>
+              </div>
+
               <TextInput
                 small
                 label="Day"
@@ -1196,7 +1385,7 @@ function TeacherRoutineBuilderPage() {
               Time Slots
             </h2>
             <p className="text-sm text-slate-500 dark:text-slate-400">
-              Edit the slot headers if OCR reads any time incorrectly.
+              Edit the slot headers or drag slots to reorder the routine columns.
             </p>
           </div>
 
@@ -1213,12 +1402,30 @@ function TeacherRoutineBuilderPage() {
           {routine.timeSlots.map((slot, index) => (
             <div
               key={slot.id}
-              className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/70"
+              onDragOver={handleDragOver}
+              onDrop={(event) => {
+                event.preventDefault();
+                reorderTimeSlots(draggingSlotId || event.dataTransfer.getData("text/plain"), slot.id);
+                setDraggingSlotId(null);
+              }}
+              className={[
+                "rounded-3xl border bg-slate-50 p-4 transition dark:bg-slate-900/70",
+                draggingSlotId === slot.id
+                  ? "border-violet-400 ring-2 ring-violet-200 dark:border-violet-400 dark:ring-violet-500/20"
+                  : "border-slate-200 dark:border-slate-700",
+              ].join(" ")}
             >
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  Slot {index + 1}
-                </span>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div
+                  draggable
+                  onDragStart={(event) => handleSlotDragStart(event, slot.id)}
+                  onDragEnd={() => setDraggingSlotId(null)}
+                  className="inline-flex cursor-grab items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-white px-3 py-2 text-xs font-black uppercase tracking-wide text-slate-500 active:cursor-grabbing dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400"
+                  title="Drag to reorder"
+                >
+                  <span>☰</span>
+                  <span>Slot {index + 1}</span>
+                </div>
 
                 {routine.timeSlots.length > 1 && (
                   <button
@@ -1248,6 +1455,90 @@ function TeacherRoutineBuilderPage() {
               </label>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-black text-slate-900 dark:text-white">
+              Counselling Hour Management
+            </h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Choose free routine slots as counselling hours. Slots with classes are locked automatically.
+            </p>
+          </div>
+
+          <div className="rounded-full border border-violet-200 bg-violet-50 px-4 py-2 text-xs font-black text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
+            {counsellingSlotDetails.length} selected
+          </div>
+        </div>
+
+        {counsellingSlotDetails.length > 0 && (
+          <div className="mb-5 flex flex-wrap gap-2">
+            {counsellingSlotDetails.map((item) => (
+              <span
+                key={makeCounsellingKey(item.day, item.slotId)}
+                className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+              >
+                {item.day} · {formatSlotTime(item)}
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="overflow-x-auto rounded-3xl border border-slate-200 dark:border-slate-700">
+          <table className="w-full min-w-[980px] border-collapse text-left">
+            <thead>
+              <tr className="bg-slate-50 dark:bg-slate-900">
+                <th className="w-32 border-b border-r border-slate-200 px-4 py-3 text-xs font-black uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                  Day
+                </th>
+                {routine.timeSlots.map((slot) => (
+                  <th
+                    key={slot.id}
+                    className="border-b border-r border-slate-200 px-3 py-3 text-xs font-black text-slate-600 dark:border-slate-700 dark:text-slate-300"
+                  >
+                    <span className="whitespace-pre-line">{slot.label}</span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {routine.days.map((day) => (
+                <tr key={day}>
+                  <th className="border-r border-t border-slate-200 bg-slate-50 px-4 py-3 text-sm font-black text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
+                    {day}
+                  </th>
+
+                  {routine.timeSlots.map((slot) => {
+                    const busy = Boolean(String(routine.cells?.[day]?.[slot.id] || "").trim());
+                    const selected = counsellingKeySet.has(makeCounsellingKey(day, slot.id));
+
+                    return (
+                      <td key={`${day}-${slot.id}`} className="border-r border-t border-slate-200 p-2 dark:border-slate-700">
+                        <button
+                          type="button"
+                          onClick={() => toggleCounsellingSlot(day, slot.id)}
+                          disabled={busy}
+                          className={[
+                            "min-h-14 w-full rounded-2xl border px-3 py-2 text-xs font-black transition",
+                            busy
+                              ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-600"
+                              : selected
+                                ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+                                : "border-slate-200 bg-white text-slate-600 hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:border-violet-500/30 dark:hover:bg-violet-500/10 dark:hover:text-violet-300",
+                          ].join(" ")}
+                        >
+                          {busy ? "Class" : selected ? "Counselling" : "Free Slot"}
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </section>
 

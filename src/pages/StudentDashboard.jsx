@@ -186,13 +186,13 @@ function StudentDashboard() {
             <QuickButton
               primary
               icon={<GridIcon />}
-              label="My Courses"
+              label="Courses"
               onClick={() => navigate("/student/courses")}
             />
             <QuickButton
-              icon={<ChatIcon />}
-              label="My Complaints"
-              onClick={() => navigate("/student/complaints")}
+              icon={<CounsellingIcon />}
+              label="Counselling"
+              onClick={() => navigate("/student/counselling")}
             />
             <QuickButton
               icon={<AttendanceIcon />}
@@ -200,9 +200,9 @@ function StudentDashboard() {
               onClick={() => navigate("/student/attendance")}
             />
             <QuickButton
-              icon={<LockIcon />}
-              label="Change Password"
-              onClick={() => navigate("/change-password")}
+              icon={<ChatIcon />}
+              label="Complaints"
+              onClick={() => navigate("/student/complaints")}
             />
           </div>
         </div>
@@ -839,6 +839,22 @@ function ChatIcon() {
       strokeWidth="2"
     >
       <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+    </svg>
+  );
+}
+
+function CounsellingIcon() {
+  return (
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4z" />
+      <path d="M4 21a8 8 0 0 1 16 0" />
+      <path d="M19 8h2a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2l-3 3v-3h-1" />
     </svg>
   );
 }
