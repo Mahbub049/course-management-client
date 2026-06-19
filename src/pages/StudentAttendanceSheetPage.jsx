@@ -59,7 +59,9 @@ export default function StudentAttendanceSheetPage() {
   const computed = useMemo(() => {
     if (!data) return null;
 
-    const rows = Array.isArray(data.rows) ? data.rows : [];
+    const rows = Array.isArray(data.rows)
+      ? [...data.rows].sort(sortAttendanceRowsLatestFirst)
+      : [];
     const totalClasses = Number(data.totalClasses || rows.length || 0);
     const totalPresent = Number(data.totalPresent || 0);
     const percentage = Number(data.percentage || 0);
@@ -131,22 +133,22 @@ export default function StudentAttendanceSheetPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Hero */}
       <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-indigo-50 p-5 shadow-sm dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/30 sm:p-6 lg:p-7">
         <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-indigo-200/40 blur-3xl dark:bg-indigo-600/20" />
         <div className="absolute -left-10 bottom-0 h-32 w-32 rounded-full bg-sky-200/40 blur-3xl dark:bg-sky-600/20" />
 
         <div className="relative">
-          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs font-semibold text-slate-700 backdrop-blur dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200">
+          <div className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs font-semibold text-slate-700 backdrop-blur dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 sm:inline-flex">
             <CalendarIcon />
             Attendance
           </div>
 
-          <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+          <h1 className="mt-0 text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:mt-3 sm:text-3xl">
             Attendance Sheet
           </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
+          <p className="mt-2 hidden max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400 sm:block">
             Select a course to view your attendance period-wise. You can also report
             attendance issues for a specific class entry.
           </p>
@@ -154,7 +156,7 @@ export default function StudentAttendanceSheetPage() {
       </section>
 
       {/* Filter / action */}
-      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+      <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr),auto] xl:items-end">
           <div>
             <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200">
@@ -163,7 +165,7 @@ export default function StudentAttendanceSheetPage() {
             <select
               value={courseId}
               onChange={(e) => setCourseId(e.target.value)}
-              className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 sm:px-4"
               disabled={loadingCourses}
             >
               <option value="">Select course</option>
@@ -202,7 +204,7 @@ export default function StudentAttendanceSheetPage() {
       {/* Summary */}
       {data && computed && (
         <>
-          <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <section className="hidden gap-4 md:grid md:grid-cols-3">
             <SummaryCard
               label="Total Present"
               value={computed.totalPresent}
@@ -227,7 +229,7 @@ export default function StudentAttendanceSheetPage() {
                   <h2 className="text-base font-semibold text-slate-900 dark:text-white">
                     Attendance Records
                   </h2>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                  <p className="hidden text-xs text-slate-500 dark:text-slate-400 sm:block">
                     {data.course.code} – {data.course.title} (Sec {data.course.section}) –{" "}
                     {data.course.semester} {data.course.year}
                   </p>
@@ -235,6 +237,8 @@ export default function StudentAttendanceSheetPage() {
 
                 <div className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                   Present: {computed.totalPresent} / {computed.totalClasses}
+                  <span className="mx-1 text-slate-300 dark:text-slate-600">•</span>
+                  Percentage: {computed.percentage}%
                 </div>
               </div>
             </div>
@@ -441,6 +445,34 @@ export default function StudentAttendanceSheetPage() {
       )}
     </div>
   );
+}
+
+function getAttendanceSortTime(row) {
+  const rawDate = row?.date || row?.attendanceDate || row?.createdAt || "";
+  const text = String(rawDate).trim();
+
+  if (!text) return 0;
+
+  const parsed = new Date(text).getTime();
+  if (!Number.isNaN(parsed)) return parsed;
+
+  const ddMmYyyy = text.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+  if (ddMmYyyy) {
+    const day = Number(ddMmYyyy[1]);
+    const month = Number(ddMmYyyy[2]);
+    const year = Number(ddMmYyyy[3]);
+    const localDate = new Date(year, month - 1, day).getTime();
+    return Number.isNaN(localDate) ? 0 : localDate;
+  }
+
+  return 0;
+}
+
+function sortAttendanceRowsLatestFirst(a, b) {
+  const dateDiff = getAttendanceSortTime(b) - getAttendanceSortTime(a);
+  if (dateDiff !== 0) return dateDiff;
+
+  return Number(b?.period || 0) - Number(a?.period || 0);
 }
 
 function SummaryCard({ label, value, sub }) {

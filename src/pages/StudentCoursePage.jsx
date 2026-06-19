@@ -578,7 +578,7 @@ export default function StudentCoursePage() {
     { key: "materials", label: "Materials" },
     { key: "submissions", label: "Submissions" },
     ...(showProjectTab ? [{ key: "project", label: "Project" }] : []),
-    { key: "complaint", label: "Raise Complaint" },
+    { key: "complaint", label: "Raise Complaint", mobileLabel: "Complaint" },
   ];
 
   if (loading) {
@@ -622,7 +622,7 @@ export default function StudentCoursePage() {
     <div className="mx-auto space-y-5">
       <section className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="p-4 sm:p-5 lg:p-6">
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_560px] xl:items-center">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_560px] xl:items-center">
             <div className="min-w-0">
               <div className="mb-4 flex flex-wrap items-center gap-2">
                 <button
@@ -634,17 +634,17 @@ export default function StudentCoursePage() {
                   Back
                 </button>
 
-                <span className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3.5 py-2 text-sm font-semibold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
+                <span className="hidden items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3.5 py-2 text-sm font-semibold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300 sm:inline-flex">
                   <BookIcon />
                   Course Details
                 </span>
               </div>
 
-              <h1 className="max-w-5xl text-2xl font-bold leading-snug tracking-tight text-slate-900 dark:text-white sm:text-[28px] lg:text-[30px]">
+              <h1 className="max-w-5xl text-xl font-bold leading-tight tracking-tight text-slate-900 dark:text-white sm:text-[28px] sm:leading-snug lg:text-[30px]">
                 {course.code} — {course.title}
               </h1>
 
-              <div className="mt-4 flex flex-wrap gap-2">
+              <div className="mt-4 hidden flex-wrap gap-2 sm:flex">
                 <Pill label={`Section: ${course.section || "—"}`} />
                 <Pill label={`Semester: ${course.semester || "—"}`} />
                 <Pill label={`Year: ${formatYear(course.year)}`} />
@@ -665,9 +665,9 @@ export default function StudentCoursePage() {
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                    Current Result
+                    Result
                   </p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  <p className="mt-1 hidden text-sm text-slate-500 dark:text-slate-400 sm:block">
                     Course performance summary
                   </p>
                 </div>
@@ -675,7 +675,7 @@ export default function StudentCoursePage() {
                 <button
                   type="button"
                   onClick={() => navigate("/student/complaints")}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                  className="hidden items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 sm:inline-flex"
                 >
                   My Complaints
                   <ChevronIcon />
@@ -687,7 +687,7 @@ export default function StudentCoursePage() {
                   label="Grade"
                   value={displayGrade || "-"}
                   valueClassName={[
-                    "text-4xl",
+                    "text-3xl sm:text-4xl",
                     statusColor || "text-slate-900 dark:text-white",
                   ].join(" ")}
                 />
@@ -703,7 +703,7 @@ export default function StudentCoursePage() {
                     </>
                   }
                   valueClassName={[
-                    "text-3xl",
+                    "text-2xl sm:text-3xl",
                     statusColor || "text-slate-900 dark:text-white",
                   ].join(" ")}
                 />
@@ -715,7 +715,7 @@ export default function StudentCoursePage() {
                       ? `${displayLabMain}/25`
                       : `${displayCtMain}/${getMainComponentFullMarks(course, courseType)}`
                   }
-                  valueClassName="text-2xl text-slate-900 dark:text-white"
+                  valueClassName="text-xl text-slate-900 dark:text-white sm:text-2xl"
                 />
 
                 <ResultMiniCard
@@ -727,7 +727,7 @@ export default function StudentCoursePage() {
                         ? "..."
                         : "—"
                   }
-                  valueClassName="text-2xl text-slate-900 dark:text-white"
+                  valueClassName="text-xl text-slate-900 dark:text-white sm:text-2xl"
                 />
               </div>
             </div>
@@ -748,7 +748,7 @@ export default function StudentCoursePage() {
               <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
                 Assessment Breakdown
               </h2>
-              <p className="mt-1 text-[15px] text-slate-500 dark:text-slate-400">
+              <p className="mt-1 hidden text-[15px] text-slate-500 dark:text-slate-400 sm:block">
                 Published marks for this course. Advanced lab final now shows detailed breakdown.
               </p>
             </div>
@@ -1073,7 +1073,7 @@ export default function StudentCoursePage() {
               </div>
             ) : (
               <>
-                {ctAssessments.map((a) => {
+                {(courseType === "lab" ? regularLabAssessments : ctAssessments).map((a) => {
                   const key = a.id || a._id;
 
                   return (
@@ -1248,7 +1248,7 @@ export default function StudentCoursePage() {
               <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
                 Raise a Complaint
               </h2>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              <p className="mt-1 hidden text-sm text-slate-500 dark:text-slate-400 sm:block">
                 Send a clear issue report to the teacher for marks, attendance, or
                 general course issues.
               </p>
@@ -1365,8 +1365,8 @@ export default function StudentCoursePage() {
 
                   <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900">
                     <textarea
-                      rows={7}
-                      className="min-h-[180px] w-full resize-y border-0 bg-transparent p-0 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:ring-0 dark:text-slate-100 dark:placeholder:text-slate-500"
+                      rows={5}
+                      className="min-h-[140px] w-full resize-y border-0 bg-transparent p-0 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:ring-0 dark:text-slate-100 dark:placeholder:text-slate-500 sm:min-h-[180px]"
                       placeholder={
                         complaintCategory === "marks"
                           ? "Example: My Mid mark seems missing, breakdown is wrong, or the total looks incorrect. Please review."
@@ -1379,14 +1379,14 @@ export default function StudentCoursePage() {
                     />
                   </div>
 
-                  <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                  <p className="mt-2 hidden text-xs text-slate-500 dark:text-slate-400 sm:block">
                     Write the issue clearly and briefly. Mention exact component,
                     phase, question, date, or period where relevant.
                   </p>
                 </div>
 
                 <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900/80 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+                  <div className="hidden text-xs leading-5 text-slate-500 dark:text-slate-400 sm:block">
                     Your teacher will review this complaint from the complaints panel
                     and may respond there.
                   </div>
@@ -1394,7 +1394,7 @@ export default function StudentCoursePage() {
                   <button
                     type="submit"
                     disabled={complaintLoading}
-                    className="inline-flex min-w-[210px] items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:opacity-60"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:opacity-60 sm:w-auto sm:min-w-[210px]"
                   >
                     {complaintLoading ? (
                       <>
@@ -1563,7 +1563,7 @@ export default function StudentCoursePage() {
 function CourseSectionTabs({ tabs, activeTab, onChange }) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div className="flex flex-wrap gap-2">
+      <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
         {tabs.map((tab) => {
           const isActive = activeTab === tab.key;
 
@@ -1573,13 +1573,14 @@ function CourseSectionTabs({ tabs, activeTab, onChange }) {
               type="button"
               onClick={() => onChange(tab.key)}
               className={[
-                "inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-[15px] font-semibold transition",
+                "inline-flex min-h-[44px] w-full items-center justify-center rounded-xl px-2 py-2 text-center text-xs font-semibold leading-tight transition sm:w-auto sm:px-4 sm:py-2.5 sm:text-[15px]",
                 isActive
                   ? "bg-violet-600 text-white shadow-md shadow-violet-600/20"
                   : "border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700",
               ].join(" ")}
             >
-              {tab.label}
+              <span className="sm:hidden">{tab.mobileLabel || tab.label}</span>
+              <span className="hidden sm:inline">{tab.label}</span>
             </button>
           );
         })}
@@ -1591,7 +1592,7 @@ function CourseSectionTabs({ tabs, activeTab, onChange }) {
 function ResultMiniCard({ label, value, valueClassName = "" }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
-      <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
+      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 sm:text-xs">
         {label}
       </p>
       <div className={`mt-2 font-black leading-none ${valueClassName}`}>
@@ -1753,7 +1754,7 @@ function TopControlCard({ label, hint, children }) {
         {label}
       </label>
       {hint && (
-        <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">{hint}</p>
+        <p className="mb-3 hidden text-xs text-slate-500 dark:text-slate-400 sm:block">{hint}</p>
       )}
       {children}
     </div>

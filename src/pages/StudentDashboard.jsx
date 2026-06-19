@@ -3,24 +3,73 @@ import { useNavigate } from "react-router-dom";
 import { fetchStudentCourses } from "../services/studentService";
 import { fetchStudentSubmissionAssessments } from "../services/labSubmissionService";
 import { fetchStudentPendingProjectSubmissions } from "../services/projectSubmissionService";
+import { academicCalendarService } from "../services/academicCalendarService";
+
+const categoryStyles = {
+  Holiday:
+    "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/20",
+  Exam:
+    "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20",
+  Payment:
+    "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/20",
+  Registration:
+    "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-500/10 dark:text-sky-300 dark:border-sky-500/20",
+  Class:
+    "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/20",
+  Result:
+    "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-300 dark:border-indigo-500/20",
+  Event:
+    "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200 dark:bg-fuchsia-500/10 dark:text-fuchsia-300 dark:border-fuchsia-500/20",
+  Attendance:
+    "bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-300 dark:border-cyan-500/20",
+  Other:
+    "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
+};
+
+const monthMap = {
+  jan: 0,
+  january: 0,
+  feb: 1,
+  february: 1,
+  mar: 2,
+  march: 2,
+  apr: 3,
+  april: 3,
+  may: 4,
+  jun: 5,
+  june: 5,
+  jul: 6,
+  july: 6,
+  aug: 7,
+  august: 7,
+  sep: 8,
+  sept: 8,
+  september: 8,
+  oct: 9,
+  october: 9,
+  nov: 10,
+  november: 10,
+  dec: 11,
+  december: 11,
+};
 
 function StudentDashboard() {
   const navigate = useNavigate();
   const [courses, setCourses] = useState([]);
+  const [calendar, setCalendar] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [calendarLoading, setCalendarLoading] = useState(true);
   const [error, setError] = useState("");
   const [pendingSubmissionItems, setPendingSubmissionItems] = useState([]);
   const [nowTick, setNowTick] = useState(() => Date.now());
 
   const studentName = localStorage.getItem("marksPortalName") || "Student";
 
-
-
   const greeting = useMemo(() => {
     const h = new Date().getHours();
-    if (h < 12) return "Good morning";
-    if (h < 18) return "Good afternoon";
-    return "Good evening";
+    if (h < 12) return "Good Morning";
+    if (h < 18) return "Good Afternoon";
+    return "Good Evening";
   }, []);
 
   useEffect(() => {
@@ -34,16 +83,23 @@ function StudentDashboard() {
   useEffect(() => {
     const load = async () => {
       setLoading(true);
+      setCalendarLoading(true);
       setError("");
 
       try {
-        const [courseData, submissionData, projectSubmissionData] = await Promise.all([
-          fetchStudentCourses(),
-          fetchStudentSubmissionAssessments(),
-          fetchStudentPendingProjectSubmissions(),
-        ]);
+        const [courseData, submissionData, projectSubmissionData, calendarData] =
+          await Promise.all([
+            fetchStudentCourses(),
+            fetchStudentSubmissionAssessments(),
+            fetchStudentPendingProjectSubmissions(),
+            academicCalendarService.getLatest().catch((calendarError) => {
+              console.error(calendarError);
+              return null;
+            }),
+          ]);
 
         setCourses(courseData || []);
+        setCalendar(calendarData?.calendar || null);
 
         const labPendingItems = Array.isArray(submissionData)
           ? submissionData.map((item) => ({
@@ -85,26 +141,12 @@ function StudentDashboard() {
         setError(err?.response?.data?.message || "Failed to load dashboard data");
       } finally {
         setLoading(false);
+        setCalendarLoading(false);
       }
     };
 
     load();
   }, []);
-
-  const stats = useMemo(() => {
-    const total = courses.length;
-    let published = 0;
-    let inProgress = 0;
-    let notPublished = 0;
-
-    courses.forEach((c) => {
-      if (c?.summaryStatus === "published") published += 1;
-      else if (c?.summaryStatus === "in_progress") inProgress += 1;
-      else notPublished += 1;
-    });
-
-    return { total, published, inProgress, notPublished };
-  }, [courses]);
 
   const recent = useMemo(() => (courses || []).slice(0, 4), [courses]);
 
@@ -117,31 +159,12 @@ function StudentDashboard() {
   );
 
   const showPendingSection = activePendingSubmissionItems.length > 0;
-  const showProgressQuickActions = activePendingSubmissionItems.length === 0;
-
-  // const pendingSubmissionItems = useMemo(() => {
-  //   const rows = [];
-  //   (courses || []).forEach((course) => {
-  //     (course.pendingSubmissionAssessments || []).forEach((task) => {
-  //       if (task.status !== 'checked' && task.status !== 'submitted') {
-  //         rows.push({
-  //           ...task,
-  //           courseId: course.id,
-  //           courseCode: course.code,
-  //           courseTitle: course.title,
-  //           section: course.section,
-  //         });
-  //       }
-  //     });
-  //   });
-  //   return rows.slice(0, 6);
-  // }, [courses]);
 
   return (
-    <div className="space-y-5 sm:space-y-6">
+    <div className="flex flex-col gap-5 sm:gap-6">
       {/* Top intro + quick actions */}
-      <section className="rounded-[28px] border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/85 sm:p-6">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+      <section className="order-1 rounded-[28px] border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/85 sm:p-6">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
             <p className="text-xs font-medium tracking-wide text-slate-500 dark:text-slate-400">
               {greeting},{" "}
@@ -154,13 +177,12 @@ function StudentDashboard() {
               Student Dashboard
             </h1>
 
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-              View your courses, track published results, monitor progress, and
-              access important student actions from one clean dashboard.
+            <p className="mt-2 hidden max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400 md:block">
+              View your courses, track published results, monitor progress, and access important student actions from one clean dashboard.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:w-auto xl:min-w-[520px]">
+          <div className="grid grid-cols-2 gap-3 xl:w-auto xl:min-w-[520px]">
             <QuickButton
               primary
               icon={<GridIcon />}
@@ -186,59 +208,9 @@ function StudentDashboard() {
         </div>
       </section>
 
-      {showProgressQuickActions && (
-        <>
-          {/* Hero overview */}
-          <section className="relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-gradient-to-br from-white via-violet-50/60 to-sky-50/70 shadow-sm dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-slate-950">
-            <div className="pointer-events-none absolute -top-16 right-0 h-44 w-44 rounded-full bg-violet-300/20 blur-3xl dark:bg-violet-500/10" />
-            <div className="pointer-events-none absolute -bottom-16 left-0 h-44 w-44 rounded-full bg-sky-300/20 blur-3xl dark:bg-sky-500/10" />
-
-            <div className="relative p-4 sm:p-6 lg:p-8">
-              <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-                <div className="min-w-0">
-                  <div className="inline-flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-[11px] font-semibold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
-                    <CapIcon />
-                    BUBT Marks Portal • Student Panel
-                  </div>
-
-                  <h2 className="mt-4 text-xl font-semibold text-slate-900 dark:text-white sm:text-2xl">
-                    Progress & Quick Actions
-                  </h2>
-
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-                    Review your course progress, check published marks, visit your
-                    complaints section, and navigate to important pages faster.
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-                  <MiniActionButton
-                    label="Open Courses"
-                    primary
-                    onClick={() => navigate("/student/courses")}
-                  />
-                  <MiniActionButton
-                    label="Complaints"
-                    onClick={() => navigate("/student/complaints")}
-                  />
-                  <MiniActionButton
-                    label="Attendance"
-                    onClick={() => navigate("/student/attendance")}
-                  />
-                  <MiniActionButton
-                    label="Password"
-                    onClick={() => navigate("/change-password")}
-                  />
-                </div>
-              </div>
-            </div>
-          </section>
-
-        </>
-      )}
       {/* Error */}
       {error && (
-        <section className="rounded-[24px] border border-rose-200 bg-rose-50 p-4 shadow-sm dark:border-rose-500/20 dark:bg-rose-500/10">
+        <section className="order-2 rounded-[24px] border border-rose-200 bg-rose-50 p-4 shadow-sm dark:border-rose-500/20 dark:bg-rose-500/10">
           <div className="flex items-start gap-3">
             <div className="mt-0.5 text-rose-700 dark:text-rose-300">
               <AlertIcon />
@@ -255,133 +227,25 @@ function StudentDashboard() {
         </section>
       )}
 
-
-      {/* Stats */}
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          title="Total Courses"
-          value={loading ? "..." : String(stats.total)}
-          hint="All enrolled courses"
-          icon={<GridIcon />}
-          accent="violet"
-        />
-
-        <StatCard
-          title="Published"
-          value={loading ? "..." : String(stats.published)}
-          hint="Results already published"
-          icon={<CheckIcon />}
-          accent="emerald"
-        />
-
-        <StatCard
-          title="In Progress"
-          value={loading ? "..." : String(stats.inProgress)}
-          hint="Marks are being updated"
-          icon={<ClockIcon />}
-          accent="amber"
-        />
-
-        <StatCard
-          title="Not Published"
-          value={loading ? "..." : String(stats.notPublished)}
-          hint="No published summary yet"
-          icon={<MinusIcon />}
-          accent="slate"
-        />
-      </section>
-
-
       {showPendingSection && (
-        <section className="rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-                Pending Submissions
-              </h3>
-
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Lab assessments and project phases created by your teachers appear here.
-              </p>
-            </div>
-
-            <div className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">
-              {loading ? "..." : `${activePendingSubmissionItems.length} pending`}
-            </div>
-          </div>
-
-          {loading ? (
-            <div className="mt-5 text-sm text-slate-500 dark:text-slate-400">
-              Loading pending submissions...
-            </div>
-          ) : (
-            <div className="mt-5 grid gap-4 xl:grid-cols-2">
-              {activePendingSubmissionItems.map((item) => (
-                <div
-                  key={`${item.course?.id}-${item.id}`}
-                  className="rounded-[24px] border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-800/50"
-                >
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <div className="text-base font-semibold text-slate-900 dark:text-white">
-                        {item.name}
-                      </div>
-
-                      <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                        {item.course?.code} • Section {item.course?.section}
-                      </div>
-
-                      <div className="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                        {item.taskLabel || "Submission Task"}
-                      </div>
-
-                      <div
-                        className={[
-                          "mt-3 inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold",
-                          item.taskType === "project_phase"
-                            ? "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300"
-                            : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300",
-                        ].join(" ")}
-                      >
-                        {item.badgeLabel || "Pending submission"}
-                      </div>
-
-                      <div className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-                        Due:{" "}
-                        {item.dueDate
-                          ? new Date(item.dueDate).toLocaleString()
-                          : "No deadline set"}{" "}
-                        {item.taskType === "project_phase"
-                          ? ` • Marks ${item.fullMarks ?? item.totalMarks ?? 0}`
-                          : ` • Max ${item.maxFileSizeMB || 10} MB`}
-                      </div>
-
-                      <div className="mt-2 inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300">
-                        Time remaining: {formatRemainingTime(item, nowTick)}
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        navigate(
-                          item.navigateTo || `/student/courses/${item.course?.id}?tab=submissions`
-                        )
-                      }
-                      className="inline-flex items-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-700"
-                    >
-                      {item.actionLabel || "Go to Submission Page"}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+        <PendingSubmissionsSection
+          className="order-2 md:order-4"
+          items={activePendingSubmissionItems}
+          loading={loading}
+          nowTick={nowTick}
+          onNavigate={navigate}
+        />
       )}
 
+      <AcademicCalendarPreview
+        className="order-3 md:order-3"
+        calendar={calendar}
+        loading={calendarLoading}
+        onViewCalendar={() => navigate("/academic-calendar")}
+      />
+
       {/* Recent Courses */}
-      <section className="rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+      <section className="order-5 rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
@@ -518,6 +382,219 @@ function StudentDashboard() {
   );
 }
 
+function PendingSubmissionsSection({ className = "", items, loading, nowTick, onNavigate }) {
+  return (
+    <section className={`${className} rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6`}>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+            Pending Submissions
+          </h3>
+
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            Lab assessments and project phases created by your teachers appear here.
+          </p>
+        </div>
+
+        <div className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">
+          {loading ? "..." : `${items.length} pending`}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="mt-5 text-sm text-slate-500 dark:text-slate-400">
+          Loading pending submissions...
+        </div>
+      ) : (
+        <div className="mt-5 grid gap-4 xl:grid-cols-2">
+          {items.map((item) => (
+            <div
+              key={`${item.course?.id}-${item.id}`}
+              className="rounded-[24px] border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-800/50"
+            >
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="text-base font-semibold text-slate-900 dark:text-white">
+                    {item.name}
+                  </div>
+
+                  <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    {item.course?.code} • Section {item.course?.section}
+                  </div>
+
+                  <div className="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                    {item.taskLabel || "Submission Task"}
+                  </div>
+
+                  <div
+                    className={[
+                      "mt-3 inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold",
+                      item.taskType === "project_phase"
+                        ? "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300"
+                        : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300",
+                    ].join(" ")}
+                  >
+                    {item.badgeLabel || "Pending submission"}
+                  </div>
+
+                  <div className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                    Due:{" "}
+                    {item.dueDate
+                      ? new Date(item.dueDate).toLocaleString()
+                      : "No deadline set"}{" "}
+                    {item.taskType === "project_phase"
+                      ? ` • Marks ${item.fullMarks ?? item.totalMarks ?? 0}`
+                      : ` • Max ${item.maxFileSizeMB || 10} MB`}
+                  </div>
+
+                  <div className="mt-2 inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300">
+                    Time remaining: {formatRemainingTime(item, nowTick)}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    onNavigate(
+                      item.navigateTo || `/student/courses/${item.course?.id}?tab=submissions`
+                    )
+                  }
+                  className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-700"
+                >
+                  {item.actionLabel || "Go to Submission Page"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AcademicCalendarPreview({ className = "", calendar, loading, onViewCalendar }) {
+  const events = useMemo(
+    () => getDashboardAcademicEvents(calendar?.events || [], 3),
+    [calendar]
+  );
+
+  return (
+    <section className={`${className} relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-gradient-to-br from-white via-violet-50/60 to-sky-50/70 p-5 shadow-sm dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-slate-950 sm:p-6`}>
+      <div className="pointer-events-none absolute -right-12 -top-16 h-40 w-40 rounded-full bg-violet-300/20 blur-3xl dark:bg-violet-500/10" />
+      <div className="pointer-events-none absolute -bottom-16 left-0 h-40 w-40 rounded-full bg-sky-300/20 blur-3xl dark:bg-sky-500/10" />
+
+      <div className="relative">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-[11px] font-semibold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
+              <CalendarIcon />
+              Academic Calendar
+            </div>
+
+            <h2 className="mt-3 text-lg font-semibold text-slate-900 dark:text-white sm:text-xl">
+              Upcoming Academic Days & Events
+            </h2>
+
+            {calendar?.semester || calendar?.academicYear ? (
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                {[calendar?.semester, calendar?.academicYear].filter(Boolean).join(" • ")}
+              </p>
+            ) : null}
+          </div>
+
+          <button
+            type="button"
+            onClick={onViewCalendar}
+            className="inline-flex items-center gap-2 self-start rounded-xl border border-slate-200 bg-white/85 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            View Calendar
+            <ArrowRightIcon />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="mt-5 grid gap-4 lg:grid-cols-3">
+            {[1, 2, 3].map((item) => (
+              <div
+                key={item}
+                className="h-32 animate-pulse rounded-[24px] border border-slate-200 bg-white/70 dark:border-slate-800 dark:bg-slate-800/50"
+              />
+            ))}
+          </div>
+        ) : events.length === 0 ? (
+          <div className="mt-5 rounded-[24px] border border-slate-200 bg-white/75 p-5 dark:border-slate-800 dark:bg-slate-800/50">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 text-slate-600 dark:text-slate-300">
+                <InfoIcon />
+              </div>
+              <div>
+                <div className="font-semibold text-slate-900 dark:text-white">
+                  No academic calendar events found
+                </div>
+                <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Published academic calendar items will appear here for students.
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-5 grid gap-4 lg:grid-cols-3">
+            {events.map((event) => {
+              const categoryClass =
+                categoryStyles[event.category] || categoryStyles.Other;
+
+              return (
+                <article
+                  key={event.key}
+                  className="rounded-[24px] border border-slate-200 bg-white/80 p-4 shadow-sm backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/75"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${categoryClass}`}
+                    >
+                      {event.category || "Other"}
+                    </span>
+
+                    {event.statusLabel ? (
+                      <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                        {event.statusLabel}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <h3 className="mt-3 line-clamp-2 text-sm font-bold text-slate-900 dark:text-white">
+                    {event.title}
+                  </h3>
+
+                  <div className="mt-3 space-y-1 text-xs text-slate-500 dark:text-slate-400">
+                    <div className="inline-flex items-center gap-1.5">
+                      <CalendarIcon />
+                      <span>{event.dateText || event.formattedDate}</span>
+                    </div>
+
+                    {event.dayText ? (
+                      <div className="inline-flex items-center gap-1.5 sm:flex">
+                        <TagIcon />
+                        <span>{event.dayText}</span>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {event.note ? (
+                    <p className="mt-3 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                      {event.note}
+                    </p>
+                  ) : null}
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function getDueTime(dueDate) {
   if (!dueDate) return null;
 
@@ -564,6 +641,127 @@ function formatRemainingTime(item, now = Date.now()) {
   return `${minutes}m ${seconds}s`;
 }
 
+function pad2(value) {
+  return String(value).padStart(2, "0");
+}
+
+function makeLocalDate(year, monthIndex, day) {
+  return new Date(year, monthIndex, day, 12, 0, 0, 0);
+}
+
+function formatDate(date) {
+  if (!date) return "";
+  return date.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function startOfToday() {
+  const now = new Date();
+  return makeLocalDate(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+function parseDatePart(part = "", defaults = {}) {
+  const cleaned = String(part)
+    .replace(/,/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const match = cleaned.match(/(\d{1,2})(?:\s+([A-Za-z]+))?(?:\s+(\d{4}))?/);
+  if (!match) return null;
+
+  const day = Number(match[1]);
+  const monthText = match[2]?.toLowerCase();
+  const monthIndex = monthText ? monthMap[monthText] : defaults.monthIndex;
+  const year = match[3] ? Number(match[3]) : defaults.year;
+
+  if (!day || monthIndex === undefined || !year) return null;
+
+  const date = makeLocalDate(year, monthIndex, day);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return date;
+}
+
+function parseAcademicDateRange(dateText = "") {
+  const normalized = String(dateText)
+    .replace(/[—–]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) return null;
+
+  const pieces = normalized.split(/\s*-\s*/);
+
+  if (pieces.length >= 2) {
+    const end = parseDatePart(pieces.slice(1).join(" - "));
+    const start = parseDatePart(pieces[0], {
+      monthIndex: end?.getMonth(),
+      year: end?.getFullYear(),
+    });
+
+    if (start && end) {
+      return start <= end ? { start, end } : { start, end: start };
+    }
+  }
+
+  const single = parseDatePart(normalized);
+  return single ? { start: single, end: single } : null;
+}
+
+function getStatusLabel(range) {
+  if (!range) return "";
+
+  const today = startOfToday();
+  const msPerDay = 24 * 60 * 60 * 1000;
+
+  if (range.start <= today && range.end >= today) return "Today";
+
+  if (range.start > today) {
+    const days = Math.ceil((range.start - today) / msPerDay);
+    if (days === 1) return "Tomorrow";
+    return `In ${days} days`;
+  }
+
+  return "Completed";
+}
+
+function getDashboardAcademicEvents(events = [], limit = 3) {
+  const today = startOfToday();
+
+  const withDates = events
+    .map((event, index) => {
+      const range = parseAcademicDateRange(event.dateText);
+      return {
+        ...event,
+        key: event._id || `${event.title}-${index}`,
+        range,
+        formattedDate: range
+          ? range.start.getTime() === range.end.getTime()
+            ? formatDate(range.start)
+            : `${formatDate(range.start)} - ${formatDate(range.end)}`
+          : event.dateText,
+        statusLabel: getStatusLabel(range),
+        sortTime: range?.start?.getTime() ?? Number.MAX_SAFE_INTEGER,
+        isUpcoming: range ? range.end >= today : false,
+      };
+    })
+    .sort((a, b) => {
+      if (a.sortTime !== b.sortTime) return a.sortTime - b.sortTime;
+      return Number(a.sortOrder || 0) - Number(b.sortOrder || 0);
+    });
+
+  const upcoming = withDates.filter((event) => event.isUpcoming);
+
+  if (upcoming.length > 0) {
+    return upcoming.slice(0, limit);
+  }
+
+  return withDates.slice(0, limit);
+}
+
 export default StudentDashboard;
 
 /* ---------- UI Components ---------- */
@@ -573,7 +771,7 @@ function QuickButton({ label, icon, onClick, primary = false }) {
     <button
       onClick={onClick}
       className={[
-        "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition-all duration-200",
+        "inline-flex min-h-[58px] items-center justify-center gap-2 rounded-2xl px-3 py-3 text-center text-xs font-semibold leading-snug transition-all duration-200 sm:text-sm",
         "focus:outline-none focus:ring-2 focus:ring-violet-500/40",
         primary
           ? "bg-violet-600 text-white shadow-sm hover:bg-violet-700"
@@ -584,60 +782,6 @@ function QuickButton({ label, icon, onClick, primary = false }) {
       {icon}
       <span>{label}</span>
     </button>
-  );
-}
-
-function MiniActionButton({ label, onClick, primary = false }) {
-  return (
-    <button
-      onClick={onClick}
-      type="button"
-      className={[
-        "inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold transition",
-        primary
-          ? "bg-slate-900 text-white hover:bg-slate-800 dark:bg-violet-600 dark:hover:bg-violet-700"
-          : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:bg-slate-800",
-      ].join(" ")}
-    >
-      {label}
-    </button>
-  );
-}
-
-function StatCard({ title, value, hint, icon, accent = "violet" }) {
-  const accentMap = {
-    violet:
-      "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/20",
-    emerald:
-      "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/20",
-    amber:
-      "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20",
-    slate:
-      "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-500/10 dark:text-slate-300 dark:border-slate-500/20",
-  };
-
-  return (
-    <div className="rounded-[24px] border border-slate-200/80 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            {title}
-          </div>
-          <div className="mt-2 text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
-            {value}
-          </div>
-          <div className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            {hint}
-          </div>
-        </div>
-
-        <div
-          className={`rounded-2xl border p-3 ${accentMap[accent] || accentMap.violet}`}
-        >
-          {icon}
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -667,21 +811,6 @@ function ChevronIcon() {
       strokeWidth="2"
     >
       <path d="M9 18l6-6-6-6" />
-    </svg>
-  );
-}
-
-function CapIcon() {
-  return (
-    <svg
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M22 10L12 5 2 10l10 5 10-5z" />
-      <path d="M6 12v5c0 1 3 2 6 2s6-1 6-2v-5" />
     </svg>
   );
 }
@@ -742,49 +871,6 @@ function AttendanceIcon() {
       <path d="M3 10h18" />
       <path d="M5 6h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" />
       <path d="M8 14l2 2 4-4" />
-    </svg>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M20 6L9 17l-5-5" />
-    </svg>
-  );
-}
-
-function ClockIcon() {
-  return (
-    <svg
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M12 8v5l3 3" />
-      <path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
-    </svg>
-  );
-}
-
-function MinusIcon() {
-  return (
-    <svg
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M5 12h14" />
     </svg>
   );
 }

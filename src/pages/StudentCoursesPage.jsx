@@ -1,4 +1,4 @@
-// client/src/pages/StudentDashboard.jsx
+// client/src/pages/StudentCoursesPage.jsx
 
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -85,28 +85,28 @@ function StudentCoursesPage() {
   return (
     <div className="mx-auto w-full space-y-5 px-4 pb-10 pt-4 sm:space-y-6 sm:px-6 sm:pt-6 lg:px-0">
       {/* Hero Header */}
-      <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-indigo-50 p-5 shadow-sm dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/30 sm:p-6 lg:p-7">
+      <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-indigo-50 p-4 shadow-sm dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/30 sm:p-6 lg:p-7">
         <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-indigo-200/40 blur-3xl dark:bg-indigo-600/20" />
         <div className="absolute -left-10 bottom-0 h-32 w-32 rounded-full bg-sky-200/40 blur-3xl dark:bg-sky-600/20" />
 
-        <div className="relative flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+        <div className="relative flex flex-col gap-0 sm:gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div className="min-w-0">
-            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs font-semibold text-slate-700 backdrop-blur dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200">
+            <div className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs font-semibold text-slate-700 backdrop-blur dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 sm:inline-flex">
               <CapIcon />
               Student Portal
             </div>
 
-            <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+            <h1 className="mt-0 text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:mt-3 sm:text-3xl">
               My Courses
             </h1>
 
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
+            <p className="mt-2 hidden max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400 sm:block">
               Open any course to view your marks, current total, grade, and submit
               complaints when needed.
             </p>
           </div>
 
-          <div className="grid w-full grid-cols-2 gap-3 sm:grid-cols-4 xl:w-auto xl:min-w-[540px]">
+          <div className="hidden w-full grid-cols-2 gap-3 sm:grid sm:grid-cols-4 xl:w-auto xl:min-w-[540px]">
             <StatCard label="Total" value={stats.total} icon={<GridIcon />} />
             <StatCard label="Theory" value={stats.theory} icon={<BookIcon />} />
             <StatCard label="Lab" value={stats.lab} icon={<FlaskIcon />} />
