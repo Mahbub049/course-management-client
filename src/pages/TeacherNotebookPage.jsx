@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -11,6 +11,7 @@ import {
   fetchNotebookNoteById,
   fetchNotebookNotes,
   updateNotebookNote,
+  refreshNotebookStudents,
 } from "../services/notebookService";
 
 const TYPE_LABELS = {
@@ -36,6 +37,7 @@ const DEFAULT_SETTINGS = {
   includeMcq: true,
   includeBlankFields: false,
   includeTotal: false,
+  columnOrder: [],
   mcqLabel: DEFAULT_MCQ_FIELD.label,
   mcqOptions: DEFAULT_MCQ_FIELD.options,
   mcqFields: [DEFAULT_MCQ_FIELD],
@@ -118,7 +120,7 @@ const normalizeSettings = (settings = {}) => {
   const blankFields = normalizeBlankFields(settings);
   const firstField = mcqFields[0] || DEFAULT_MCQ_FIELD;
 
-  return {
+  const normalized = {
     includeRoll: settings.includeRoll === undefined ? true : Boolean(settings.includeRoll),
     includeName: settings.includeName === undefined ? true : Boolean(settings.includeName),
     includeFeedback: settings.includeFeedback === undefined ? true : Boolean(settings.includeFeedback),
@@ -129,6 +131,11 @@ const normalizeSettings = (settings = {}) => {
     mcqOptions: firstField.options,
     mcqFields,
     blankFields,
+  };
+
+  return {
+    ...normalized,
+    columnOrder: normalizeColumnOrder(settings.columnOrder, normalized),
   };
 };
 
@@ -164,6 +171,103 @@ const calculateBlankFieldsTotal = (row, fields = []) => {
     hasError: false,
     value: formatTotalValue(numbers.reduce((sum, value) => sum + value, 0)),
   };
+};
+
+
+const COLUMN_IDS = {
+  roll: "roll",
+  name: "name",
+  feedback: "feedback",
+  total: "total",
+};
+
+const blankColumnId = (field) => `blank:${field.id}`;
+const mcqColumnId = (field) => `mcq:${field.id}`;
+
+const getAllMovableColumnIds = (settings = {}) => {
+  const blankFields = Array.isArray(settings.blankFields) ? settings.blankFields : [];
+  const mcqFields = Array.isArray(settings.mcqFields) ? settings.mcqFields : [];
+  return [
+    COLUMN_IDS.roll,
+    COLUMN_IDS.name,
+    ...blankFields.map(blankColumnId),
+    ...mcqFields.map(mcqColumnId),
+    COLUMN_IDS.feedback,
+  ];
+};
+
+const normalizeColumnOrder = (order = [], settings = {}) => {
+  const allIds = getAllMovableColumnIds(settings);
+  const allowed = new Set(allIds);
+  const seen = new Set();
+  const savedOrder = Array.isArray(order) ? order : [];
+  const normalized = savedOrder
+    .map((item) => String(item || ""))
+    .filter((id) => allowed.has(id) && !seen.has(id) && seen.add(id));
+  return [...normalized, ...allIds.filter((id) => !seen.has(id))];
+};
+
+const buildVisibleColumns = (settings = {}) => {
+  const blankFields = Array.isArray(settings.blankFields) ? settings.blankFields : [];
+  const mcqFields = Array.isArray(settings.mcqFields) ? settings.mcqFields : [];
+  const allColumns = [];
+
+  if (settings.includeRoll) {
+    allColumns.push({ id: COLUMN_IDS.roll, type: "roll", label: "Roll", minWidth: "min-w-32" });
+  }
+  if (settings.includeName) {
+    allColumns.push({ id: COLUMN_IDS.name, type: "name", label: "Name", minWidth: "min-w-56" });
+  }
+  if (settings.includeBlankFields) {
+    blankFields.forEach((field, fieldIndex) => {
+      allColumns.push({
+        id: blankColumnId(field),
+        type: "blank",
+        label: displayText(field.label, `Blank Field ${fieldIndex + 1}`),
+        field,
+        fieldIndex,
+        minWidth: "min-w-44",
+      });
+    });
+  }
+  if (settings.includeMcq) {
+    mcqFields.forEach((field, fieldIndex) => {
+      allColumns.push({
+        id: mcqColumnId(field),
+        type: "mcq",
+        label: displayText(field.label, `Category ${fieldIndex + 1}`),
+        field,
+        fieldIndex,
+        minWidth: "min-w-52",
+      });
+    });
+  }
+  if (settings.includeFeedback) {
+    allColumns.push({ id: COLUMN_IDS.feedback, type: "feedback", label: "Feedback / Comments", minWidth: "min-w-[320px]" });
+  }
+
+  const byId = new Map(allColumns.map((column) => [column.id, column]));
+  const ordered = normalizeColumnOrder(settings.columnOrder, settings)
+    .map((id) => byId.get(id))
+    .filter(Boolean);
+
+  if (settings.includeTotal) {
+    ordered.push({ id: COLUMN_IDS.total, type: "total", label: "Total", minWidth: "min-w-40", locked: true });
+  }
+
+  return ordered;
+};
+
+const getColumnExportValue = (column, row, settings) => {
+  if (column.type === "roll") return row.roll || "";
+  if (column.type === "name") return row.name || "";
+  if (column.type === "blank") return getRowBlankValue(row, column.field);
+  if (column.type === "mcq") return getRowMcqValue(row, column.field, column.fieldIndex);
+  if (column.type === "feedback") return row.feedback || "";
+  if (column.type === "total") {
+    return calculateBlankFieldsTotal(row, settings.includeBlankFields ? settings.blankFields : []).value || "";
+  }
+  return "";
 };
 
 const todayInput = () => new Date().toISOString().slice(0, 10);
@@ -225,6 +329,7 @@ export default function TeacherNotebookPage() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [saveStatus, setSaveStatus] = useState("Saved");
+  const [refreshingStudents, setRefreshingStudents] = useState(false);
 
   const saveTimerRef = useRef(null);
   const lastSavedRef = useRef("");
@@ -371,6 +476,53 @@ export default function TeacherNotebookPage() {
     }
   };
 
+  const handleRefreshStudents = async () => {
+    const noteId = getNoteId(selectedNote);
+    if (!noteId || selectedNote?.type !== "evaluation") return;
+
+    try {
+      setRefreshingStudents(true);
+      const currentSerialized = serializeNote(selectedNote);
+
+      if (currentSerialized !== lastSavedRef.current) {
+        setSaveStatus("Saving...");
+        const savedNote = await updateNotebookNote(noteId, buildSavePayload(selectedNote));
+        lastSavedRef.current = serializeNote(savedNote);
+        setSaveStatus("Saved");
+      }
+
+      const result = await refreshNotebookStudents(noteId);
+      const refreshedNote = result?.note || result;
+      if (refreshedNote) {
+        setSelectedNote(refreshedNote);
+        lastSavedRef.current = serializeNote(refreshedNote);
+        setNotes((prev) =>
+          prev.map((item) => (getNoteId(item) === noteId ? { ...item, ...refreshedNote } : item))
+        );
+      }
+
+      Swal.fire({
+        title: result?.addedCount > 0 ? "Student data refreshed" : "Already up to date",
+        text:
+          result?.addedCount > 0
+            ? `${result.addedCount} new student${result.addedCount === 1 ? "" : "s"} added. Existing marks, comments, and selections were kept unchanged.`
+            : "No new enrolled student was found for this course.",
+        icon: "success",
+        timer: 2200,
+        showConfirmButton: false,
+      });
+    } catch (err) {
+      console.error(err);
+      Swal.fire({
+        title: "Refresh failed",
+        text: err?.response?.data?.message || "Please try again.",
+        icon: "error",
+      });
+    } finally {
+      setRefreshingStudents(false);
+    }
+  };
+
   const updateSelectedNote = (updater) => {
     setSelectedNote((prev) => {
       if (!prev) return prev;
@@ -420,6 +572,8 @@ export default function TeacherNotebookPage() {
           onBack={() => setSelectedNote(null)}
           onChange={updateSelectedNote}
           onDelete={() => handleDelete(selectedNote)}
+          onRefreshStudents={handleRefreshStudents}
+          refreshingStudents={refreshingStudents}
         />
       ) : (
         <section className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
@@ -1097,7 +1251,7 @@ function CreateNotebookModal({ courses, onClose, onCreate }) {
   );
 }
 
-function NotebookEditor({ note, courses, saveStatus, onBack, onChange, onDelete }) {
+function NotebookEditor({ note, courses, saveStatus, onBack, onChange, onDelete, onRefreshStudents, refreshingStudents }) {
   const type = note.type || "simple";
   const selectedCourse = note.course || courses.find((c) => (c.id || c._id) === (note.courseId || note.course));
 
@@ -1148,11 +1302,22 @@ function NotebookEditor({ note, courses, saveStatus, onBack, onChange, onDelete 
             />
             {type === "evaluation" ? (
               <>
+                <button
+                  type="button"
+                  onClick={onRefreshStudents}
+                  disabled={refreshingStudents}
+                  className="btn-soft disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {refreshingStudents ? "Refreshing..." : "Refresh Students"}
+                </button>
                 <button type="button" onClick={() => exportEvaluationExcel(note)} className="btn-soft">
                   Excel
                 </button>
                 <button type="button" onClick={() => exportEvaluationPdf(note)} className="btn-soft">
                   PDF
+                </button>
+                <button type="button" onClick={() => printEvaluationPdf(note)} className="btn-soft">
+                  Print
                 </button>
               </>
             ) : (
@@ -1181,6 +1346,7 @@ function EvaluationEditor({ note, onChange }) {
   const rows = Array.isArray(note.evaluationRows) ? note.evaluationRows : [];
   const mcqFields = settings.mcqFields || [];
   const blankFields = settings.blankFields || [];
+  const visibleColumns = buildVisibleColumns(settings);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [rowSearch, setRowSearch] = useState("");
 
@@ -1213,7 +1379,7 @@ function EvaluationEditor({ note, onChange }) {
 
   const updateMcqField = (fieldId, patch) => {
     const nextFields = mcqFields.map((field) => (field.id === fieldId ? { ...field, ...patch } : field));
-    onChange({ settings: { ...settings, mcqFields: nextFields } });
+    onChange({ settings: normalizeSettings({ ...settings, mcqFields: nextFields }) });
   };
 
   const updateOption = (fieldId, index, value) => {
@@ -1224,7 +1390,7 @@ function EvaluationEditor({ note, onChange }) {
         options: field.options.map((option, i) => (i === index ? value : option)),
       };
     });
-    onChange({ settings: { ...settings, mcqFields: nextFields } });
+    onChange({ settings: normalizeSettings({ ...settings, mcqFields: nextFields }) });
   };
 
   const addOption = (fieldId) => {
@@ -1235,7 +1401,7 @@ function EvaluationEditor({ note, onChange }) {
         options: [...field.options, `Option ${field.options.length + 1}`],
       };
     });
-    onChange({ settings: { ...settings, mcqFields: nextFields } });
+    onChange({ settings: normalizeSettings({ ...settings, mcqFields: nextFields }) });
   };
 
   const removeOption = (fieldId, optionIndex) => {
@@ -1302,7 +1468,30 @@ function EvaluationEditor({ note, onChange }) {
     onChange({ settings: normalizeSettings({ ...settings, blankFields: nextFields }), evaluationRows: nextRows });
   };
 
-  const filteredRows = useMemo(() => {
+  const reorderColumns = (activeId, overId) => {
+    if (!activeId || !overId || activeId === overId || activeId === COLUMN_IDS.total || overId === COLUMN_IDS.total) return;
+    const currentOrder = normalizeColumnOrder(settings.columnOrder, settings);
+    const activeIndex = currentOrder.indexOf(activeId);
+    const overIndex = currentOrder.indexOf(overId);
+    if (activeIndex < 0 || overIndex < 0) return;
+    const nextOrder = [...currentOrder];
+    const [moved] = nextOrder.splice(activeIndex, 1);
+    nextOrder.splice(overIndex, 0, moved);
+    onChange({ settings: normalizeSettings({ ...settings, columnOrder: nextOrder }) });
+  };
+
+  const moveColumnByStep = (columnId, step) => {
+    const currentOrder = normalizeColumnOrder(settings.columnOrder, settings);
+    const currentIndex = currentOrder.indexOf(columnId);
+    const nextIndex = currentIndex + step;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= currentOrder.length) return;
+    const nextOrder = [...currentOrder];
+    const [moved] = nextOrder.splice(currentIndex, 1);
+    nextOrder.splice(nextIndex, 0, moved);
+    onChange({ settings: normalizeSettings({ ...settings, columnOrder: nextOrder }) });
+  };
+
+  const filteredRows = (() => {
     const term = rowSearch.trim().toLowerCase();
     const withIndex = rows.map((row, rowIndex) => ({ row, rowIndex }));
     if (!term) return withIndex;
@@ -1310,21 +1499,99 @@ function EvaluationEditor({ note, onChange }) {
     return withIndex.filter(({ row }) => {
       const selectedValues = mcqFields.map((field, fieldIndex) => getRowMcqValue(row, field, fieldIndex)).join(" ");
       const blankValues = blankFields.map((field) => getRowBlankValue(row, field)).join(" ");
-      return [row.roll, row.name, row.feedback, selectedValues, blankValues]
+      const totalValue = calculateBlankFieldsTotal(row, settings.includeBlankFields ? blankFields : []).value;
+      return [row.roll, row.name, row.feedback, selectedValues, blankValues, totalValue]
         .join(" ")
         .toLowerCase()
         .includes(term);
     });
-  }, [rows, rowSearch, mcqFields, blankFields]);
+  })();
 
-  const visibleColumnCount =
-    1 +
-    (settings.includeRoll ? 1 : 0) +
-    (settings.includeName ? 1 : 0) +
-    (settings.includeBlankFields ? blankFields.length : 0) +
-    (settings.includeMcq ? mcqFields.length : 0) +
-    (settings.includeFeedback ? 1 : 0) +
-    (settings.includeTotal ? 1 : 0);
+  const visibleColumnCount = 1 + visibleColumns.length;
+
+  const renderCell = (column, row, rowIndex) => {
+    if (column.type === "roll") {
+      return (
+        <td key={column.id} className="min-w-32 px-4 py-3 font-bold text-slate-700 dark:text-slate-200">
+          {row.roll || "-"}
+        </td>
+      );
+    }
+
+    if (column.type === "name") {
+      return (
+        <td key={column.id} className="min-w-56 px-4 py-3 text-slate-700 dark:text-slate-200">
+          {row.name || "-"}
+        </td>
+      );
+    }
+
+    if (column.type === "blank") {
+      return (
+        <td key={column.id} className="px-4 py-3">
+          <input
+            value={getRowBlankValue(row, column.field)}
+            onChange={(e) => updateRowBlank(rowIndex, column.field, e.target.value)}
+            placeholder="Write value..."
+            inputMode="decimal"
+            className="input-soft min-w-40"
+          />
+        </td>
+      );
+    }
+
+    if (column.type === "mcq") {
+      return (
+        <td key={column.id} className="px-4 py-3">
+          <select
+            value={getRowMcqValue(row, column.field, column.fieldIndex)}
+            onChange={(e) => updateRowMcq(rowIndex, column.field, column.fieldIndex, e.target.value)}
+            className="input-soft min-w-44"
+          >
+            <option value="">Select</option>
+            {column.field.options.map((option, optionIndex) => (
+              <option key={`${column.field.id}-${option}-${optionIndex}`} value={option}>
+                {displayText(option, `Option ${optionIndex + 1}`)}
+              </option>
+            ))}
+          </select>
+        </td>
+      );
+    }
+
+    if (column.type === "feedback") {
+      return (
+        <td key={column.id} className="px-4 py-3">
+          <textarea
+            value={row.feedback || ""}
+            onChange={(e) => updateRow(rowIndex, { feedback: e.target.value })}
+            rows={2}
+            placeholder="Write feedback..."
+            className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-violet-400 dark:border-slate-800 dark:bg-slate-950 dark:text-white dark:focus:border-violet-500"
+          />
+        </td>
+      );
+    }
+
+    if (column.type === "total") {
+      const total = calculateBlankFieldsTotal(row, settings.includeBlankFields ? blankFields : []);
+      return (
+        <td key={column.id} className="px-4 py-3">
+          <div
+            className={`min-w-36 rounded-2xl border px-3 py-2 text-sm font-black ${
+              total.hasError
+                ? "border-red-200 bg-red-50 text-red-600 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+                : "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+            }`}
+          >
+            {total.value || "-"}
+          </div>
+        </td>
+      );
+    }
+
+    return null;
+  };
 
   return (
     <div className="space-y-5 p-4 sm:p-5">
@@ -1337,7 +1604,7 @@ function EvaluationEditor({ note, onChange }) {
           <div>
             <h3 className="text-sm font-black text-slate-950 dark:text-white">Sheet Settings</h3>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Add blank marks/text columns, MCQ/category dropdown columns, and feedback columns independently.
+              Add columns, reorder visible columns, and change sheet fields whenever needed.
             </p>
           </div>
           <span className="rounded-2xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 dark:border-slate-700 dark:text-slate-300">
@@ -1355,13 +1622,19 @@ function EvaluationEditor({ note, onChange }) {
             <CheckboxField checked={settings.includeTotal} label="Total" onChange={(v) => updateSetting("includeTotal", v)} />
           </div>
 
+          <ColumnOrderManager
+            columns={visibleColumns.filter((column) => !column.locked)}
+            onReorder={reorderColumns}
+            onMove={moveColumnByStep}
+          />
+
           {settings.includeBlankFields && (
             <div className="mt-4 space-y-3">
               <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h4 className="text-sm font-black text-slate-950 dark:text-white">Blank Fields / Marks/Text Columns</h4>
                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Current columns: {blankFields.length}. These columns accept digits, marks, short text, or any value.
+                    Current columns: {blankFields.length}. Numeric values will be added in Total; text will show “Please input number”.
                   </p>
                 </div>
                 <button
@@ -1425,6 +1698,7 @@ function EvaluationEditor({ note, onChange }) {
                         value={field.label || ""}
                         onChange={(e) => updateMcqField(field.id, { label: e.target.value })}
                         className="input-soft"
+                        placeholder={`Category ${fieldIndex + 1}`}
                       />
                     </Field>
 
@@ -1442,6 +1716,7 @@ function EvaluationEditor({ note, onChange }) {
                               value={option}
                               onChange={(e) => updateOption(field.id, optionIndex, e.target.value)}
                               className="w-32 rounded-xl bg-transparent px-2 py-1 text-xs font-bold text-slate-700 outline-none dark:text-slate-200"
+                              placeholder={`Option ${optionIndex + 1}`}
                             />
                             <button
                               type="button"
@@ -1504,26 +1779,12 @@ function EvaluationEditor({ note, onChange }) {
             <thead className="sticky top-[69px] z-30 bg-slate-50 dark:bg-slate-900/95">
               <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 <th className="hidden w-14 px-4 py-3 font-black sm:table-cell">#</th>
-                {settings.includeRoll && (
-                  <th className="sticky left-0 z-30 min-w-32 bg-slate-50 px-4 py-3 font-black dark:bg-slate-900/95 sm:static sm:z-auto">
-                    Roll
+                {visibleColumns.map((column) => (
+                  <th key={column.id} className={`${column.minWidth || "min-w-44"} px-4 py-3 font-black`}>
+                    {column.label}
+                    {column.locked && <span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-[9px] dark:bg-slate-800">Auto</span>}
                   </th>
-                )}
-                {settings.includeName && <th className="min-w-56 px-4 py-3 font-black">Name</th>}
-                {settings.includeBlankFields &&
-                  blankFields.map((field) => (
-                    <th key={field.id} className="min-w-44 px-4 py-3 font-black">
-                      {displayText(field.label, "Blank Field")}
-                    </th>
-                  ))}
-                {settings.includeMcq &&
-                  mcqFields.map((field) => (
-                    <th key={field.id} className="min-w-52 px-4 py-3 font-black">
-                      {displayText(field.label, "Category")}
-                    </th>
-                  ))}
-                {settings.includeFeedback && <th className="min-w-[320px] px-4 py-3 font-black">Feedback / Comments</th>}
-                {settings.includeTotal && <th className="min-w-40 px-4 py-3 font-black">Total</th>}
+                ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -1543,74 +1804,131 @@ function EvaluationEditor({ note, onChange }) {
                 filteredRows.map(({ row, rowIndex }, visibleIndex) => (
                   <tr key={row.student || `${row.roll}-${rowIndex}`} className="text-sm">
                     <td className="hidden px-4 py-3 text-xs font-black text-slate-400 sm:table-cell">{visibleIndex + 1}</td>
-                    {settings.includeRoll && (
-                      <td className="sticky left-0 z-10 min-w-32 bg-white px-4 py-3 font-bold text-slate-700 dark:bg-slate-950 dark:text-slate-200 sm:static sm:z-auto">
-                        {row.roll || "-"}
-                      </td>
-                    )}
-                    {settings.includeName && <td className="px-4 py-3 text-slate-700 dark:text-slate-200">{row.name || "-"}</td>}
-                    {settings.includeBlankFields &&
-                      blankFields.map((field) => (
-                        <td key={field.id} className="px-4 py-3">
-                          <input
-                            value={getRowBlankValue(row, field)}
-                            onChange={(e) => updateRowBlank(rowIndex, field, e.target.value)}
-                            placeholder="Write value..."
-                            inputMode="decimal"
-                            className="input-soft min-w-40"
-                          />
-                        </td>
-                      ))}
-                    {settings.includeMcq &&
-                      mcqFields.map((field, fieldIndex) => (
-                        <td key={field.id} className="px-4 py-3">
-                          <select
-                            value={getRowMcqValue(row, field, fieldIndex)}
-                            onChange={(e) => updateRowMcq(rowIndex, field, fieldIndex, e.target.value)}
-                            className="input-soft min-w-44"
-                          >
-                            <option value="">Select</option>
-                            {field.options.map((option, optionIndex) => (
-                              <option key={`${field.id}-${option}-${optionIndex}`} value={option}>
-                                {option}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                      ))}
-                    {settings.includeFeedback && (
-                      <td className="px-4 py-3">
-                        <textarea
-                          value={row.feedback || ""}
-                          onChange={(e) => updateRow(rowIndex, { feedback: e.target.value })}
-                          rows={2}
-                          placeholder="Write feedback..."
-                          className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-violet-400 dark:border-slate-800 dark:bg-slate-950 dark:text-white dark:focus:border-violet-500"
-                        />
-                      </td>
-                    )}
-                    {settings.includeTotal && (() => {
-                      const total = calculateBlankFieldsTotal(row, settings.includeBlankFields ? blankFields : []);
-                      return (
-                        <td className="px-4 py-3">
-                          <div
-                            className={`min-w-36 rounded-2xl border px-3 py-2 text-sm font-black ${
-                              total.hasError
-                                ? "border-red-200 bg-red-50 text-red-600 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
-                                : "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
-                            }`}
-                          >
-                            {total.value || "-"}
-                          </div>
-                        </td>
-                      );
-                    })()}
+                    {visibleColumns.map((column) => renderCell(column, row, rowIndex))}
                   </tr>
                 ))
               )}
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ColumnOrderManager({ columns, onReorder, onMove }) {
+  const [draggingId, setDraggingId] = useState(null);
+  const activeIdRef = useRef(null);
+
+  const finishDrag = () => {
+    activeIdRef.current = null;
+    setDraggingId(null);
+  };
+
+  const handlePointerMove = (event) => {
+    const activeId = activeIdRef.current;
+    if (!activeId) return;
+    const target = document
+      .elementFromPoint(event.clientX, event.clientY)
+      ?.closest?.("[data-column-drop-id]");
+    const overId = target?.getAttribute("data-column-drop-id");
+    if (overId && overId !== activeId) {
+      onReorder(activeId, overId);
+    }
+  };
+
+  const handlePointerDown = (event, columnId) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    activeIdRef.current = columnId;
+    setDraggingId(columnId);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const handleDragStart = (event, columnId) => {
+    activeIdRef.current = columnId;
+    setDraggingId(columnId);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", columnId);
+  };
+
+  const handleDrop = (event, overId) => {
+    event.preventDefault();
+    const activeId = event.dataTransfer.getData("text/plain") || activeIdRef.current;
+    onReorder(activeId, overId);
+    finishDrag();
+  };
+
+  if (!columns.length) return null;
+
+  return (
+    <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h4 className="text-sm font-black text-slate-950 dark:text-white">Column Order</h4>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            Drag the chips to rearrange sheet columns. On mobile, hold a chip and move it over another chip.
+          </p>
+        </div>
+        <span className="rounded-full bg-violet-50 px-3 py-1 text-[11px] font-black text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">
+          Total stays last
+        </span>
+      </div>
+
+      <div
+        className="mt-3 flex flex-wrap gap-2"
+        onPointerMove={handlePointerMove}
+        onPointerUp={finishDrag}
+        onPointerCancel={finishDrag}
+        onDragOver={(event) => event.preventDefault()}
+      >
+        {columns.map((column, index) => (
+          <div
+            key={column.id}
+            data-column-drop-id={column.id}
+            draggable
+            onDragStart={(event) => handleDragStart(event, column.id)}
+            onDragEnd={finishDrag}
+            onDrop={(event) => handleDrop(event, column.id)}
+            onPointerDown={(event) => handlePointerDown(event, column.id)}
+            className={`flex touch-none select-none items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-black transition ${
+              draggingId === column.id
+                ? "scale-[1.03] border-violet-400 bg-violet-50 text-violet-800 shadow-lg dark:border-violet-500/50 dark:bg-violet-500/10 dark:text-violet-200"
+                : "border-slate-200 bg-slate-50 text-slate-700 hover:border-violet-300 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+            }`}
+            title="Drag to move column"
+          >
+            <span className="text-slate-400">☰</span>
+            <span>{column.label}</span>
+            <div className="ml-1 flex gap-1">
+              <button
+                type="button"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onMove(column.id, -1);
+                }}
+                disabled={index === 0}
+                className="rounded-lg px-1.5 py-0.5 text-[10px] text-slate-500 hover:bg-white disabled:opacity-30 dark:hover:bg-slate-800"
+                aria-label={`Move ${column.label} left`}
+              >
+                ←
+              </button>
+              <button
+                type="button"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onMove(column.id, 1);
+                }}
+                disabled={index === columns.length - 1}
+                className="rounded-lg px-1.5 py-0.5 text-[10px] text-slate-500 hover:bg-white disabled:opacity-30 dark:hover:bg-slate-800"
+                aria-label={`Move ${column.label} right`}
+              >
+                →
+              </button>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -1704,106 +2022,216 @@ function SimpleNoteEditor({ note, onChange }) {
   );
 }
 
-function exportEvaluationExcel(note) {
+function buildEvaluationExport(note) {
   const settings = normalizeSettings(note.settings || {});
   const rows = Array.isArray(note.evaluationRows) ? note.evaluationRows : [];
+  const columns = buildVisibleColumns(settings);
+  const headers = columns.map((column) => column.label);
+  const body = rows.map((row) => columns.map((column) => getColumnExportValue(column, row, settings)));
+  return { settings, columns, headers, body, rows };
+}
+
+function exportEvaluationExcel(note) {
+  const { columns, headers, body, rows } = buildEvaluationExport(note);
   const course = formatCourseLabel(note.course);
-  const mcqFields = settings.mcqFields || [];
-  const blankFields = settings.blankFields || [];
-
-  const header = [];
-  if (settings.includeRoll) header.push("Roll");
-  if (settings.includeName) header.push("Name");
-  if (settings.includeBlankFields) {
-    blankFields.forEach((field) => header.push(displayText(field.label, "Blank Field")));
-  }
-  if (settings.includeMcq) {
-    mcqFields.forEach((field) => header.push(displayText(field.label, "Category")));
-  }
-  if (settings.includeFeedback) header.push("Feedback / Comments");
-  if (settings.includeTotal) header.push("Total");
-
-  const body = rows.map((row) => {
-    const item = [];
-    if (settings.includeRoll) item.push(row.roll || "");
-    if (settings.includeName) item.push(row.name || "");
-    if (settings.includeBlankFields) {
-      blankFields.forEach((field) => item.push(getRowBlankValue(row, field)));
-    }
-    if (settings.includeMcq) {
-      mcqFields.forEach((field, fieldIndex) => item.push(getRowMcqValue(row, field, fieldIndex)));
-    }
-    if (settings.includeFeedback) item.push(row.feedback || "");
-    if (settings.includeTotal) item.push(calculateBlankFieldsTotal(row, settings.includeBlankFields ? blankFields : []).value);
-    return item;
-  });
+  const totalColumns = Math.max(headers.length, 1);
+  const lastCol = totalColumns - 1;
 
   const data = [
     [note.title || "Evaluation Sheet"],
-    ["Course", course],
-    ["Date", note.date || ""],
-    ["Time", note.time || ""],
+    ["Course", course, "Date", note.date || "-", "Time", note.time || "-"],
+    ["Generated", new Date().toLocaleString(), "Total Students", String(rows.length)],
     [],
-    header,
+    headers,
     ...body,
   ];
 
   const ws = XLSX.utils.aoa_to_sheet(data);
-  ws["!cols"] = header.map((h) => ({ wch: h.toLowerCase().includes("feedback") ? 45 : 20 }));
+  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } }];
+  ws["!cols"] = columns.map((column) => {
+    if (column.type === "feedback") return { wch: 44 };
+    if (column.type === "name") return { wch: 28 };
+    if (column.type === "roll") return { wch: 18 };
+    if (column.type === "total") return { wch: 18 };
+    return { wch: 22 };
+  });
+  ws["!rows"] = [{ hpt: 28 }, { hpt: 22 }, { hpt: 22 }, { hpt: 8 }, { hpt: 24 }];
+  if (headers.length) {
+    ws["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 4, c: 0 }, e: { r: 4 + body.length, c: lastCol } }) };
+  }
+
+  const range = XLSX.utils.decode_range(ws["!ref"]);
+  const border = {
+    top: { style: "thin", color: { rgb: "CBD5E1" } },
+    bottom: { style: "thin", color: { rgb: "CBD5E1" } },
+    left: { style: "thin", color: { rgb: "CBD5E1" } },
+    right: { style: "thin", color: { rgb: "CBD5E1" } },
+  };
+
+  for (let r = range.s.r; r <= range.e.r; r += 1) {
+    for (let c = range.s.c; c <= range.e.c; c += 1) {
+      const ref = XLSX.utils.encode_cell({ r, c });
+      if (!ws[ref]) ws[ref] = { t: "s", v: "" };
+      ws[ref].s = {
+        font: { name: "Calibri", sz: 11, color: { rgb: "0F172A" } },
+        alignment: { vertical: "center", wrapText: true },
+      };
+    }
+  }
+
+  for (let c = 0; c <= lastCol; c += 1) {
+    const titleRef = XLSX.utils.encode_cell({ r: 0, c });
+    if (!ws[titleRef]) ws[titleRef] = { t: "s", v: "" };
+    ws[titleRef].s = {
+      font: { name: "Calibri", sz: 18, bold: true, color: { rgb: "FFFFFF" } },
+      fill: { fgColor: { rgb: "312E81" } },
+      alignment: { horizontal: c === 0 ? "left" : "center", vertical: "center" },
+    };
+  }
+
+  [1, 2].forEach((r) => {
+    for (let c = 0; c <= lastCol; c += 1) {
+      const ref = XLSX.utils.encode_cell({ r, c });
+      ws[ref].s = {
+        font: { name: "Calibri", sz: c % 2 === 0 ? 10 : 11, bold: c % 2 === 0, color: { rgb: c % 2 === 0 ? "475569" : "0F172A" } },
+        fill: { fgColor: { rgb: "EEF2FF" } },
+        alignment: { vertical: "center", wrapText: true },
+        border,
+      };
+    }
+  });
+
+  headers.forEach((_, c) => {
+    const ref = XLSX.utils.encode_cell({ r: 4, c });
+    ws[ref].s = {
+      font: { name: "Calibri", sz: 10, bold: true, color: { rgb: "FFFFFF" } },
+      fill: { fgColor: { rgb: "4338CA" } },
+      alignment: { horizontal: "center", vertical: "center", wrapText: true },
+      border,
+    };
+  });
+
+  for (let r = 5; r <= range.e.r; r += 1) {
+    for (let c = 0; c <= lastCol; c += 1) {
+      const ref = XLSX.utils.encode_cell({ r, c });
+      ws[ref].s = {
+        font: { name: "Calibri", sz: 10, color: { rgb: "0F172A" } },
+        fill: { fgColor: { rgb: r % 2 === 0 ? "F8FAFC" : "FFFFFF" } },
+        alignment: { vertical: "center", wrapText: true },
+        border,
+      };
+    }
+  }
+
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Evaluation");
+  wb.Props = {
+    Title: note.title || "Evaluation Sheet",
+    Subject: course,
+    Author: "BUBT Marks Portal",
+    CreatedDate: new Date(),
+  };
+  XLSX.utils.book_append_sheet(wb, ws, "Evaluation Sheet");
   XLSX.writeFile(wb, `${safeFileName(note.title)}.xlsx`);
 }
 
-function exportEvaluationPdf(note) {
-  const settings = normalizeSettings(note.settings || {});
-  const rows = Array.isArray(note.evaluationRows) ? note.evaluationRows : [];
-  const mcqFields = settings.mcqFields || [];
-  const blankFields = settings.blankFields || [];
-  const doc = new jsPDF({ orientation: "landscape" });
+function createEvaluationPdfDocument(note) {
+  const { columns, headers, body, rows } = buildEvaluationExport(note);
+  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 32;
+  const course = formatCourseLabel(note.course);
 
-  doc.setFontSize(16);
-  doc.text(note.title || "Evaluation Sheet", 14, 16);
-  doc.setFontSize(10);
-  doc.text(`Course: ${formatCourseLabel(note.course)}`, 14, 24);
-  doc.text(`Date: ${note.date || "-"}    Time: ${note.time || "-"}`, 14, 31);
+  const drawHeader = () => {
+    doc.setFillColor(30, 41, 59);
+    doc.rect(0, 0, pageWidth, 78, "F");
+    doc.setFillColor(79, 70, 229);
+    doc.roundedRect(margin, 18, 96, 22, 11, 11, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.text("EVALUATION SHEET", margin + 13, 33);
+    doc.setFontSize(18);
+    doc.text(String(note.title || "Evaluation Sheet"), margin, 60, { maxWidth: pageWidth - margin * 2 });
 
-  const head = [];
-  if (settings.includeRoll) head.push("Roll");
-  if (settings.includeName) head.push("Name");
-  if (settings.includeBlankFields) {
-    blankFields.forEach((field) => head.push(displayText(field.label, "Blank Field")));
-  }
-  if (settings.includeMcq) {
-    mcqFields.forEach((field) => head.push(displayText(field.label, "Category")));
-  }
-  if (settings.includeFeedback) head.push("Feedback / Comments");
-  if (settings.includeTotal) head.push("Total");
+    doc.setTextColor(71, 85, 105);
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(margin, 92, pageWidth - margin * 2, 44, 10, 10, "F");
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.text("Course", margin + 14, 108);
+    doc.text("Date", pageWidth - 210, 108);
+    doc.text("Time", pageWidth - 118, 108);
+    doc.text("Students", pageWidth - 58, 108, { align: "right" });
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(15, 23, 42);
+    doc.text(course, margin + 14, 126, { maxWidth: pageWidth - 330 });
+    doc.text(note.date || "-", pageWidth - 210, 126);
+    doc.text(note.time || "-", pageWidth - 118, 126);
+    doc.text(String(rows.length), pageWidth - 58, 126, { align: "right" });
+  };
 
-  const body = rows.map((row) => {
-    const item = [];
-    if (settings.includeRoll) item.push(row.roll || "");
-    if (settings.includeName) item.push(row.name || "");
-    if (settings.includeBlankFields) {
-      blankFields.forEach((field) => item.push(getRowBlankValue(row, field)));
-    }
-    if (settings.includeMcq) {
-      mcqFields.forEach((field, fieldIndex) => item.push(getRowMcqValue(row, field, fieldIndex)));
-    }
-    if (settings.includeFeedback) item.push(row.feedback || "");
-    if (settings.includeTotal) item.push(calculateBlankFieldsTotal(row, settings.includeBlankFields ? blankFields : []).value);
-    return item;
-  });
+  drawHeader();
+
+  const columnStyles = columns.reduce((acc, column, index) => {
+    if (column.type === "roll") acc[index] = { cellWidth: 72, fontStyle: "bold" };
+    if (column.type === "name") acc[index] = { cellWidth: 120 };
+    if (column.type === "feedback") acc[index] = { cellWidth: 170 };
+    if (column.type === "total") acc[index] = { cellWidth: 70, halign: "center", fontStyle: "bold" };
+    return acc;
+  }, {});
 
   autoTable(doc, {
-    startY: 40,
-    head: [head],
+    startY: 152,
+    head: [headers],
     body,
-    styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
-    headStyles: { fontStyle: "bold" },
+    margin: { top: 152, left: margin, right: margin, bottom: 42 },
+    theme: "grid",
+    styles: {
+      font: "helvetica",
+      fontSize: 7.4,
+      cellPadding: { top: 6, right: 5, bottom: 6, left: 5 },
+      overflow: "linebreak",
+      lineColor: [226, 232, 240],
+      lineWidth: 0.6,
+      textColor: [15, 23, 42],
+      valign: "middle",
+    },
+    headStyles: {
+      fillColor: [67, 56, 202],
+      textColor: [255, 255, 255],
+      fontStyle: "bold",
+      halign: "center",
+      lineColor: [67, 56, 202],
+    },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    columnStyles,
+    willDrawPage: (data) => {
+      if (data.pageNumber > 1) drawHeader();
+    },
+    didDrawPage: (data) => {
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`Generated from BUBT Marks Portal • ${new Date().toLocaleString()}`, margin, pageHeight - 20);
+      doc.text(`Page ${data.pageNumber}`, pageWidth - margin, pageHeight - 20, { align: "right" });
+    },
   });
 
-  doc.save(`${safeFileName(note.title)}.pdf`);
+  return doc;
+}
+
+function exportEvaluationPdf(note) {
+  createEvaluationPdfDocument(note).save(`${safeFileName(note.title)}.pdf`);
+}
+
+function printEvaluationPdf(note) {
+  const doc = createEvaluationPdfDocument(note);
+  doc.autoPrint({ variant: "non-conform" });
+  const blobUrl = doc.output("bloburl");
+  const printWindow = window.open(blobUrl, "_blank", "noopener,noreferrer");
+  if (!printWindow) {
+    doc.save(`${safeFileName(note.title)}_print.pdf`);
+  }
 }
 
 function exportSimplePdf(note) {
@@ -1811,13 +2239,20 @@ function exportSimplePdf(note) {
   const text = stripHtml(note.content || "");
   const lines = doc.splitTextToSize(text || "No content written.", 180);
 
+  doc.setFillColor(30, 41, 59);
+  doc.rect(0, 0, doc.internal.pageSize.getWidth(), 32, "F");
+  doc.setTextColor(255, 255, 255);
   doc.setFontSize(16);
-  doc.text(note.title || "Simple Note", 14, 16);
+  doc.setFont("helvetica", "bold");
+  doc.text(note.title || "Simple Note", 14, 20);
+  doc.setTextColor(71, 85, 105);
   doc.setFontSize(10);
-  doc.text(`Course: ${formatCourseLabel(note.course)}`, 14, 24);
-  doc.text(`Date: ${note.date || "-"}    Time: ${note.time || "-"}`, 14, 31);
+  doc.setFont("helvetica", "normal");
+  doc.text(`Course: ${formatCourseLabel(note.course)}`, 14, 42);
+  doc.text(`Date: ${note.date || "-"}    Time: ${note.time || "-"}`, 14, 49);
+  doc.setTextColor(15, 23, 42);
   doc.setFontSize(11);
-  doc.text(lines, 14, 42);
+  doc.text(lines, 14, 62);
   doc.save(`${safeFileName(note.title)}.pdf`);
 }
 

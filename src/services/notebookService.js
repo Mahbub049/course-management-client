@@ -24,3 +24,8 @@ export const deleteNotebookNote = async (noteId) => {
   const res = await api.delete(`/notebook/${noteId}`);
   return res.data;
 };
+
+export const refreshNotebookStudents = async (noteId) => {
+  const res = await api.post(`/notebook/${noteId}/refresh-students`);
+  return res.data;
+};
