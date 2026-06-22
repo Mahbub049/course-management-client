@@ -35,6 +35,7 @@ const DEFAULT_SETTINGS = {
   includeFeedback: true,
   includeMcq: true,
   includeBlankFields: false,
+  includeTotal: false,
   mcqLabel: DEFAULT_MCQ_FIELD.label,
   mcqOptions: DEFAULT_MCQ_FIELD.options,
   mcqFields: [DEFAULT_MCQ_FIELD],
@@ -58,6 +59,29 @@ const cleanMcqOptions = (options) => {
   return cleaned.length ? cleaned : [...DEFAULT_MCQ_FIELD.options];
 };
 
+const normalizeMcqOptions = (options) => {
+  if (!Array.isArray(options) || options.length === 0) return [...DEFAULT_MCQ_FIELD.options];
+  return options.map((item) => (item === undefined || item === null ? "" : String(item)));
+};
+
+const editableText = (value, fallback = "") =>
+  value === undefined || value === null ? fallback : String(value);
+
+const displayText = (value, fallback = "") => {
+  const text = value === undefined || value === null ? "" : String(value).trim();
+  return text || fallback;
+};
+
+const openNativePicker = (event) => {
+  const input = event.currentTarget;
+  if (typeof input.showPicker !== "function") return;
+  try {
+    input.showPicker();
+  } catch {
+    // Some browsers only allow showPicker from direct user gestures.
+  }
+};
+
 const normalizeMcqFields = (settings = {}) => {
   const fromNewShape = Array.isArray(settings.mcqFields) && settings.mcqFields.length > 0;
   const rawFields = fromNewShape
@@ -72,8 +96,8 @@ const normalizeMcqFields = (settings = {}) => {
 
   return rawFields.map((field, index) => ({
     id: String(field?.id || `mcq_${index + 1}`),
-    label: String(field?.label || field?.mcqLabel || `Category ${index + 1}`).trim() || `Category ${index + 1}`,
-    options: cleanMcqOptions(field?.options || field?.mcqOptions),
+    label: editableText(field?.label ?? field?.mcqLabel, `Category ${index + 1}`),
+    options: normalizeMcqOptions(field?.options ?? field?.mcqOptions),
   }));
 };
 
@@ -85,7 +109,7 @@ const normalizeBlankFields = (settings = {}) => {
 
   return rawFields.map((field, index) => ({
     id: String(field?.id || `blank_${index + 1}`),
-    label: String(field?.label || `Blank Field ${index + 1}`).trim() || `Blank Field ${index + 1}`,
+    label: editableText(field?.label, `Blank Field ${index + 1}`),
   }));
 };
 
@@ -100,6 +124,7 @@ const normalizeSettings = (settings = {}) => {
     includeFeedback: settings.includeFeedback === undefined ? true : Boolean(settings.includeFeedback),
     includeMcq: settings.includeMcq === undefined ? true : Boolean(settings.includeMcq),
     includeBlankFields: settings.includeBlankFields === undefined ? false : Boolean(settings.includeBlankFields),
+    includeTotal: settings.includeTotal === undefined ? false : Boolean(settings.includeTotal),
     mcqLabel: firstField.label,
     mcqOptions: firstField.options,
     mcqFields,
@@ -116,6 +141,29 @@ const getRowMcqValue = (row, field, fieldIndex = 0) => {
 const getRowBlankValue = (row, field) => {
   const blankValues = row?.blankValues || {};
   return blankValues[field.id] !== undefined ? blankValues[field.id] || "" : "";
+};
+
+const formatTotalValue = (value) => {
+  if (value === "") return "";
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2)));
+};
+
+const calculateBlankFieldsTotal = (row, fields = []) => {
+  const values = fields
+    .map((field) => String(getRowBlankValue(row, field) ?? "").trim())
+    .filter(Boolean);
+
+  if (values.length === 0) return { hasError: false, value: "" };
+
+  const numbers = values.map((value) => Number(value));
+  if (numbers.some((value) => Number.isNaN(value))) {
+    return { hasError: true, value: "Please input number" };
+  }
+
+  return {
+    hasError: false,
+    value: formatTotalValue(numbers.reduce((sum, value) => sum + value, 0)),
+  };
 };
 
 const todayInput = () => new Date().toISOString().slice(0, 10);
@@ -611,9 +659,13 @@ function CreateNotebookModal({ courses, onClose, onCreate }) {
   const [createError, setCreateError] = useState("");
   const [createSettingsOpen, setCreateSettingsOpen] = useState(false);
 
+  const previousTypeRef = useRef(type);
+
   useEffect(() => {
-    if (type === "evaluation" && !title.trim()) setTitle("Random Mark Evaluation");
+    if (previousTypeRef.current === type) return;
     if (type === "simple" && title === "Random Mark Evaluation") setTitle("Class Note");
+    if (type === "evaluation" && title === "Class Note") setTitle("Random Mark Evaluation");
+    previousTypeRef.current = type;
   }, [type, title]);
 
   const updateSetting = (key, value) => {
@@ -834,11 +886,11 @@ function CreateNotebookModal({ courses, onClose, onCreate }) {
             </Field>
 
             <Field label="Date">
-              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="input-soft" />
+              <input type="date" value={date} onClick={openNativePicker} onFocus={openNativePicker} onChange={(e) => setDate(e.target.value)} className="input-soft" />
             </Field>
 
             <Field label="Time">
-              <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="input-soft" />
+              <input type="time" value={time} onClick={openNativePicker} onFocus={openNativePicker} onChange={(e) => setTime(e.target.value)} className="input-soft" />
             </Field>
           </div>
 
@@ -847,7 +899,7 @@ function CreateNotebookModal({ courses, onClose, onCreate }) {
               <button
                 type="button"
                 onClick={() => setCreateSettingsOpen((value) => !value)}
-                className="flex w-full items-center justify-between gap-3 text-left sm:cursor-default"
+                className="flex w-full items-center justify-between gap-3 text-left"
               >
                 <div>
                   <h3 className="text-sm font-black text-slate-950 dark:text-white">Evaluation Sheet Fields</h3>
@@ -855,7 +907,7 @@ function CreateNotebookModal({ courses, onClose, onCreate }) {
                     Tap to {createSettingsOpen ? "hide" : "show"} roll, category, feedback and MCQ column options.
                   </p>
                 </div>
-                <span className="rounded-2xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 dark:border-slate-700 dark:text-slate-300 sm:hidden">
+                <span className="rounded-2xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 dark:border-slate-700 dark:text-slate-300">
                   {createSettingsOpen ? "Hide" : "Show"}
                 </span>
               </button>
@@ -876,6 +928,11 @@ function CreateNotebookModal({ courses, onClose, onCreate }) {
                     checked={normalizedSettings.includeFeedback}
                     label="Feedback / Comments"
                     onChange={(value) => updateSetting("includeFeedback", value)}
+                  />
+                  <CheckboxField
+                    checked={normalizedSettings.includeTotal}
+                    label="Total"
+                    onChange={(value) => updateSetting("includeTotal", value)}
                   />
                   <CheckboxField
                     checked={normalizedSettings.includeBlankFields}
@@ -1076,12 +1133,16 @@ function NotebookEditor({ note, courses, saveStatus, onBack, onChange, onDelete 
             <input
               type="date"
               value={note.date || todayInput()}
+              onClick={openNativePicker}
+              onFocus={openNativePicker}
               onChange={(e) => onChange({ date: e.target.value })}
               className="input-soft sm:w-40"
             />
             <input
               type="time"
               value={note.time || timeInput()}
+              onClick={openNativePicker}
+              onFocus={openNativePicker}
               onChange={(e) => onChange({ time: e.target.value })}
               className="input-soft sm:w-32"
             />
@@ -1262,7 +1323,8 @@ function EvaluationEditor({ note, onChange }) {
     (settings.includeName ? 1 : 0) +
     (settings.includeBlankFields ? blankFields.length : 0) +
     (settings.includeMcq ? mcqFields.length : 0) +
-    (settings.includeFeedback ? 1 : 0);
+    (settings.includeFeedback ? 1 : 0) +
+    (settings.includeTotal ? 1 : 0);
 
   return (
     <div className="space-y-5 p-4 sm:p-5">
@@ -1270,7 +1332,7 @@ function EvaluationEditor({ note, onChange }) {
         <button
           type="button"
           onClick={() => setSettingsOpen((value) => !value)}
-          className="flex w-full items-center justify-between gap-3 text-left sm:cursor-default"
+          className="flex w-full items-center justify-between gap-3 text-left"
         >
           <div>
             <h3 className="text-sm font-black text-slate-950 dark:text-white">Sheet Settings</h3>
@@ -1278,18 +1340,19 @@ function EvaluationEditor({ note, onChange }) {
               Add blank marks/text columns, MCQ/category dropdown columns, and feedback columns independently.
             </p>
           </div>
-          <span className="rounded-2xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 dark:border-slate-700 dark:text-slate-300 sm:hidden">
+          <span className="rounded-2xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 dark:border-slate-700 dark:text-slate-300">
             {settingsOpen ? "Hide" : "Show"}
           </span>
         </button>
 
-        <div className={`${settingsOpen ? "mt-4 block" : "hidden"} sm:mt-4 sm:block`}>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <div className={`${settingsOpen ? "mt-4 block" : "hidden"}`}>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
             <CheckboxField checked={settings.includeRoll} label="Roll" onChange={(v) => updateSetting("includeRoll", v)} />
             <CheckboxField checked={settings.includeName} label="Name" onChange={(v) => updateSetting("includeName", v)} />
             <CheckboxField checked={settings.includeBlankFields} label="Blank Fields" onChange={(v) => updateSetting("includeBlankFields", v)} />
             <CheckboxField checked={settings.includeMcq} label="Category" onChange={(v) => updateSetting("includeMcq", v)} />
             <CheckboxField checked={settings.includeFeedback} label="Feedback" onChange={(v) => updateSetting("includeFeedback", v)} />
+            <CheckboxField checked={settings.includeTotal} label="Total" onChange={(v) => updateSetting("includeTotal", v)} />
           </div>
 
           {settings.includeBlankFields && (
@@ -1450,16 +1513,17 @@ function EvaluationEditor({ note, onChange }) {
                 {settings.includeBlankFields &&
                   blankFields.map((field) => (
                     <th key={field.id} className="min-w-44 px-4 py-3 font-black">
-                      {field.label || "Blank Field"}
+                      {displayText(field.label, "Blank Field")}
                     </th>
                   ))}
                 {settings.includeMcq &&
                   mcqFields.map((field) => (
                     <th key={field.id} className="min-w-52 px-4 py-3 font-black">
-                      {field.label || "Category"}
+                      {displayText(field.label, "Category")}
                     </th>
                   ))}
                 {settings.includeFeedback && <th className="min-w-[320px] px-4 py-3 font-black">Feedback / Comments</th>}
+                {settings.includeTotal && <th className="min-w-40 px-4 py-3 font-black">Total</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -1492,6 +1556,7 @@ function EvaluationEditor({ note, onChange }) {
                             value={getRowBlankValue(row, field)}
                             onChange={(e) => updateRowBlank(rowIndex, field, e.target.value)}
                             placeholder="Write value..."
+                            inputMode="decimal"
                             className="input-soft min-w-40"
                           />
                         </td>
@@ -1524,6 +1589,22 @@ function EvaluationEditor({ note, onChange }) {
                         />
                       </td>
                     )}
+                    {settings.includeTotal && (() => {
+                      const total = calculateBlankFieldsTotal(row, settings.includeBlankFields ? blankFields : []);
+                      return (
+                        <td className="px-4 py-3">
+                          <div
+                            className={`min-w-36 rounded-2xl border px-3 py-2 text-sm font-black ${
+                              total.hasError
+                                ? "border-red-200 bg-red-50 text-red-600 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+                                : "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+                            }`}
+                          >
+                            {total.value || "-"}
+                          </div>
+                        </td>
+                      );
+                    })()}
                   </tr>
                 ))
               )}
@@ -1634,12 +1715,13 @@ function exportEvaluationExcel(note) {
   if (settings.includeRoll) header.push("Roll");
   if (settings.includeName) header.push("Name");
   if (settings.includeBlankFields) {
-    blankFields.forEach((field) => header.push(field.label || "Blank Field"));
+    blankFields.forEach((field) => header.push(displayText(field.label, "Blank Field")));
   }
   if (settings.includeMcq) {
-    mcqFields.forEach((field) => header.push(field.label || "Category"));
+    mcqFields.forEach((field) => header.push(displayText(field.label, "Category")));
   }
   if (settings.includeFeedback) header.push("Feedback / Comments");
+  if (settings.includeTotal) header.push("Total");
 
   const body = rows.map((row) => {
     const item = [];
@@ -1652,6 +1734,7 @@ function exportEvaluationExcel(note) {
       mcqFields.forEach((field, fieldIndex) => item.push(getRowMcqValue(row, field, fieldIndex)));
     }
     if (settings.includeFeedback) item.push(row.feedback || "");
+    if (settings.includeTotal) item.push(calculateBlankFieldsTotal(row, settings.includeBlankFields ? blankFields : []).value);
     return item;
   });
 
@@ -1689,12 +1772,13 @@ function exportEvaluationPdf(note) {
   if (settings.includeRoll) head.push("Roll");
   if (settings.includeName) head.push("Name");
   if (settings.includeBlankFields) {
-    blankFields.forEach((field) => head.push(field.label || "Blank Field"));
+    blankFields.forEach((field) => head.push(displayText(field.label, "Blank Field")));
   }
   if (settings.includeMcq) {
-    mcqFields.forEach((field) => head.push(field.label || "Category"));
+    mcqFields.forEach((field) => head.push(displayText(field.label, "Category")));
   }
   if (settings.includeFeedback) head.push("Feedback / Comments");
+  if (settings.includeTotal) head.push("Total");
 
   const body = rows.map((row) => {
     const item = [];
@@ -1707,6 +1791,7 @@ function exportEvaluationPdf(note) {
       mcqFields.forEach((field, fieldIndex) => item.push(getRowMcqValue(row, field, fieldIndex)));
     }
     if (settings.includeFeedback) item.push(row.feedback || "");
+    if (settings.includeTotal) item.push(calculateBlankFieldsTotal(row, settings.includeBlankFields ? blankFields : []).value);
     return item;
   });
 
