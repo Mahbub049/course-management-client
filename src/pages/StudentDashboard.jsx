@@ -604,7 +604,7 @@ function PendingSubmissionsSection({
                         Upload Disabled
                       </button>
                     )}
-                    <button
+                    {/* <button
                       type="button"
                       onClick={() =>
                         onNavigate(
@@ -615,7 +615,7 @@ function PendingSubmissionsSection({
                       className="inline-flex items-center justify-center rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700"
                     >
                       Go to Submission Page
-                    </button>
+                    </button> */}
                   </div>
                 </div>
               </div>
