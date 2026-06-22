@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchStudentCourses } from "../services/studentService";
-import { fetchStudentSubmissionAssessments } from "../services/labSubmissionService";
+import Swal from "sweetalert2";
+import {
+  fetchStudentSubmissionAssessments,
+  getPublicFileUrl,
+  submitStudentLabAssessmentFile,
+} from "../services/labSubmissionService";
 import { fetchStudentPendingProjectSubmissions } from "../services/projectSubmissionService";
 import { academicCalendarService } from "../services/academicCalendarService";
 
@@ -62,7 +67,7 @@ function StudentDashboard() {
   const [error, setError] = useState("");
   const [pendingSubmissionItems, setPendingSubmissionItems] = useState([]);
   const [nowTick, setNowTick] = useState(() => Date.now());
-
+  const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
   const studentName = localStorage.getItem("marksPortalName") || "Student";
 
   const greeting = useMemo(() => {
@@ -146,7 +151,7 @@ function StudentDashboard() {
     };
 
     load();
-  }, []);
+  }, [dashboardRefreshKey]);
 
   const recent = useMemo(() => (courses || []).slice(0, 4), [courses]);
 
@@ -234,6 +239,7 @@ function StudentDashboard() {
           loading={loading}
           nowTick={nowTick}
           onNavigate={navigate}
+          onUploaded={() => setDashboardRefreshKey((value) => value + 1)}
         />
       )}
 
@@ -382,9 +388,53 @@ function StudentDashboard() {
   );
 }
 
-function PendingSubmissionsSection({ className = "", items, loading, nowTick, onNavigate }) {
+function PendingSubmissionsSection({
+  className = "",
+  items,
+  loading,
+  nowTick,
+  onNavigate,
+  onUploaded,
+}) {
+  const [uploadingId, setUploadingId] = useState("");
+
+  const handleDashboardUpload = async (item, file) => {
+    if (!file || !item?.id) return;
+
+    if (item.taskType !== "lab_submission") {
+      onNavigate(item.navigateTo || `/student/courses/${item.course?.id}`);
+      return;
+    }
+
+    setUploadingId(item.id);
+
+    try {
+      const res = await submitStudentLabAssessmentFile(item.id, file);
+
+      await Swal.fire(
+        "Submitted",
+        res?.message || "File submitted successfully.",
+        "success"
+      );
+
+      onUploaded?.();
+    } catch (err) {
+      console.error(err);
+
+      Swal.fire(
+        "Upload failed",
+        err?.response?.data?.message || "Could not submit file.",
+        "error"
+      );
+    } finally {
+      setUploadingId("");
+    }
+  };
+
   return (
-    <section className={`${className} rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6`}>
+    <section
+      className={`${className} rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6`}
+    >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
@@ -392,12 +442,12 @@ function PendingSubmissionsSection({ className = "", items, loading, nowTick, on
           </h3>
 
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Lab assessments and project phases created by your teachers appear here.
+            Upload your running assessment files before the deadline.
           </p>
         </div>
 
         <div className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">
-          {loading ? "..." : `${items.length} pending`}
+          {loading ? "..." : `${items.length} active`}
         </div>
       </div>
 
@@ -407,65 +457,171 @@ function PendingSubmissionsSection({ className = "", items, loading, nowTick, on
         </div>
       ) : (
         <div className="mt-5 grid gap-4 xl:grid-cols-2">
-          {items.map((item) => (
-            <div
-              key={`${item.course?.id}-${item.id}`}
-              className="rounded-[24px] border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-800/50"
-            >
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <div className="text-base font-semibold text-slate-900 dark:text-white">
-                    {item.name}
+          {items.map((item) => {
+            const submitted = !!item.submission;
+            const resourceUrl = item.resourceUrl;
+            const dueTime = getDueTime(item.dueDate);
+
+            const canUpload =
+              item.taskType === "lab_submission" &&
+              item.submissionsOpen !== false &&
+              item.dueDatePassed !== true &&
+              (!dueTime || dueTime > nowTick) &&
+              (!submitted || item.allowResubmission !== false);
+
+            return (
+              <div
+                key={`${item.course?.id}-${item.id}`}
+                className="rounded-[24px] border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-800/50"
+              >
+                <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-base font-semibold text-slate-900 dark:text-white">
+                      {item.name}
+                    </div>
+
+                    <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                      {item.course?.code} • Section {item.course?.section}
+                    </div>
+
+                    <div
+                      className={[
+                        "mt-4 flex flex-col gap-3 rounded-2xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between",
+                        item.dueDatePassed
+                          ? "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200"
+                          : "border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-200",
+                      ].join(" ")}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-200">
+                          <ClockIcon />
+                        </span>
+
+                        <div>
+                          <div className="text-[11px] font-bold uppercase tracking-[0.16em] opacity-70">
+                            Time Remaining
+                          </div>
+
+                          <div className="text-lg font-black tracking-wide sm:text-2xl">
+                            {formatRemainingTime(item, nowTick)}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="text-left text-xs font-semibold opacity-80 sm:text-right">
+                        <div className="text-[11px] font-bold uppercase tracking-[0.16em] opacity-70">
+                          Deadline
+                        </div>
+
+                        <div className="text-sm font-black tracking-wide sm:text-xl">
+                          {formatDashboardDateTime(item.dueDate)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
+                      <span className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300">
+                        Max {item.maxFileSizeMB || 10} MB
+                      </span>
+
+                      <span
+                        className={[
+                          "rounded-full border px-3 py-1",
+                          submitted
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+                            : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300",
+                        ].join(" ")}
+                      >
+                        {submitted ? "Submitted" : "Not Submitted"}
+                      </span>
+                    </div>
+
+                    {submitted ? (
+                      <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200">
+                        <div className="font-semibold">
+                          Current file: {item.submission.originalFileName}
+                        </div>
+
+                        <div className="mt-1 text-xs">
+                          Submitted at:{" "}
+                          {formatDashboardDateTime(item.submission.submittedAt)}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
 
-                  <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    {item.course?.code} • Section {item.course?.section}
-                  </div>
+                  <div className="flex w-full flex-col gap-2 lg:w-[190px]">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onNavigate(
+                          item.navigateTo ||
+                          `/student/courses/${item.course?.id}?tab=submissions`
+                        )
+                      }
+                      className="inline-flex items-center justify-center rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700"
+                    >
+                      Go to Submission Page
+                    </button>
 
-                  <div className="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                    {item.taskLabel || "Submission Task"}
-                  </div>
+                    {resourceUrl ? (
+                      <a
+                        href={getPublicFileUrl(resourceUrl)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center justify-center rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-semibold text-sky-700 transition hover:bg-sky-100 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300 dark:hover:bg-sky-500/20"
+                      >
+                        View Resource
+                      </a>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled
+                        className="inline-flex cursor-not-allowed items-center justify-center rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-500"
+                      >
+                        No Resource
+                      </button>
+                    )}
 
-                  <div
-                    className={[
-                      "mt-3 inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold",
-                      item.taskType === "project_phase"
-                        ? "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300"
-                        : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300",
-                    ].join(" ")}
-                  >
-                    {item.badgeLabel || "Pending submission"}
-                  </div>
+                    {canUpload ? (
+                      <label
+                        className={[
+                          "inline-flex cursor-pointer items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition",
+                          submitted
+                            ? "bg-slate-950 hover:bg-slate-800 dark:bg-slate-950 dark:hover:bg-slate-800"
+                            : "bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700",
+                        ].join(" ")}
+                      >
+                        {uploadingId === item.id
+                          ? "Uploading..."
+                          : submitted
+                            ? "Replace File"
+                            : "Upload File"}
 
-                  <div className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-                    Due:{" "}
-                    {item.dueDate
-                      ? new Date(item.dueDate).toLocaleString()
-                      : "No deadline set"}{" "}
-                    {item.taskType === "project_phase"
-                      ? ` • Marks ${item.fullMarks ?? item.totalMarks ?? 0}`
-                      : ` • Max ${item.maxFileSizeMB || 10} MB`}
-                  </div>
-
-                  <div className="mt-2 inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300">
-                    Time remaining: {formatRemainingTime(item, nowTick)}
+                        <input
+                          type="file"
+                          className="hidden"
+                          disabled={uploadingId === item.id}
+                          onChange={(e) => {
+                            handleDashboardUpload(item, e.target.files?.[0]);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled
+                        className="inline-flex cursor-not-allowed items-center justify-center rounded-xl bg-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+                      >
+                        Upload Disabled
+                      </button>
+                    )}
                   </div>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    onNavigate(
-                      item.navigateTo || `/student/courses/${item.course?.id}?tab=submissions`
-                    )
-                  }
-                  className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-700"
-                >
-                  {item.actionLabel || "Go to Submission Page"}
-                </button>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </section>
@@ -605,7 +761,7 @@ function getDueTime(dueDate) {
 function isPendingSubmissionActive(item, now = Date.now()) {
   if (!item) return false;
   if (item.isVisibleToStudents !== true) return false;
-  if (item.submission) return false;
+  if (item.taskType === "project_phase" && item.submission) return false;
   if (item.submissionsOpen === false) return false;
   if (item.dueDatePassed === true) return false;
 
@@ -783,6 +939,16 @@ function QuickButton({ label, icon, onClick, primary = false }) {
       <span>{label}</span>
     </button>
   );
+}
+
+function formatDashboardDateTime(value) {
+  if (!value) return "No deadline set";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "No deadline set";
+
+  return date.toLocaleString();
 }
 
 /* ---------- Icons ---------- */
@@ -965,6 +1131,21 @@ function InfoIcon() {
       <path d="M12 22a10 10 0 1 0-10-10 10 10 0 0 0 10 10z" />
       <path d="M12 16v-4" />
       <path d="M12 8h.01" />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
     </svg>
   );
 }
