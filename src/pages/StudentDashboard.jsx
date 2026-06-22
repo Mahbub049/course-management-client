@@ -103,28 +103,28 @@ function StudentDashboard() {
 
         const labPendingItems = Array.isArray(submissionData)
           ? submissionData.map((item) => ({
-              ...item,
-              taskType: "lab_submission",
-              taskLabel: "Assessment Submission",
-              badgeLabel: "You have an assessment",
-              actionLabel: "Go to Submission Page",
-              navigateTo: `/student/courses/${item.course?.id}?tab=submissions`,
-            }))
+            ...item,
+            taskType: "lab_submission",
+            taskLabel: "Assessment Submission",
+            badgeLabel: "You have an assessment",
+            actionLabel: "Go to Submission Page",
+            navigateTo: `/student/courses/${item.course?.id}?tab=submissions`,
+          }))
           : [];
 
         const projectPendingItems = Array.isArray(projectSubmissionData)
           ? projectSubmissionData.map((item) => ({
-              ...item,
-              taskType: "project_phase",
-              taskLabel: item.submissionLabel || "Project Phase",
-              badgeLabel: item.missingGroup
-                ? "Create or join group first"
-                : "Project phase pending",
-              actionLabel: item.missingGroup ? "Go to Project Group" : "Go to Project Phase",
-              navigateTo: item.missingGroup
-                ? `/student/courses/${item.course?.id}?tab=project&projectTab=my-group`
-                : `/student/courses/${item.course?.id}?tab=project&projectTab=workflow&phaseId=${item.phaseId || item.id}`,
-            }))
+            ...item,
+            taskType: "project_phase",
+            taskLabel: item.submissionLabel || "Project Phase",
+            badgeLabel: item.missingGroup
+              ? "Create or join group first"
+              : "Project phase pending",
+            actionLabel: item.missingGroup ? "Go to Project Group" : "Go to Project Phase",
+            navigateTo: item.missingGroup
+              ? `/student/courses/${item.course?.id}?tab=project&projectTab=my-group`
+              : `/student/courses/${item.course?.id}?tab=project&projectTab=workflow&phaseId=${item.phaseId || item.id}`,
+          }))
           : [];
 
         const pendingItems = [...labPendingItems, ...projectPendingItems]
@@ -229,7 +229,7 @@ function StudentDashboard() {
 
       {showPendingSection && (
         <PendingSubmissionsSection
-          className="order-2 md:order-4"
+          className="order-2"
           items={activePendingSubmissionItems}
           loading={loading}
           nowTick={nowTick}
@@ -238,7 +238,7 @@ function StudentDashboard() {
       )}
 
       <AcademicCalendarPreview
-        className="order-3 md:order-3"
+        className="order-3"
         calendar={calendar}
         loading={calendarLoading}
         onViewCalendar={() => navigate("/academic-calendar")}
