@@ -94,6 +94,24 @@ function getInitials(name = "") {
   return initials || "ST";
 }
 
+function getBookingAcademicInfo(booking = {}) {
+  const course = booking.course || booking.student?.course || {};
+  const intake = booking.intake || booking.student?.intake || course.intake || "";
+  const section = booking.section || booking.student?.section || course.section || "";
+  const courseCode = course.code || booking.courseCode || "";
+
+  return {
+    intake,
+    section,
+    courseCode,
+    text: [
+      intake ? `Intake ${intake}` : "",
+      section ? `Section ${section}` : "",
+      courseCode,
+    ].filter(Boolean).join(" · "),
+  };
+}
+
 function groupCounsellingSlots(slots = []) {
   const groups = DAY_NAMES.reduce((acc, day) => ({ ...acc, [day]: [] }), {});
 
@@ -537,6 +555,7 @@ function TeacherCounsellingPage() {
                 const alternateSlots = getAlternateSlots(alternateDate);
                 const isPending = booking.status === "pending";
                 const isUpdating = updatingBookingId === booking.id;
+                const academicInfo = getBookingAcademicInfo(booking);
 
                 return (
                   <article
@@ -563,6 +582,11 @@ function TeacherCounsellingPage() {
                           <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                             Roll: {booking.student?.roll || "—"}
                           </p>
+                          {academicInfo.text && (
+                            <p className="mt-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                              {academicInfo.text}
+                            </p>
+                          )}
                           <span className={["mt-2 inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold", statusBadgeClass(booking.status)].join(" ")}>
                             {statusLabel(booking.status)}
                           </span>

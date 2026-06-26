@@ -2,7 +2,28 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchTeacherCourses } from "../services/courseService";
 import { fetchTeacherComplaints } from "../services/complaintService";
+import { getTeacherCounsellingBookings } from "../services/routineService";
 import { getAuthItem } from "../utils/authStorage";
+
+function getCounsellingRequestText(request = {}) {
+  const course = request.course || request.student?.course || {};
+  const intake = request.intake || request.student?.intake || course.intake || "";
+  const section = request.section || request.student?.section || course.section || "";
+  const academicText = [
+    intake ? `Intake ${intake}` : "",
+    section ? `Section ${section}` : "",
+    course.code || request.courseCode || "",
+  ].filter(Boolean).join(" · ");
+
+  const studentText = request.student?.name
+    ? `${request.student.name}${request.student.roll ? ` (${request.student.roll})` : ""}`
+    : "A student";
+  const timeText = request.start || request.end
+    ? ` · ${request.start || ""}${request.end ? ` - ${request.end}` : ""}`
+    : "";
+
+  return `${studentText}${academicText ? ` · ${academicText}` : ""} requested ${request.date || "a counselling date"}${timeText}.`;
+}
 
 export default function TeacherDashboard() {
   const navigate = useNavigate();
@@ -27,6 +48,8 @@ useEffect(() => {
   const [statsLoading, setStatsLoading] = useState(true);
   const [coursesCount, setCoursesCount] = useState(0);
   const [pendingComplaintsCount, setPendingComplaintsCount] = useState(0);
+  const [pendingCounsellingCount, setPendingCounsellingCount] = useState(0);
+  const [latestCounsellingRequest, setLatestCounsellingRequest] = useState(null);
 
   useEffect(() => {
 if (role !== "teacher") return;
@@ -34,23 +57,35 @@ if (role !== "teacher") return;
     const loadStats = async () => {
       setStatsLoading(true);
       try {
-        const [courses, complaints] = await Promise.all([
+        const [courses, complaints, counsellingData] = await Promise.all([
           fetchTeacherCourses(),
           fetchTeacherComplaints(),
+          getTeacherCounsellingBookings(),
         ]);
 
         setCoursesCount(Array.isArray(courses) ? courses.length : 0);
 
-        const list = Array.isArray(complaints) ? complaints : [];
-        const pending = list.filter(
+        const complaintList = Array.isArray(complaints) ? complaints : [];
+        const pendingComplaints = complaintList.filter(
           (c) => c.status === "open" || c.status === "in_review"
         ).length;
 
-        setPendingComplaintsCount(pending);
+        const counsellingList = Array.isArray(counsellingData?.bookings)
+          ? counsellingData.bookings
+          : [];
+        const pendingCounselling = counsellingList.filter(
+          (booking) => booking.status === "pending"
+        );
+
+        setPendingComplaintsCount(pendingComplaints);
+        setPendingCounsellingCount(pendingCounselling.length);
+        setLatestCounsellingRequest(pendingCounselling[0] || null);
       } catch (err) {
         console.error("Dashboard stats error:", err);
         setCoursesCount(0);
         setPendingComplaintsCount(0);
+        setPendingCounsellingCount(0);
+        setLatestCounsellingRequest(null);
       } finally {
         setStatsLoading(false);
       }
@@ -104,9 +139,48 @@ if (role !== "teacher") return;
               label="Attendance Sheet"
               onClick={() => navigate("/teacher/attendance-sheet")}
             />
+            {/* <QuickButton
+              icon={<MessageIcon />}
+              label="Counselling"
+              onClick={() => navigate("/teacher/counselling")}
+            /> */}
           </div>
         </div>
       </section>
+
+      {pendingCounsellingCount > 0 && (
+        <section className="overflow-hidden rounded-[28px] border border-emerald-200 bg-emerald-50/90 p-4 shadow-sm dark:border-emerald-500/20 dark:bg-emerald-500/10 sm:p-5">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="rounded-2xl border border-emerald-200 bg-white p-3 text-emerald-700 shadow-sm dark:border-emerald-500/20 dark:bg-slate-900/70 dark:text-emerald-300">
+                <MessageIcon />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                  New counselling request
+                </p>
+                <h2 className="mt-1 text-base font-bold text-slate-900 dark:text-white sm:text-lg">
+                  {pendingCounsellingCount} pending counselling {pendingCounsellingCount === 1 ? "request" : "requests"}
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                  {latestCounsellingRequest
+                    ? getCounsellingRequestText(latestCounsellingRequest)
+                    : "A student has requested a counselling appointment."}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => navigate("/teacher/counselling")}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+            >
+              Review Request
+              <ArrowIcon />
+            </button>
+          </div>
+        </section>
+      )}
 
       {/* Hero overview */}
       <section className="relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-gradient-to-br from-white via-violet-50/60 to-sky-50/70 shadow-sm dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-slate-950">
@@ -155,7 +229,7 @@ if (role !== "teacher") return;
       </section>
 
       {/* Stats */}
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard
           title="Courses"
           value={statsLoading ? "..." : String(coursesCount)}
@@ -170,6 +244,14 @@ if (role !== "teacher") return;
           hint="Open + In-review complaints"
           icon={<AlertIcon />}
           accent="amber"
+        />
+
+        <StatCard
+          title="Pending Counselling"
+          value={statsLoading ? "..." : String(pendingCounsellingCount)}
+          hint="Student requests waiting for response"
+          icon={<MessageIcon />}
+          accent="emerald"
         />
 
         <StatCard
@@ -211,12 +293,12 @@ if (role !== "teacher") return;
         />
 
         <ActionCard
-          title="Account Settings"
-          desc="Change your password and keep your teacher account settings up to date."
-          buttonText="Go to Account"
-          onClick={() => navigate("/change-password")}
-          icon={<UserIcon />}
-          accent="from-teal-500/10 via-emerald-500/10 to-sky-500/10 dark:from-teal-500/10 dark:via-emerald-500/5 dark:to-sky-500/10"
+          title="Counselling"
+          desc="Review student counselling requests, approve appointments, suggest alternate time slots or decline with a note."
+          buttonText="Open Counselling"
+          onClick={() => navigate("/teacher/counselling")}
+          icon={<MessageIcon />}
+          accent="from-emerald-500/10 via-teal-500/10 to-cyan-500/10 dark:from-emerald-500/10 dark:via-teal-500/5 dark:to-cyan-500/10"
         />
       </section>
     </div>
@@ -419,6 +501,21 @@ function AlertIcon() {
       <path d="M12 9v4" />
       <path d="M12 17h.01" />
       <path d="M10.3 3.5h3.4L22 20H2z" />
+    </svg>
+  );
+}
+
+function MessageIcon() {
+  return (
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+      <path d="M8 9h8M8 13h5" />
     </svg>
   );
 }
