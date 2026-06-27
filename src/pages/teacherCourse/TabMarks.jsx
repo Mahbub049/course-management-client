@@ -222,6 +222,79 @@ function findHybridLabFinal(assessments = []) {
   return findAssessmentByName(assessments, (n) => n.includes("lab") && n.includes("final"));
 }
 
+function isHybridTheoryMidAssessment(assessment) {
+  const n = String(assessment?.name || "").toLowerCase();
+  return n.includes("theory") && n.includes("mid");
+}
+
+function isHybridLabMidAssessment(assessment) {
+  const n = String(assessment?.name || "").toLowerCase();
+  return n.includes("lab") && n.includes("mid");
+}
+
+function isHybridTheoryFinalAssessment(assessment) {
+  const n = String(assessment?.name || "").toLowerCase();
+  return n.includes("theory") && n.includes("final");
+}
+
+function isHybridLabFinalAssessment(assessment) {
+  const n = String(assessment?.name || "").toLowerCase();
+  return n.includes("lab") && n.includes("final");
+}
+
+function hasHybridMidParts(assessments = []) {
+  return (assessments || []).some(
+    (assessment) =>
+      isHybridTheoryMidAssessment(assessment) ||
+      isHybridLabMidAssessment(assessment)
+  );
+}
+
+function hasHybridFinalParts(assessments = []) {
+  return (assessments || []).some(
+    (assessment) =>
+      isHybridTheoryFinalAssessment(assessment) ||
+      isHybridLabFinalAssessment(assessment)
+  );
+}
+
+function shouldRenderHybridMidTotalAfter(assessment, assessments = []) {
+  if (!hasHybridMidParts(assessments)) return false;
+
+  const hasLabMid = (assessments || []).some(isHybridLabMidAssessment);
+
+  if (hasLabMid) return isHybridLabMidAssessment(assessment);
+  return isHybridTheoryMidAssessment(assessment);
+}
+
+function shouldRenderHybridFinalTotalAfter(assessment, assessments = []) {
+  if (!hasHybridFinalParts(assessments)) return false;
+
+  const hasLabFinal = (assessments || []).some(isHybridLabFinalAssessment);
+
+  if (hasLabFinal) return isHybridLabFinalAssessment(assessment);
+  return isHybridTheoryFinalAssessment(assessment);
+}
+
+function getHybridPartScore(rowMarks, assessment, weight) {
+  if (!assessment) return 0;
+  return pct(getMainMarkValue(rowMarks?.[assessment._id]), assessment.fullMarks) * weight;
+}
+
+function computeHybridMidTotal(assessments = [], rowMarks = {}) {
+  return roundPolicyTotal(
+    getHybridPartScore(rowMarks, findHybridTheoryMid(assessments), 20) +
+      getHybridPartScore(rowMarks, findHybridLabMid(assessments), 10)
+  );
+}
+
+function computeHybridFinalTotal(assessments = [], rowMarks = {}) {
+  return roundPolicyTotal(
+    getHybridPartScore(rowMarks, findHybridTheoryFinal(assessments), 30) +
+      getHybridPartScore(rowMarks, findHybridLabFinal(assessments), 10)
+  );
+}
+
 function getMainColumnLabel(courseType) {
   return courseType === "lab" ? "Lab Assessment (Main)" : "CT Main";
 }
@@ -1022,6 +1095,38 @@ export default function TabMarks({ courseId, course }) {
     );
   }, [sortedAssessments, courseType]);
 
+  const nonCtDisplayColumns = useMemo(() => {
+    const columns = [];
+
+    nonCtAssessments.forEach((assessment) => {
+      columns.push({
+        type: "assessment",
+        key: assessment._id,
+        assessment,
+      });
+
+      if (courseType === "hybrid" && shouldRenderHybridMidTotalAfter(assessment, sortedAssessments)) {
+        columns.push({
+          type: "hybrid_mid_total",
+          key: "hybrid_mid_total",
+          label: "Mid Total",
+          fullMarks: 30,
+        });
+      }
+
+      if (courseType === "hybrid" && shouldRenderHybridFinalTotalAfter(assessment, sortedAssessments)) {
+        columns.push({
+          type: "hybrid_final_total",
+          key: "hybrid_final_total",
+          label: "Final Total",
+          fullMarks: 40,
+        });
+      }
+    });
+
+    return columns;
+  }, [nonCtAssessments, courseType, sortedAssessments]);
+
   const enteredCount = useMemo(() => {
     let count = 0;
     Object.values(marksMap).forEach((row) => {
@@ -1595,7 +1700,11 @@ export default function TabMarks({ courseId, course }) {
         ? labRegularAssessments.map((a) => `${a.name} (${a.fullMarks})`)
         : ctAssessments.map((a) => `${a.name} (${a.fullMarks})`)),
       `${getMainColumnLabel(courseType)} /${getMainColumnFullMarks(course, courseType)}`,
-      ...nonCtAssessments.map((a) => `${a.name} (${a.fullMarks})`),
+      ...nonCtDisplayColumns.map((col) =>
+        col.type === "assessment"
+          ? `${col.assessment.name} (${col.assessment.fullMarks})`
+          : `${col.label} (${col.fullMarks})`
+      ),
       ...advancedExportColumns.map((col) => `${col.label} (${col.fullMarks})`),
       "Total /100",
       "Grade",
@@ -1625,7 +1734,17 @@ export default function TabMarks({ courseId, course }) {
         courseType === "lab"
           ? getLabMain(assessments, row)
           : roundPolicyTotal(computeCtScore(course, assessments, row)),
-        ...nonCtAssessments.map((a) => getMarkDisplayValue(row[a._id])),
+        ...nonCtDisplayColumns.map((col) => {
+          if (col.type === "hybrid_mid_total") {
+            return Number(computeHybridMidTotal(assessments, row)).toFixed(1);
+          }
+
+          if (col.type === "hybrid_final_total") {
+            return Number(computeHybridFinalTotal(assessments, row)).toFixed(1);
+          }
+
+          return getMarkDisplayValue(row[col.assessment._id]);
+        }),
         ...advancedBreakdownValues,
         Number(total).toFixed(1),
         gradeForStudent(course, assessments, row, total),
@@ -1793,8 +1912,10 @@ export default function TabMarks({ courseId, course }) {
             `Assignment\n${hybridAssignmentWeight}`,
             "Theory Mid\n20",
             "Lab Mid\n10",
+            "Mid Term\n30",
             "Theory Final\n30",
             "Lab Final\n10",
+            "Final Term\n40",
             "Attendance\n5",
             "Total Marks\n100",
             "Letter Grade",
@@ -1854,8 +1975,10 @@ export default function TabMarks({ courseId, course }) {
           scaled(hybridAssignment, hybridAssignmentWeight),
           scaled(hybridTheoryMid, 20),
           scaled(hybridLabMid, 10),
+          Number(computeHybridMidTotal(assessments, row)).toFixed(2),
           scaled(hybridTheoryFinal, 30),
           scaled(hybridLabFinal, 10),
+          Number(computeHybridFinalTotal(assessments, row)).toFixed(2),
           attendance.toFixed(2),
           Number(total).toFixed(2),
           grade,
@@ -2271,39 +2394,64 @@ export default function TabMarks({ courseId, course }) {
                         {getMainColumnLabel(courseType)}
                       </th>
 
-                      {nonCtAssessments.map((a) => (
-                        <th
-                          key={a._id}
-                          className="sticky top-0 z-20 min-w-[190px] bg-slate-50 dark:bg-slate-800 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300"
-                        >
-                          <div className="space-y-2">
-                            <div className="text-sm font-semibold normal-case text-slate-800 dark:text-slate-100">
-                              {a.name}
-                            </div>
-                            <div className="text-[11px] font-medium normal-case text-slate-400 dark:text-slate-500">
-                              Full marks: {a.fullMarks}
-                            </div>
-                            {a?.structureType === "lab_final" && (
-                              <div className="rounded-full border border-fuchsia-200 bg-fuchsia-50 px-2 py-1 text-[11px] font-semibold normal-case text-fuchsia-700 dark:border-fuchsia-500/20 dark:bg-fuchsia-500/10 dark:text-fuchsia-300">
-                                Faster entry enabled
-                              </div>
-                            )}
-                            <button
-                              onClick={() => handlePublish(a)}
-                              disabled={publishingAssessmentId === a._id}
-                              className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                      {nonCtDisplayColumns.map((col) => {
+                        if (col.type === "hybrid_mid_total" || col.type === "hybrid_final_total") {
+                          return (
+                            <th
+                              key={col.key}
+                              className="sticky top-0 z-20 min-w-[140px] bg-slate-50 dark:bg-slate-800 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300"
                             >
-                              {publishingAssessmentId === a._id
-                                ? a.isPublished
-                                  ? "Republishing..."
-                                  : "Publishing..."
-                                : a.isPublished
-                                  ? "Republish"
-                                  : "Publish"}
-                            </button>
-                          </div>
-                        </th>
-                      ))}
+                              <div className="space-y-2">
+                                <div className="text-sm font-semibold normal-case text-slate-800 dark:text-slate-100">
+                                  {col.label}
+                                </div>
+                                <div className="text-[11px] font-medium normal-case text-slate-400 dark:text-slate-500">
+                                  Full marks: {col.fullMarks}
+                                </div>
+                                <div className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold normal-case text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+                                  Auto calculated
+                                </div>
+                              </div>
+                            </th>
+                          );
+                        }
+
+                        const a = col.assessment;
+
+                        return (
+                          <th
+                            key={a._id}
+                            className="sticky top-0 z-20 min-w-[190px] bg-slate-50 dark:bg-slate-800 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300"
+                          >
+                            <div className="space-y-2">
+                              <div className="text-sm font-semibold normal-case text-slate-800 dark:text-slate-100">
+                                {a.name}
+                              </div>
+                              <div className="text-[11px] font-medium normal-case text-slate-400 dark:text-slate-500">
+                                Full marks: {a.fullMarks}
+                              </div>
+                              {a?.structureType === "lab_final" && (
+                                <div className="rounded-full border border-fuchsia-200 bg-fuchsia-50 px-2 py-1 text-[11px] font-semibold normal-case text-fuchsia-700 dark:border-fuchsia-500/20 dark:bg-fuchsia-500/10 dark:text-fuchsia-300">
+                                  Faster entry enabled
+                                </div>
+                              )}
+                              <button
+                                onClick={() => handlePublish(a)}
+                                disabled={publishingAssessmentId === a._id}
+                                className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                              >
+                                {publishingAssessmentId === a._id
+                                  ? a.isPublished
+                                    ? "Republishing..."
+                                    : "Publishing..."
+                                  : a.isPublished
+                                    ? "Republish"
+                                    : "Publish"}
+                              </button>
+                            </div>
+                          </th>
+                        );
+                      })}
 
                       <th className="sticky top-0 z-20 min-w-[110px] bg-slate-50 dark:bg-slate-800 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
                         Total
@@ -2396,13 +2544,37 @@ export default function TabMarks({ courseId, course }) {
                             </div>
                           </td>
 
-                          {nonCtAssessments.map((a, index) => {
+                          {nonCtDisplayColumns.map((col) => {
+                            if (col.type === "hybrid_mid_total") {
+                              return (
+                                <td key={col.key} className="px-4 py-3">
+                                  <span className="inline-flex min-w-[78px] items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+                                    {Number(computeHybridMidTotal(assessments, row)).toFixed(1)}
+                                  </span>
+                                </td>
+                              );
+                            }
+
+                            if (col.type === "hybrid_final_total") {
+                              return (
+                                <td key={col.key} className="px-4 py-3">
+                                  <span className="inline-flex min-w-[78px] items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+                                    {Number(computeHybridFinalTotal(assessments, row)).toFixed(1)}
+                                  </span>
+                                </td>
+                              );
+                            }
+
+                            const a = col.assessment;
                             const firstPartCount =
                               courseType === "lab"
                                 ? labRegularAssessments.length
                                 : ctAssessments.length;
 
-                            const actualColIndex = firstPartCount + index + 1;
+                            const assessmentIndex = nonCtAssessments.findIndex(
+                              (item) => String(item._id) === String(a._id)
+                            );
+                            const actualColIndex = firstPartCount + assessmentIndex + 1;
                             const isAttendanceCol = String(a.name || "")
                               .toLowerCase()
                               .includes("att");
