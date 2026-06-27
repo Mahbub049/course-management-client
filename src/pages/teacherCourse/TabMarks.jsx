@@ -296,11 +296,215 @@ function computeHybridFinalTotal(assessments = [], rowMarks = {}) {
 }
 
 function getMainColumnLabel(courseType) {
-  return courseType === "lab" ? "Lab Assessment (Main)" : "CT Main";
+  return courseType === "lab" ? "Lab Assessment (Main)" : "CT Avg";
 }
 
 function getMainColumnFullMarks(course, courseType) {
   return courseType === "lab" ? 25 : getCtMainWeight(course);
+}
+
+function isWholeNumber(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) && Math.abs(n - Math.round(n)) < 1e-9;
+}
+
+function formatMarksAmount(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return "0";
+  return n % 1 === 0 ? String(n) : n.toFixed(1);
+}
+
+function isAssessmentCellFilled(assessment, cellValue) {
+  if (isAttendanceAssessment(assessment)) return true;
+  if (isIncompleteCell(cellValue)) return true;
+  if (!cellValue || typeof cellValue !== "object") return false;
+
+  if (Object.prototype.hasOwnProperty.call(cellValue, "inputValue")) {
+    return String(cellValue.inputValue ?? "").trim() !== "";
+  }
+
+  return Object.prototype.hasOwnProperty.call(cellValue, "obtainedMarks");
+}
+
+function isRowCompleteForFinalCheck(inputAssessments = [], rowMarks = {}) {
+  if (!inputAssessments.length) return false;
+  return inputAssessments.every((assessment) =>
+    isAssessmentCellFilled(assessment, rowMarks?.[assessment._id])
+  );
+}
+
+function getGradeImprovementAdvice(total) {
+  const t = Number(total || 0);
+  if (!Number.isFinite(t)) return null;
+
+  const thresholds = [
+    { grade: "D", min: 40 },
+    { grade: "C", min: 45 },
+    { grade: "C+", min: 50 },
+    { grade: "B-", min: 55 },
+    { grade: "B", min: 60 },
+    { grade: "B+", min: 65 },
+    { grade: "A-", min: 70 },
+    { grade: "A", min: 75 },
+    { grade: "A+", min: 80 },
+  ];
+
+  const next = thresholds.find((item) => item.min > t);
+  if (!next) return null;
+
+  const needed = round2(next.min - t);
+  if (needed <= 0 || needed > 1) return null;
+
+  return `Increase ${formatMarksAmount(needed)} mark${needed === 1 ? "" : "s"} to reach ${next.grade}`;
+}
+
+function getFinalCompletionNotice(course, assessments, rowMarks, attendanceMarks5, inputAssessments, planTotal) {
+  if (Number(planTotal || 0) < 100) return null;
+  if (!isRowCompleteForFinalCheck(inputAssessments, rowMarks)) return null;
+
+  const total = computeTotal100(course, assessments, rowMarks, attendanceMarks5);
+
+  if (!isWholeNumber(total)) {
+    return {
+      type: "error",
+      message: "Fraction not allowed after all assessments are filled.",
+    };
+  }
+
+  const advice = getGradeImprovementAdvice(total);
+  if (advice) {
+    return {
+      type: "advice",
+      message: advice,
+    };
+  }
+
+  return null;
+}
+
+function isHybridGenericMidAssessment(assessment) {
+  const n = String(assessment?.name || "").toLowerCase();
+  return n.includes("mid") && !n.includes("final") && !n.includes("lab") && !n.includes("theory");
+}
+
+function isHybridGenericFinalAssessment(assessment) {
+  const n = String(assessment?.name || "").toLowerCase();
+  return n.includes("final") && !n.includes("mid") && !n.includes("lab") && !n.includes("theory");
+}
+
+function getMarkInputAssessments(courseType, assessments = []) {
+  const list = Array.isArray(assessments) ? assessments : [];
+
+  if (courseType === "lab") {
+    return list.filter((assessment) => {
+      const n = String(assessment?.name || "").toLowerCase();
+      return (
+        assessment?.structureType === "lab_final" ||
+        isRegularLabAssessment(assessment) ||
+        n.includes("mid") ||
+        n.includes("final") ||
+        isAttendanceAssessment(assessment)
+      );
+    });
+  }
+
+  return list.filter((assessment) => assessment?.structureType === "lab_final" || assessment);
+}
+
+function getAssessmentPlanSummary(course, assessments = []) {
+  const courseType = getCourseType(course);
+  const list = Array.isArray(assessments) ? assessments : [];
+  const hasAttendance = list.some(isAttendanceAssessment);
+
+  let regularTotal = 0;
+  let midTotal = 0;
+  let finalTotal = 0;
+
+  if (courseType === "lab") {
+    if (list.some(isRegularLabAssessment)) regularTotal += 25;
+    if (hasAttendance) regularTotal += 5;
+
+    if (list.some((a) => String(a?.name || "").toLowerCase().includes("mid"))) {
+      midTotal += 30;
+    }
+
+    if (
+      list.some(
+        (a) =>
+          a?.structureType === "lab_final" ||
+          String(a?.name || "").toLowerCase().includes("final")
+      )
+    ) {
+      finalTotal += 40;
+    }
+  } else if (courseType === "hybrid") {
+    if (list.some((a) => isCtAssessment(a?.name))) regularTotal += getCtMainWeight(course);
+    if (list.some((a) => String(a?.name || "").toLowerCase().includes("assign"))) {
+      regularTotal += getHybridAssignmentWeight(course);
+    }
+    if (hasAttendance) regularTotal += 5;
+
+    if (list.some(isHybridGenericMidAssessment)) {
+      midTotal += 30;
+    } else {
+      if (list.some(isHybridTheoryMidAssessment)) midTotal += 20;
+      if (list.some(isHybridLabMidAssessment)) midTotal += 10;
+    }
+
+    if (list.some(isHybridGenericFinalAssessment)) {
+      finalTotal += 40;
+    } else {
+      if (list.some(isHybridTheoryFinalAssessment)) finalTotal += 30;
+      if (list.some(isHybridLabFinalAssessment)) finalTotal += 10;
+    }
+  } else {
+    if (list.some((a) => isCtAssessment(a?.name))) regularTotal += getCtMainWeight(course);
+
+    const hasAssignmentOrPresentation = list.some((a) => {
+      const n = String(a?.name || "").toLowerCase();
+      return n.includes("assign") || n.includes("present");
+    });
+    if (hasAssignmentOrPresentation) regularTotal += 10;
+    if (hasAttendance) regularTotal += 5;
+
+    if (list.some((a) => String(a?.name || "").toLowerCase().includes("mid"))) {
+      midTotal += 30;
+    }
+    if (
+      list.some(
+        (a) =>
+          a?.structureType === "lab_final" ||
+          String(a?.name || "").toLowerCase().includes("final")
+      )
+    ) {
+      finalTotal += 40;
+    }
+  }
+
+  const total = round2(regularTotal + midTotal + finalTotal);
+  const errors = [];
+  const regularLabel = courseType === "lab" ? "Lab Assessment + Attendance" : "CT + Assignment + Attendance";
+
+  if (regularTotal > 30) {
+    errors.push(`${regularLabel} cannot cross 30. Current: ${formatMarksAmount(regularTotal)}.`);
+  }
+  if (midTotal > 30) {
+    errors.push(`Mid cannot cross 30. Current: ${formatMarksAmount(midTotal)}.`);
+  }
+  if (finalTotal > 40) {
+    errors.push(`Final cannot cross 40. Current: ${formatMarksAmount(finalTotal)}.`);
+  }
+  if (total > 100) {
+    errors.push(`Total assessment marks cannot cross 100. Current: ${formatMarksAmount(total)}.`);
+  }
+
+  return {
+    total,
+    regularTotal: round2(regularTotal),
+    midTotal: round2(midTotal),
+    finalTotal: round2(finalTotal),
+    errors,
+  };
 }
 
 function isCtAssessment(nameRaw) {
@@ -1109,7 +1313,7 @@ export default function TabMarks({ courseId, course }) {
         columns.push({
           type: "hybrid_mid_total",
           key: "hybrid_mid_total",
-          label: "Mid Total",
+          label: "Mid Term",
           fullMarks: 30,
         });
       }
@@ -1118,7 +1322,7 @@ export default function TabMarks({ courseId, course }) {
         columns.push({
           type: "hybrid_final_total",
           key: "hybrid_final_total",
-          label: "Final Total",
+          label: "Final Term",
           fullMarks: 40,
         });
       }
@@ -1126,6 +1330,14 @@ export default function TabMarks({ courseId, course }) {
 
     return columns;
   }, [nonCtAssessments, courseType, sortedAssessments]);
+
+  const markInputAssessments = useMemo(() => {
+    return getMarkInputAssessments(courseType, sortedAssessments);
+  }, [courseType, sortedAssessments]);
+
+  const assessmentPlanSummary = useMemo(() => {
+    return getAssessmentPlanSummary(course, sortedAssessments);
+  }, [course, sortedAssessments]);
 
   const enteredCount = useMemo(() => {
     let count = 0;
@@ -1266,28 +1478,57 @@ export default function TabMarks({ courseId, course }) {
   };
 
   const handleMarkBlur = (studentId, assessmentId) => {
+    const currentRow = marksMap[studentId] || {};
+    const oldCellFromState = currentRow[assessmentId];
+
+    if (!oldCellFromState || isIncompleteCell(oldCellFromState)) return;
+
+    const normalized = normalizeHalfMarkInputValue(
+      oldCellFromState.inputValue ?? oldCellFromState.obtainedMarks ?? ""
+    );
+
+    const assessment = assessments.find(
+      (a) => String(a._id) === String(assessmentId)
+    );
+
+    const normalizedNumber = normalized === "" ? 0 : toHalfMarkNumber(normalized);
+    const nextCell = {
+      ...oldCellFromState,
+      obtainedMarks: normalizedNumber,
+      inputValue: normalized,
+      status: "present",
+    };
+    const nextRowForNotice = {
+      ...currentRow,
+      [assessmentId]: nextCell,
+    };
+
+    const wasComplete = isRowCompleteForFinalCheck(markInputAssessments, currentRow);
+    const isCompleteNow = isRowCompleteForFinalCheck(markInputAssessments, nextRowForNotice);
+    const completionNotice =
+      !wasComplete && isCompleteNow
+        ? getFinalCompletionNotice(
+            course,
+            assessments,
+            nextRowForNotice,
+            Number(attMarksMap[studentId] || 0),
+            markInputAssessments,
+            assessmentPlanSummary.total
+          )
+        : null;
+
+    if (assessment && isAttendanceAssessment(assessment)) {
+      setAttMarksMap((prev) => ({
+        ...prev,
+        [studentId]: clamp(normalizedNumber, 0, Number(assessment.fullMarks || 5)),
+      }));
+    }
+
     setMarksMap((prev) => {
       const row = prev[studentId] || {};
       const oldCell = row[assessmentId];
 
       if (!oldCell || isIncompleteCell(oldCell)) return prev;
-
-      const normalized = normalizeHalfMarkInputValue(
-        oldCell.inputValue ?? oldCell.obtainedMarks ?? ""
-      );
-
-      const assessment = assessments.find(
-        (a) => String(a._id) === String(assessmentId)
-      );
-
-      const normalizedNumber = normalized === "" ? 0 : toHalfMarkNumber(normalized);
-
-      if (assessment && isAttendanceAssessment(assessment)) {
-        setAttMarksMap((prev) => ({
-          ...prev,
-          [studentId]: clamp(normalizedNumber, 0, Number(assessment.fullMarks || 5)),
-        }));
-      }
 
       return {
         ...prev,
@@ -1302,6 +1543,21 @@ export default function TabMarks({ courseId, course }) {
         },
       };
     });
+
+    if (completionNotice) {
+      window.setTimeout(() => {
+        Swal.fire({
+          icon: completionNotice.type === "error" ? "warning" : "info",
+          title:
+            completionNotice.type === "error"
+              ? "Fraction not allowed"
+              : "Grade improvement suggestion",
+          text: completionNotice.message,
+          timer: 2600,
+          showConfirmButton: false,
+        });
+      }, 0);
+    }
   };
 
   const handleAdvancedAbsentToggle = (studentId, assessmentId) => {
@@ -1609,6 +1865,42 @@ export default function TabMarks({ courseId, course }) {
     try {
       setSaving(true);
       setMarksError("");
+
+      if (assessmentPlanSummary.errors.length) {
+        const message = assessmentPlanSummary.errors.join(" ");
+        setMarksError(message);
+        Swal.fire({
+          icon: "warning",
+          title: "Assessment total problem",
+          text: message,
+        });
+        return;
+      }
+
+      const completedFractionRows = sortedStudents.filter((student) => {
+        const row = marksMap[student.id] || {};
+        const notice = getFinalCompletionNotice(
+          course,
+          assessments,
+          row,
+          Number(attMarksMap[student.id] || 0),
+          markInputAssessments,
+          assessmentPlanSummary.total
+        );
+        return notice?.type === "error";
+      });
+
+      if (completedFractionRows.length) {
+        const firstStudent = completedFractionRows[0];
+        const message = `${firstStudent.roll || firstStudent.name || "A student"} has a fractional final total after all assessments are filled. Final total must be a whole number.`;
+        setMarksError(message);
+        Swal.fire({
+          icon: "warning",
+          title: "Fraction not allowed",
+          text: message,
+        });
+        return;
+      }
 
       const payload = [];
 
@@ -2326,9 +2618,28 @@ export default function TabMarks({ courseId, course }) {
 
       <div className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="border-b border-slate-100 px-6 py-4 dark:border-slate-800">
-          <h4 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-            Marks Table
-          </h4>
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <h4 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+              Marks Table
+            </h4>
+            <div
+              className={[
+                "rounded-full border px-3 py-1 text-xs font-semibold",
+                assessmentPlanSummary.errors.length
+                  ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300"
+                  : assessmentPlanSummary.total === 100
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+                    : "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300",
+              ].join(" ")}
+            >
+              Created total: {formatMarksAmount(assessmentPlanSummary.total)} / 100
+            </div>
+          </div>
+          {assessmentPlanSummary.errors.length > 0 && (
+            <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
+              {assessmentPlanSummary.errors.join(" ")}
+            </div>
+          )}
         </div>
 
         <div className="p-4 md:p-6">
@@ -2348,14 +2659,30 @@ export default function TabMarks({ courseId, course }) {
                 ref={bottomScrollRef}
                 className="overflow-x-auto overflow-y-visible"
               >
-                <table ref={tableRef} className="min-w-full text-sm">
+                <table ref={tableRef} className="min-w-full table-fixed text-sm">
+                  <colgroup>
+                    <col style={{ width: "110px" }} />
+                    <col style={{ width: "220px" }} />
+                    {(courseType === "lab" ? labRegularAssessments : ctAssessments).map((a) => (
+                      <col key={`main-${a._id}`} style={{ width: "150px" }} />
+                    ))}
+                    <col style={{ width: "150px" }} />
+                    {nonCtDisplayColumns.map((col) => (
+                      <col
+                        key={`extra-${col.key}`}
+                        style={{ width: col.type === "assessment" ? "190px" : "150px" }}
+                      />
+                    ))}
+                    <col style={{ width: "130px" }} />
+                    <col style={{ width: "100px" }} />
+                  </colgroup>
                   <thead className="bg-slate-50 dark:bg-slate-800 relative z-30">
                     <tr className="border-b border-slate-200 dark:border-slate-700">
-                      <th className="sticky top-0 left-0 z-30 min-w-[110px] bg-slate-50 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      <th className="sticky top-0 left-0 z-30 w-[110px] min-w-[110px] bg-slate-50 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                         Roll
                       </th>
 
-                      <th className="sticky top-0 left-[110px] z-30 min-w-[220px] bg-slate-50 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      <th className="sticky top-0 left-[110px] z-30 w-[220px] min-w-[220px] bg-slate-50 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                         Student
                       </th>
 
@@ -2363,7 +2690,7 @@ export default function TabMarks({ courseId, course }) {
                         (a) => (
                           <th
                             key={a._id}
-                            className="sticky top-0 z-20 min-w-[140px] bg-slate-50 dark:bg-slate-800 px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300"
+                            className="sticky top-0 z-20 w-[150px] min-w-[150px] bg-slate-50 dark:bg-slate-800 px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300"
                           >
                             <div className="space-y-2">
                               <div className="text-sm font-semibold normal-case text-slate-800 dark:text-slate-100">
@@ -2390,8 +2717,18 @@ export default function TabMarks({ courseId, course }) {
                         )
                       )}
 
-                      <th className="sticky top-0 z-20 min-w-[150px] bg-slate-50 dark:bg-slate-800 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                        {getMainColumnLabel(courseType)}
+                      <th className="sticky top-0 z-20 w-[150px] min-w-[150px] bg-slate-50 dark:bg-slate-800 px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                        <div className="space-y-2">
+                          <div className="text-sm font-semibold normal-case text-slate-800 dark:text-slate-100">
+                            {getMainColumnLabel(courseType)}
+                          </div>
+                          <div className="text-[11px] font-medium normal-case text-slate-400 dark:text-slate-500">
+                            Full marks: {getMainColumnFullMarks(course, courseType)}
+                          </div>
+                          <div className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-semibold normal-case text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300">
+                            Auto calculated
+                          </div>
+                        </div>
                       </th>
 
                       {nonCtDisplayColumns.map((col) => {
@@ -2399,7 +2736,7 @@ export default function TabMarks({ courseId, course }) {
                           return (
                             <th
                               key={col.key}
-                              className="sticky top-0 z-20 min-w-[140px] bg-slate-50 dark:bg-slate-800 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300"
+                              className="sticky top-0 z-20 w-[150px] min-w-[150px] bg-slate-50 dark:bg-slate-800 px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300"
                             >
                               <div className="space-y-2">
                                 <div className="text-sm font-semibold normal-case text-slate-800 dark:text-slate-100">
@@ -2421,7 +2758,7 @@ export default function TabMarks({ courseId, course }) {
                         return (
                           <th
                             key={a._id}
-                            className="sticky top-0 z-20 min-w-[190px] bg-slate-50 dark:bg-slate-800 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300"
+                            className="sticky top-0 z-20 w-[190px] min-w-[190px] bg-slate-50 dark:bg-slate-800 px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300"
                           >
                             <div className="space-y-2">
                               <div className="text-sm font-semibold normal-case text-slate-800 dark:text-slate-100">
@@ -2453,11 +2790,25 @@ export default function TabMarks({ courseId, course }) {
                         );
                       })}
 
-                      <th className="sticky top-0 z-20 min-w-[110px] bg-slate-50 dark:bg-slate-800 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                        Total
+                      <th className="sticky top-0 z-20 w-[130px] min-w-[130px] bg-slate-50 dark:bg-slate-800 px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                        <div className="space-y-2">
+                          <div className="text-sm font-semibold normal-case text-slate-800 dark:text-slate-100">
+                            Total
+                          </div>
+                          <div
+                            className={[
+                              "text-[11px] font-medium normal-case",
+                              assessmentPlanSummary.total > 100
+                                ? "text-rose-500 dark:text-rose-300"
+                                : "text-slate-400 dark:text-slate-500",
+                            ].join(" ")}
+                          >
+                            Full marks: {formatMarksAmount(assessmentPlanSummary.total)} / 100
+                          </div>
+                        </div>
                       </th>
 
-                      <th className="sticky top-0 z-20 min-w-[100px] bg-slate-50 dark:bg-slate-800 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                      <th className="sticky top-0 z-20 w-[100px] min-w-[100px] bg-slate-50 dark:bg-slate-800 px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
                         Grade
                       </th>
                     </tr>
@@ -2478,11 +2829,11 @@ export default function TabMarks({ courseId, course }) {
                           key={s.id}
                           className="border-b border-slate-100 last:border-0 dark:border-slate-800"
                         >
-                          <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-4 py-3 font-semibold text-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                          <td className="sticky left-0 z-10 w-[110px] min-w-[110px] whitespace-nowrap bg-white px-4 py-3 font-semibold text-slate-700 dark:bg-slate-900 dark:text-slate-200">
                             {s.roll}
                           </td>
 
-                          <td className="sticky left-[110px] z-10 whitespace-nowrap bg-white px-4 py-3 dark:bg-slate-900">
+                          <td className="sticky left-[110px] z-10 w-[220px] min-w-[220px] whitespace-nowrap bg-white px-4 py-3 dark:bg-slate-900">
                             <div className="font-semibold text-slate-900 dark:text-slate-100">
                               {s.name}
                             </div>
@@ -2497,7 +2848,7 @@ export default function TabMarks({ courseId, course }) {
                               const cell = row[a._id];
 
                               return (
-                                <td key={a._id} className="px-4 py-3">
+                                <td key={a._id} className="w-[150px] min-w-[150px] px-4 py-3 text-center">
                                   <input
                                     type="text"
                                     inputMode="decimal"
@@ -2529,7 +2880,7 @@ export default function TabMarks({ courseId, course }) {
                             }
                           )}
 
-                          <td className="px-4 py-3">
+                          <td className="w-[150px] min-w-[150px] px-4 py-3 text-center">
                             <div
                               title={
                                 courseType === "lab"
@@ -2547,7 +2898,7 @@ export default function TabMarks({ courseId, course }) {
                           {nonCtDisplayColumns.map((col) => {
                             if (col.type === "hybrid_mid_total") {
                               return (
-                                <td key={col.key} className="px-4 py-3">
+                                <td key={col.key} className="w-[150px] min-w-[150px] px-4 py-3 text-center">
                                   <span className="inline-flex min-w-[78px] items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
                                     {Number(computeHybridMidTotal(assessments, row)).toFixed(1)}
                                   </span>
@@ -2557,7 +2908,7 @@ export default function TabMarks({ courseId, course }) {
 
                             if (col.type === "hybrid_final_total") {
                               return (
-                                <td key={col.key} className="px-4 py-3">
+                                <td key={col.key} className="w-[150px] min-w-[150px] px-4 py-3 text-center">
                                   <span className="inline-flex min-w-[78px] items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
                                     {Number(computeHybridFinalTotal(assessments, row)).toFixed(1)}
                                   </span>
@@ -2582,8 +2933,8 @@ export default function TabMarks({ courseId, course }) {
 
                             if (a?.structureType === "lab_final") {
                               return (
-                                <td key={a._id} className="px-4 py-3">
-                                  <div className="flex flex-col gap-2">
+                                <td key={a._id} className="w-[190px] min-w-[190px] px-4 py-3 text-center">
+                                  <div className="flex flex-col items-center gap-2">
                                     <div className="inline-flex min-w-[78px] items-center justify-center rounded-full border border-fuchsia-200 bg-fuchsia-50 px-3 py-1.5 text-xs font-bold text-fuchsia-700 dark:border-fuchsia-500/20 dark:bg-fuchsia-500/10 dark:text-fuchsia-300">
                                       {isIncompleteCell(cell)
                                         ? "A"
@@ -2617,7 +2968,7 @@ export default function TabMarks({ courseId, course }) {
                             }
 
                             return (
-                              <td key={a._id} className="px-4 py-3">
+                              <td key={a._id} className="w-[190px] min-w-[190px] px-4 py-3 text-center">
                                 <input
                                   type="text"
                                   inputMode="decimal"
@@ -2646,13 +2997,41 @@ export default function TabMarks({ courseId, course }) {
                             );
                           })}
 
-                          <td className="px-4 py-3">
-                            <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
-                              {Number(total).toFixed(1)}
-                            </span>
+                          <td className="w-[130px] min-w-[130px] px-4 py-3 text-center">
+                            {(() => {
+                              const rowNotice = getFinalCompletionNotice(
+                                course,
+                                assessments,
+                                row,
+                                Number(attMarksMap[s.id] || 0),
+                                markInputAssessments,
+                                assessmentPlanSummary.total
+                              );
+
+                              return (
+                                <div className="flex flex-col items-center gap-1.5">
+                                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+                                    {Number(total).toFixed(1)}
+                                  </span>
+
+                                  {rowNotice && (
+                                    <span
+                                      className={[
+                                        "max-w-[112px] rounded-lg px-2 py-1 text-[10px] font-semibold leading-tight",
+                                        rowNotice.type === "error"
+                                          ? "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300"
+                                          : "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
+                                      ].join(" ")}
+                                    >
+                                      {rowNotice.message}
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </td>
 
-                          <td className="px-4 py-3">
+                          <td className="w-[100px] min-w-[100px] px-4 py-3 text-center">
                             <GradeBadge grade={gradeForStudent(course, assessments, row, total)} />
                           </td>
                         </tr>

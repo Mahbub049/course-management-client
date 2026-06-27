@@ -144,6 +144,16 @@ function getCtPolicyLabel(policy) {
   return `Average of best ${bestCount} CT scaled to ${totalWeight}`;
 }
 
+function getMaxCtWeight(courseType) {
+  return courseType === "hybrid" ? 25 : 15;
+}
+
+function getCtWeightLimitMessage(courseType, maxWeight) {
+  return courseType === "hybrid"
+    ? `CT + Assignment + Attendance cannot cross 30. For hybrid courses, CT weight cannot be more than ${maxWeight}.`
+    : `CT + Assignment + Attendance cannot cross 30. For theory courses, CT weight cannot be more than ${maxWeight}.`;
+}
+
 function round2(num) {
   return Math.round(Number(num || 0) * 100) / 100;
 }
@@ -862,6 +872,19 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
   const handlePolicySave = async () => {
     if (courseType === "lab") return;
 
+    const totalWeight = Math.max(0, Number(policyForm.totalWeight ?? 15));
+    const maxCtWeight = getMaxCtWeight(courseType);
+
+    if (totalWeight > maxCtWeight) {
+      const message = getCtWeightLimitMessage(courseType, maxCtWeight);
+      Swal.fire({
+        icon: "warning",
+        title: "CT weight limit exceeded",
+        text: message,
+      });
+      return;
+    }
+
     const payload = {
       classTestPolicy: {
         mode: policyForm.mode,
@@ -869,7 +892,7 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
           policyForm.mode === "best_one_scaled"
             ? 1
             : Math.max(1, Number(policyForm.bestCount || 2)),
-        totalWeight: Math.max(0, Number(policyForm.totalWeight || 15)),
+        totalWeight,
         manualSelectedAssessmentIds:
           policyForm.mode === "manual_average_scaled"
             ? (policyForm.manualSelectedAssessmentIds || []).map(String)
@@ -1125,6 +1148,7 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
               <input
                 type="number"
                 min="0"
+                max={getMaxCtWeight(courseType)}
                 step="0.5"
                 value={policyForm.totalWeight}
                 onChange={(e) =>
@@ -1135,6 +1159,9 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
                 }
                 className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-800 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
               />
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Maximum allowed: {getMaxCtWeight(courseType)} marks.
+              </p>
             </div>
           </div>
 
