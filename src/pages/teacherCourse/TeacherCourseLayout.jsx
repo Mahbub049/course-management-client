@@ -36,27 +36,27 @@ export default function TeacherCourseLayout({
   ];
 
   return (
-    <div className="mx-auto space-y-6">
-      <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <div className="mx-auto space-y-4 sm:space-y-6">
+      <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:rounded-3xl">
         <div className="absolute inset-0 bg-gradient-to-br from-white via-slate-50 to-indigo-50/70 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/40" />
         <div className="absolute -right-20 -top-20 h-56 w-56 rounded-full bg-indigo-200/40 blur-3xl dark:bg-indigo-500/10" />
         <div className="absolute -left-16 -bottom-20 h-56 w-56 rounded-full bg-sky-200/40 blur-3xl dark:bg-sky-500/10" />
 
-        <div className="relative p-5 md:p-7 xl:p-8">
+        <div className="relative p-4 sm:p-5 md:p-7 xl:p-8">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0">
-              <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur-sm dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200">
+              <div className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur-sm dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200 sm:inline-flex">
                 <BookIcon />
                 Course Dashboard
               </div>
 
-              <h2 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 md:text-3xl">
+              <h2 className="mt-0 text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:mt-3 sm:text-2xl md:text-3xl">
                 {course?.code || "Course Code"}{" "}
                 <span className="text-slate-300 dark:text-slate-600">—</span>{" "}
-                <span className="break-words">{course?.title || "Untitled Course"}</span>
+                <span className="break-words sm:inline">{course?.title || "Untitled Course"}</span>
               </h2>
 
-              <div className="mt-4 flex flex-wrap items-center gap-2">
+              <div className="mt-3 hidden flex-wrap items-center gap-2 sm:flex">
                 <Pill label={`Section: ${course?.section || "-"}`} />
                 <Pill label={`Semester: ${course?.semester || "-"}`} />
                 <Pill label={`Year: ${course?.year || "-"}`} />
@@ -72,12 +72,12 @@ export default function TeacherCourseLayout({
                 )}
               </div>
 
-              <p className="mt-4 text-sm leading-6 text-slate-500 dark:text-slate-400">
+              <p className="mt-4 hidden text-sm leading-6 text-slate-500 dark:text-slate-400 sm:block">
                 Manage course marks, assessments, students, attendance, materials, and project workflow from one organized workspace.
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-3 xl:justify-end">
+            <div className="hidden flex-wrap gap-3 xl:justify-end sm:flex">
               <button
                 type="button"
                 onClick={() => navigate("/teacher/courses")}
@@ -98,8 +98,8 @@ export default function TeacherCourseLayout({
             </div>
           </div>
 
-          <div className="mt-6 border-t border-slate-200/70 pt-5 dark:border-slate-800">
-            <div className="flex flex-wrap gap-2">
+          <div className="mt-4 border-t border-slate-200/70 pt-4 dark:border-slate-800 sm:mt-6 sm:pt-5">
+            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
               {tabs.map((tab) => {
                 const isActive = activeTab === tab.id;
 
@@ -109,7 +109,7 @@ export default function TeacherCourseLayout({
                     type="button"
                     onClick={() => setActiveTab(tab.id)}
                     className={[
-                      "group inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold border transition-all duration-200",
+                      "group inline-flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold border transition-all duration-200 sm:rounded-2xl sm:px-4 sm:py-2.5 sm:text-sm",
                       isActive
                         ? "border-indigo-600 bg-indigo-600 text-white shadow-sm shadow-indigo-600/20"
                         : "border-slate-200 bg-white/85 text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-700/80",
@@ -133,17 +133,17 @@ export default function TeacherCourseLayout({
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:rounded-3xl">
+        <div className="border-b border-slate-100 px-4 py-3 dark:border-slate-800 sm:px-5 sm:py-4">
           <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
             {tabs.find((t) => t.id === activeTab)?.label || "Course Content"}
           </div>
-          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          <div className="mt-1 hidden text-xs text-slate-500 dark:text-slate-400 sm:block">
             Work with the selected course section below.
           </div>
         </div>
 
-        <div className="p-5 md:p-6">{children}</div>
+        <div className="p-3 sm:p-5 md:p-6">{children}</div>
       </div>
     </div>
   );

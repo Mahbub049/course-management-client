@@ -134,23 +134,23 @@ export default function TeacherPublicSubmissionLinkPanel({
   };
 
   return (
-    <div className="rounded-3xl border border-emerald-200 bg-emerald-50/60 p-5 shadow-sm dark:border-emerald-500/20 dark:bg-emerald-500/10">
+    <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 shadow-sm dark:border-emerald-500/20 dark:bg-emerald-500/10 sm:rounded-3xl sm:p-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="inline-flex rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-bold uppercase tracking-wide text-emerald-700 dark:border-emerald-500/30 dark:bg-slate-900 dark:text-emerald-300">
             Public Upload Page
           </div>
-          <h3 className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">
+          <h3 className="mt-3 text-lg font-semibold text-slate-900 dark:text-white sm:text-xl">
             No-login submission link for students
           </h3>
-          <p className="mt-1 max-w-3xl text-sm text-slate-600 dark:text-slate-300">
+          <p className="mt-1 hidden max-w-3xl text-sm text-slate-600 dark:text-slate-300 sm:block">
             Students can open this link, enter their roll number, and upload files.
             Uploaded files will appear in this same teacher submission section and
             will use the same Supabase storage.
           </p>
         </div>
 
-        <label className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm dark:border-emerald-500/20 dark:bg-slate-900 dark:text-slate-200">
+        <label className="flex w-full items-center gap-3 rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm dark:border-emerald-500/20 dark:bg-slate-900 dark:text-slate-200 lg:w-auto">
           <input
             type="checkbox"
             checked={form.isActive}
@@ -167,9 +167,9 @@ export default function TeacherPublicSubmissionLinkPanel({
           Loading public link...
         </div>
       ) : (
-        <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.7fr)]">
+        <div className="mt-4 grid gap-4 sm:mt-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.7fr)]">
           <div className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
               <div>
                 <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                   Public Page Title
@@ -189,7 +189,7 @@ export default function TeacherPublicSubmissionLinkPanel({
                 <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                   Short Public Link
                 </label>
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row">
                   <input
                     type="text"
                     value={publicUrl || "Short link will be generated automatically"}
@@ -200,7 +200,7 @@ export default function TeacherPublicSubmissionLinkPanel({
                     type="button"
                     onClick={copyLink}
                     disabled={!publicUrl}
-                    className="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                    className="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50 sm:w-auto"
                   >
                     Copy
                   </button>
@@ -279,12 +279,12 @@ export default function TeacherPublicSubmissionLinkPanel({
         </div>
       )}
 
-      <div className="mt-5 flex flex-wrap items-center gap-3">
+      <div className="mt-4 flex flex-col gap-3 sm:mt-5 sm:flex-row sm:flex-wrap sm:items-center">
         <button
           type="button"
           onClick={saveLink}
           disabled={saving || loading}
-          className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60 dark:bg-slate-700 dark:hover:bg-slate-600"
+          className="w-full rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60 dark:bg-slate-700 dark:hover:bg-slate-600 sm:w-auto"
         >
           {saving ? "Saving..." : "Save Public Link Settings"}
         </button>

@@ -196,7 +196,7 @@ function Badge({ children, tone = "slate" }) {
 
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${tones[tone] || tones.slate}`}
+      className={`inline-flex max-w-full min-w-0 items-center rounded-full border px-2.5 py-1 text-left text-[11px] font-semibold leading-tight whitespace-normal break-words ${tones[tone] || tones.slate}`}
     >
       {children}
     </span>
@@ -696,19 +696,19 @@ export default function TeacherLabSubmissions({ courseId }) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 max-w-full space-y-4 sm:space-y-6">
       <form
         onSubmit={handleCreateOrUpdate}
-        className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+        className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:rounded-3xl sm:p-5"
       >
-        <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="mb-4 flex flex-col gap-3 sm:mb-5 md:flex-row md:items-start md:justify-between">
           <div>
-            <h3 className="text-xl font-semibold text-slate-900 dark:text-white">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white sm:text-xl">
               {editingId
                 ? "Edit File Submission Assessment"
                 : "Create File Submission Assessment"}
             </h3>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            <p className="mt-1 hidden text-sm text-slate-500 dark:text-slate-400 sm:block">
               Create, edit, publish, close, and manage student files from this
               tab.
             </p>
@@ -718,14 +718,14 @@ export default function TeacherLabSubmissions({ courseId }) {
             <button
               type="button"
               onClick={resetForm}
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 sm:w-auto"
             >
               Cancel Edit
             </button>
           ) : null}
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
           {/* Assessment Title */}
           <div>
             <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -822,7 +822,7 @@ export default function TeacherLabSubmissions({ courseId }) {
           </div>
 
           {/* Due Date and Due Time */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4">
             <div>
               <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 Submission Deadline Date
@@ -887,7 +887,7 @@ export default function TeacherLabSubmissions({ courseId }) {
           </div>
         </div>
 
-        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
+        <div className="mt-4 grid gap-3 sm:gap-4 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
           {/* Allow Resubmission */}
           <label className="flex min-h-[112px] items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
             <input
@@ -935,7 +935,7 @@ export default function TeacherLabSubmissions({ courseId }) {
               </button>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex max-h-44 flex-wrap gap-2 overflow-y-auto pr-1 sm:max-h-none sm:overflow-visible sm:pr-0">
               {FILE_TYPE_OPTIONS.map((option) => {
                 const checked = selectedAllowedExtensions.includes(option.value);
 
@@ -1019,11 +1019,11 @@ export default function TeacherLabSubmissions({ courseId }) {
           />
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-3">
+        <div className="mt-4 grid gap-3 sm:flex sm:flex-wrap">
           <button
             type="submit"
             disabled={savingForm}
-            className="inline-flex items-center rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex w-full items-center justify-center rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
             {savingForm
               ? editingId
@@ -1039,7 +1039,7 @@ export default function TeacherLabSubmissions({ courseId }) {
               type="button"
               onClick={() => handleDelete(editingId, form.name)}
               disabled={actionLoading === `delete-${editingId}`}
-              className="inline-flex items-center rounded-2xl bg-rose-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:opacity-60"
+              className="inline-flex w-full items-center justify-center rounded-2xl bg-rose-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:opacity-60 sm:w-auto"
             >
               Delete This Assessment
             </button>
@@ -1052,13 +1052,13 @@ export default function TeacherLabSubmissions({ courseId }) {
         assessments={items}
       />
 
-      <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
-        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <div className="mb-4">
-            <h3 className="text-xl font-semibold text-slate-900 dark:text-white">
+      <div className="grid min-w-0 gap-4 sm:gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:rounded-3xl sm:p-5">
+          <div className="mb-3 sm:mb-4">
+            <h3 className="text-base font-semibold text-slate-900 dark:text-white sm:text-xl">
               Submission Assessments
             </h3>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            <p className="mt-1 hidden text-sm text-slate-500 dark:text-slate-400 sm:block">
               Select one assessment to manage files, visibility, and marks.
             </p>
           </div>
@@ -1072,7 +1072,7 @@ export default function TeacherLabSubmissions({ courseId }) {
               No submission assessments created yet.
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="grid min-w-0 gap-3 xl:block xl:space-y-3">
               {items.map((item) => {
                 const isSelected = item.id === selectedId;
                 const statusMeta = getSubmissionStatusMeta(item);
@@ -1080,7 +1080,7 @@ export default function TeacherLabSubmissions({ courseId }) {
                 return (
                   <div
                     key={item.id}
-                    className={`rounded-2xl border p-4 transition ${isSelected
+                    className={`min-w-0 rounded-2xl border p-3 transition sm:p-4 ${isSelected
                         ? "border-indigo-500 bg-indigo-50 dark:border-indigo-500/40 dark:bg-indigo-500/10"
                         : "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800"
                       }`}
@@ -1088,9 +1088,9 @@ export default function TeacherLabSubmissions({ courseId }) {
                     <button
                       type="button"
                       onClick={() => setSelectedId(item.id)}
-                      className="w-full text-left"
+                      className="w-full min-w-0 text-left"
                     >
-                      <div className="text-base font-semibold text-slate-900 dark:text-white">
+                      <div className="break-words text-sm font-semibold leading-snug text-slate-900 dark:text-white sm:text-base">
                         {item.name}
                       </div>
 
@@ -1107,12 +1107,12 @@ export default function TeacherLabSubmissions({ courseId }) {
                         {item.fullMarks || 0}
                       </div>
 
-                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      <div className="mt-1 break-words text-xs text-slate-500 dark:text-slate-400">
                         Files: {formatAllowedExtensions(item.allowedExtensions)}
                       </div>
                     </button>
 
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="mt-3 grid grid-cols-2 gap-2">
                       <button
                         type="button"
                         onClick={() => handleStartEdit(item)}
@@ -1137,20 +1137,30 @@ export default function TeacherLabSubmissions({ courseId }) {
           )}
         </div>
 
-        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <h3 className="text-xl font-semibold text-slate-900 dark:text-white">
+        <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:rounded-3xl sm:p-5">
+          <div className="mb-4 flex min-w-0 flex-col gap-4 sm:mb-5 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0">
+              <h3 className="text-base font-semibold text-slate-900 dark:text-white sm:text-xl">
                 Student Submissions
               </h3>
 
               {selectedAssessment ? (
-                <div className="mt-2 space-y-2 text-sm text-slate-500 dark:text-slate-400">
-                  <div>Assessment: {selectedAssessment.name}</div>
-                  <div>Due: {formatDateTime(selectedAssessment.dueDate)}</div>
-                  <div>Full Marks: {selectedAssessment.fullMarks || 0}</div>
-                  <div>
-                    Allowed files: {formatAllowedExtensions(selectedAssessment.allowedExtensions)}
+                <div className="mt-2 space-y-2 text-xs text-slate-500 dark:text-slate-400 sm:text-sm">
+                  <div className="grid min-w-0 grid-cols-[76px_minmax(0,1fr)] gap-2 sm:block">
+                    <span className="font-semibold text-slate-600 dark:text-slate-300 sm:font-normal sm:text-inherit">Assessment:</span>
+                    <span className="min-w-0 break-words">{selectedAssessment.name}</span>
+                  </div>
+                  <div className="grid min-w-0 grid-cols-[76px_minmax(0,1fr)] gap-2 sm:block">
+                    <span className="font-semibold text-slate-600 dark:text-slate-300 sm:font-normal sm:text-inherit">Due:</span>
+                    <span className="min-w-0 break-words">{formatDateTime(selectedAssessment.dueDate)}</span>
+                  </div>
+                  <div className="grid min-w-0 grid-cols-[76px_minmax(0,1fr)] gap-2 sm:block">
+                    <span className="font-semibold text-slate-600 dark:text-slate-300 sm:font-normal sm:text-inherit">Marks:</span>
+                    <span>{selectedAssessment.fullMarks || 0}</span>
+                  </div>
+                  <div className="grid min-w-0 grid-cols-[76px_minmax(0,1fr)] gap-2 sm:block">
+                    <span className="font-semibold text-slate-600 dark:text-slate-300 sm:font-normal sm:text-inherit">Files:</span>
+                    <span className="min-w-0 break-words">{formatAllowedExtensions(selectedAssessment.allowedExtensions)}</span>
                   </div>
 
                   {selectedAssessment.resourceUrl ? (
@@ -1158,14 +1168,14 @@ export default function TeacherLabSubmissions({ courseId }) {
                       href={getPublicFileUrl(selectedAssessment.resourceUrl)}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex w-fit items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
+                      className="inline-flex max-w-full items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
                     >
-                      <LinkIcon />
-                      {selectedAssessment.resourceTitle || "View Resource"}
+                      <span className="shrink-0"><LinkIcon /></span>
+                      <span className="min-w-0 truncate">{selectedAssessment.resourceTitle || "View Resource"}</span>
                     </a>
                   ) : null}
 
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex min-w-0 flex-wrap gap-2">
                     <Badge
                       tone={selectedAssessment.isVisibleToStudents ? "emerald" : "amber"}
                     >
@@ -1181,7 +1191,7 @@ export default function TeacherLabSubmissions({ courseId }) {
                   </div>
 
                   {selectedAssessment?.dueDatePassed ? (
-                    <div className="text-xs font-medium text-rose-600 dark:text-rose-300">
+                    <div className="break-words text-xs font-medium leading-5 text-rose-600 dark:text-rose-300">
                       This submission is auto-closed because the due date has
                       passed. Update the due date first if you want to reopen it.
                     </div>
@@ -1195,11 +1205,11 @@ export default function TeacherLabSubmissions({ courseId }) {
             </div>
 
             {selectedAssessment ? (
-              <div className="flex flex-wrap gap-2">
+              <div className="grid w-full min-w-0 grid-cols-1 gap-2 sm:flex sm:flex-wrap xl:w-auto xl:justify-end">
                 <select
                   value={submissionSortBy}
                   onChange={(e) => setSubmissionSortBy(e.target.value)}
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                  className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 sm:w-auto"
                 >
                   <option value="roll-asc">Sort: Roll number</option>
                   <option value="roll-desc">Sort: Roll number desc</option>
@@ -1222,7 +1232,7 @@ export default function TeacherLabSubmissions({ courseId }) {
                       : "publish"
                     }`
                   }
-                  className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-60"
+                  className="w-full rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-60 sm:w-auto"
                 >
                   {selectedAssessment.isVisibleToStudents ? "Unpublish" : "Publish"}
                 </button>
@@ -1240,7 +1250,7 @@ export default function TeacherLabSubmissions({ courseId }) {
                     actionLoading ===
                     `${selectedAssessment.id}-${submissionToggleAction}`
                   }
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 sm:w-auto"
                 >
                   {isDeadlinePassed
                     ? "Deadline Passed"
@@ -1253,7 +1263,7 @@ export default function TeacherLabSubmissions({ courseId }) {
                   type="button"
                   onClick={handleSaveAllMarks}
                   disabled={actionLoading === `save-all-${selectedAssessment.id}`}
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 sm:w-auto"
                 >
                   Save All Marks
                 </button>
@@ -1262,7 +1272,7 @@ export default function TeacherLabSubmissions({ courseId }) {
                   type="button"
                   onClick={handleSyncAllMarks}
                   disabled={actionLoading === `sync-all-${selectedAssessment.id}`}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
+                  className="w-full rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60 sm:w-auto"
                 >
                   Sync Marks
                 </button>
@@ -1271,7 +1281,7 @@ export default function TeacherLabSubmissions({ courseId }) {
                   type="button"
                   onClick={handleDownloadAll}
                   disabled={actionLoading === `download-${selectedAssessment.id}`}
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 sm:w-auto"
                 >
                   Download All
                 </button>
@@ -1288,7 +1298,110 @@ export default function TeacherLabSubmissions({ courseId }) {
               No student has submitted yet.
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+              <div className="min-w-0 space-y-3 md:hidden">
+                {sortedSubmissions.map((row) => (
+                  <div
+                    key={row.id}
+                    className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm dark:border-slate-700 dark:bg-slate-800/70 sm:p-4"
+                  >
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="break-words text-sm font-bold leading-snug text-slate-900 dark:text-white">
+                          {row.studentName}
+                        </div>
+                        <div className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                          Roll: {row.roll}
+                        </div>
+                      </div>
+
+                      <Badge tone={row.status === "checked" ? "emerald" : "amber"}>
+                        {row.status}
+                      </Badge>
+                    </div>
+
+                    {row.isPublicSubmission || row.source === "public-link" ? (
+                      <div className="mt-2">
+                        <Badge tone="emerald">Public Link</Badge>
+                      </div>
+                    ) : null}
+
+                    <div className="mt-3 min-w-0 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+                      <div className="break-words text-sm font-semibold leading-snug text-slate-900 dark:text-white">
+                        {row.originalFileName}
+                      </div>
+                      <div className="mt-1 break-words text-xs text-slate-500 dark:text-slate-400">
+                        {formatFileSize(row.fileSize)} • {formatDateTime(row.submittedAt)}
+                      </div>
+                      <div className="mt-3 grid min-w-0 grid-cols-2 gap-2">
+                        <a
+                          href={getPublicFileUrl(row.downloadUrl)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
+                        >
+                          <EyeIcon />
+                          View
+                        </a>
+
+                        <a
+                          href={getPublicFileUrl(row.downloadUrl)}
+                          download
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                        >
+                          <DownloadIcon />
+                          Download
+                        </a>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 grid min-w-0 grid-cols-[minmax(0,1fr)_72px] gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        max={selectedAssessment?.fullMarks || 0}
+                        value={row.draftMarks}
+                        onChange={(e) => updateDraftMarks(row.id, e.target.value)}
+                        className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                        placeholder={`Marks / ${selectedAssessment?.fullMarks || 0}`}
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => handleSaveMarks(row)}
+                        disabled={actionLoading === `save-marks-${row.id}`}
+                        className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60 dark:bg-slate-700 dark:hover:bg-slate-600"
+                      >
+                        Save
+                      </button>
+                    </div>
+
+                    <div className="mt-3">
+                      {row.status === "checked" ? (
+                        <button
+                          type="button"
+                          onClick={() => handleUncheckSubmission(row)}
+                          disabled={actionLoading === `uncheck-${row.id}`}
+                          className="w-full rounded-xl border border-rose-300 bg-white px-4 py-2.5 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-60 dark:border-rose-500/30 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                        >
+                          Uncheck
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleMarkChecked(row)}
+                          disabled={actionLoading === `checked-${row.id}`}
+                          className="w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
+                        >
+                          Mark Checked
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="hidden overflow-x-auto md:block">
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-slate-500 dark:border-slate-700 dark:text-slate-400">
@@ -1329,7 +1442,7 @@ export default function TeacherLabSubmissions({ courseId }) {
                             {formatFileSize(row.fileSize)}
                           </div>
 
-                          <div className="mt-3 flex flex-wrap gap-2">
+                          <div className="mt-3 grid min-w-0 grid-cols-2 gap-2">
                             <a
                               href={getPublicFileUrl(row.downloadUrl)}
                               target="_blank"
@@ -1402,7 +1515,7 @@ export default function TeacherLabSubmissions({ courseId }) {
                             type="button"
                             onClick={() => handleMarkChecked(row)}
                             disabled={actionLoading === `checked-${row.id}`}
-                            className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
+                            className="w-full rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60 sm:w-auto"
                           >
                             Mark Checked
                           </button>
@@ -1412,7 +1525,8 @@ export default function TeacherLabSubmissions({ courseId }) {
                   ))}
                 </tbody>
               </table>
-            </div>
+              </div>
+            </>
           )}
         </div>
       </div>

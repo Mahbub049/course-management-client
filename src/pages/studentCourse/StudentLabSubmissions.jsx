@@ -236,7 +236,7 @@ export default function StudentLabSubmissions({ courseId }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 max-w-full space-y-4">
       {currentSubmissionItems.length > 0 ? (
         <div className="grid gap-4">
           {currentSubmissionItems.map((item) => (
@@ -309,24 +309,24 @@ function SubmissionTaskCard({ item, now, uploadingId, onFileChange }) {
   const canUpload = open && (!submitted || item.allowResubmission !== false);
 
   return (
-    <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:rounded-3xl sm:p-5">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+    <div className="min-w-0 overflow-hidden rounded-[24px] border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:rounded-3xl sm:p-5">
+      <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 flex-1">
-          <div className="text-base font-semibold text-slate-900 dark:text-white sm:text-lg">
+          <div className="break-words text-base font-semibold leading-snug text-slate-900 dark:text-white sm:text-lg">
             {item.name}
           </div>
 
-          <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold sm:text-xs">
-            <span className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300">
+          <div className="mt-2 flex min-w-0 flex-wrap gap-2 text-[11px] font-semibold sm:text-xs">
+            <span className="inline-flex max-w-full rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-left leading-tight whitespace-normal break-words text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300">
               Max {item.maxFileSizeMB || 10} MB
             </span>
 
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+            <span className="inline-flex max-w-full rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-left leading-tight whitespace-normal break-words text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
               Allowed: {formatAllowedExtensions(item.allowedExtensions)}
             </span>
 
             <span
-              className={`rounded-full border px-3 py-1 ${
+              className={`inline-flex max-w-full rounded-full border px-3 py-1 text-left leading-tight whitespace-normal break-words ${
                 submitted
                   ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
                   : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
@@ -336,7 +336,7 @@ function SubmissionTaskCard({ item, now, uploadingId, onFileChange }) {
             </span>
 
             <span
-              className={`rounded-full border px-3 py-1 ${
+              className={`inline-flex max-w-full rounded-full border px-3 py-1 text-left leading-tight whitespace-normal break-words ${
                 open
                   ? "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300"
                   : "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300"
@@ -347,13 +347,13 @@ function SubmissionTaskCard({ item, now, uploadingId, onFileChange }) {
           </div>
 
           <div
-            className={`mt-4 flex flex-col gap-3 rounded-2xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${
+            className={`mt-4 flex min-w-0 flex-col gap-3 rounded-2xl border px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4 ${
               deadlinePassedLive
                 ? "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200"
                 : "border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-200"
             }`}
           >
-            <div className="flex items-center gap-3">
+            <div className="flex min-w-0 items-center gap-3">
               <span
                 className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${
                   deadlinePassedLive
@@ -363,28 +363,28 @@ function SubmissionTaskCard({ item, now, uploadingId, onFileChange }) {
               >
                 <ClockIcon />
               </span>
-              <div>
+              <div className="min-w-0">
                 <div className="text-[11px] font-bold uppercase tracking-[0.16em] opacity-70 sm:text-xs sm:tracking-[0.18em]">
                   Time Remaining
                 </div>
-                <div className="text-lg font-black tracking-wide sm:text-2xl">
+                <div className="break-words text-lg font-black tracking-wide sm:text-2xl">
                   {remaining.label}
                 </div>
               </div>
             </div>
 
-            <div className="text-left text-xs font-semibold opacity-80 sm:text-right">
+            <div className="min-w-0 text-left text-xs font-semibold opacity-80 sm:text-right">
               <div className="text-[11px] font-bold uppercase tracking-[0.16em] opacity-70 sm:text-xs sm:tracking-[0.18em]">
                 Deadline
               </div>
-              <div className="text-sm font-black tracking-wide sm:text-2xl">
+              <div className="break-words text-sm font-black tracking-wide sm:text-2xl">
                 {formatDateTime(item.dueDate)}
               </div>
             </div>
           </div>
 
           {item.instructions ? (
-            <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-400">
+            <p className="mt-3 break-words text-sm leading-6 text-slate-600 dark:text-slate-400">
               {item.instructions}
             </p>
           ) : null}
@@ -394,20 +394,20 @@ function SubmissionTaskCard({ item, now, uploadingId, onFileChange }) {
               href={getPublicFileUrl(item.resourceUrl)}
               target="_blank"
               rel="noreferrer"
-              className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
+              className="mt-4 inline-flex max-w-full items-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
             >
-              <LinkIcon />
-              {item.resourceTitle || "View Resource"}
+              <span className="shrink-0"><LinkIcon /></span>
+              <span className="min-w-0 truncate">{item.resourceTitle || "View Resource"}</span>
             </a>
           ) : null}
 
           {submitted ? (
-            <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200">
-              <div className="font-semibold">
+            <div className="mt-3 min-w-0 rounded-2xl border border-emerald-200 bg-emerald-50/70 px-3 py-3 text-sm text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200 sm:px-4">
+              <div className="break-words font-semibold">
                 Current file: {item.submission.originalFileName}
               </div>
 
-              <div className="mt-1 text-xs">
+              <div className="mt-1 break-words text-xs">
                 Submitted at: {formatDateTime(item.submission.submittedAt)}
               </div>
 
@@ -439,7 +439,7 @@ function SubmissionTaskCard({ item, now, uploadingId, onFileChange }) {
           ) : null}
         </div>
 
-        <div className="w-full lg:w-auto lg:min-w-[150px]">
+        <div className="min-w-0 w-full lg:w-auto lg:min-w-[150px]">
           {canUpload ? (
             <label className="flex cursor-pointer items-center justify-center rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-700">
               {uploadingId === item.id
