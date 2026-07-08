@@ -12,6 +12,7 @@ import {
   updateLabSubmissionStatus,
   updateTeacherSubmissionAssessment,
 } from "../../services/labSubmissionService";
+import TeacherPublicSubmissionLinkPanel from "./TeacherPublicSubmissionLinkPanel";
 
 const FILE_TYPE_OPTIONS = [
   { value: "pdf", label: "PDF" },
@@ -1046,6 +1047,11 @@ export default function TeacherLabSubmissions({ courseId }) {
         </div>
       </form>
 
+      <TeacherPublicSubmissionLinkPanel
+        courseId={courseId}
+        assessments={items}
+      />
+
       <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="mb-4">
@@ -1307,6 +1313,11 @@ export default function TeacherLabSubmissions({ courseId }) {
                         <div className="text-xs text-slate-500 dark:text-slate-400">
                           {row.roll}
                         </div>
+                        {row.isPublicSubmission || row.source === "public-link" ? (
+                          <div className="mt-2">
+                            <Badge tone="emerald">Public Link</Badge>
+                          </div>
+                        ) : null}
                       </td>
 
                       <td className="px-3 py-4">

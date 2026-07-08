@@ -143,3 +143,63 @@ export const syncAllSubmissionMarks = async (courseId, assessmentId) => {
   );
   return res.data;
 };
+// =========================
+// Public no-login submission link
+// =========================
+
+export const fetchTeacherPublicSubmissionLink = async (courseId) => {
+  const res = await api.get(
+    `/public-lab-submissions/teacher/courses/${courseId}/link`
+  );
+  return res.data;
+};
+
+export const updateTeacherPublicSubmissionLink = async (courseId, payload) => {
+  const res = await api.patch(
+    `/public-lab-submissions/teacher/courses/${courseId}/link`,
+    payload
+  );
+  return res.data;
+};
+
+export const fetchPublicSubmissionPage = async (token) => {
+  const res = await api.get(`/public-lab-submissions/${token}`);
+  return res.data;
+};
+
+export const verifyPublicSubmissionRoll = async (token, roll) => {
+  const res = await api.post(`/public-lab-submissions/${token}/verify-roll`, {
+    roll,
+  });
+  return res.data;
+};
+
+export const fetchPublicSubmittedFiles = async (token, roll) => {
+  const res = await api.get(`/public-lab-submissions/${token}/submitted-files`, {
+    params: { roll },
+  });
+  return res.data;
+};
+
+export const submitPublicLabAssessmentFile = async ({
+  token,
+  assessmentId,
+  roll,
+  file,
+}) => {
+  const formData = new FormData();
+  formData.append("roll", roll);
+  formData.append("file", file);
+
+  const res = await api.post(
+    `/public-lab-submissions/${token}/assessments/${assessmentId}/submit`,
+    formData,
+    {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    }
+  );
+
+  return res.data;
+};
