@@ -1,734 +1,963 @@
-import * as XLSX from "xlsx-js-style";
+import JSZip from "jszip";
+import {
+  OBE_TEMPLATE_COLUMNS,
+  OBE_TEMPLATE_LIMITS,
+  buildObeTemplateLayout,
+} from "./obeTemplateLayout";
 
-const FONT = "Times New Roman";
+const MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+const REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships";
+const CORE_NS = "http://purl.org/dc/terms/";
+const XML_NS = "http://www.w3.org/XML/1998/namespace";
 
-const COLORS = {
-  peach: "FCE4D6",
-  gray: "D9D9D9",
-  po: "DDD9C4",
-  blue: "0000FF",
-  red: "FF0000",
-  green: "00B050",
-  purple: "7030A0",
-  black: "000000",
-  separator: "C5E0B4",
+const TEMPLATE_FILE = "OBE_BUBT_Template.xlsm";
+const STUDENT_START_ROW = 30;
+const STUDENT_END_ROW = 100;
+
+const safeText = (value, fallback = "") => {
+  if (value === null || value === undefined) return fallback;
+  const text = String(value).trim();
+  return text || fallback;
 };
 
-const thinBorder = {
-  top: { style: "thin", color: { rgb: COLORS.black } },
-  bottom: { style: "thin", color: { rgb: COLORS.black } },
-  left: { style: "thin", color: { rgb: COLORS.black } },
-  right: { style: "thin", color: { rgb: COLORS.black } },
+const numberValue = (value) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const mediumBorder = {
-  top: { style: "medium", color: { rgb: COLORS.black } },
-  bottom: { style: "medium", color: { rgb: COLORS.black } },
-  left: { style: "medium", color: { rgb: COLORS.black } },
-  right: { style: "medium", color: { rgb: COLORS.black } },
-};
+const round2 = (value) => Math.round(numberValue(value) * 100) / 100;
 
-const noBorder = {
-  top: { style: "none" },
-  bottom: { style: "none" },
-  left: { style: "none" },
-  right: { style: "none" },
-};
-
-const style = ({
-  bold = false,
-  size = 9,
-  color = COLORS.black,
-  fill,
-  center = true,
-  wrap = true,
-  rotate = 0,
-  border = thinBorder,
-} = {}) => ({
-  font: { name: FONT, sz: size, bold, color: { rgb: color } },
-  alignment: {
-    horizontal: center ? "center" : "left",
-    vertical: "center",
-    wrapText: wrap,
-    textRotation: rotate,
-  },
-  border,
-  ...(fill ? { fill: { fgColor: { rgb: fill } } } : {}),
-});
-
-const sTitle = style({ bold: true, size: 14, border: noBorder });
-const sUni = style({ size: 13, border: noBorder });
-const sSheetTitle = style({ bold: true, size: 12, border: noBorder });
-const sBlue = style({ bold: true, color: COLORS.blue, size: 10, border: noBorder });
-const sRightRedTitle = style({ bold: true, color: COLORS.red, size: 10, border: noBorder });
-const sRightRedSub = style({ color: COLORS.red, size: 9, border: noBorder });
-const sHeader = style({ bold: true, size: 9 });
-const sRed = style({ bold: true, color: COLORS.red, size: 9 });
-const sPeach = style({ fill: COLORS.peach, size: 9 });
-const sPeachBold = style({ bold: true, fill: COLORS.peach, size: 9 });
-const sPeachBlue = style({ bold: true, fill: COLORS.peach, color: COLORS.blue, size: 9 });
-const sGray = style({ fill: COLORS.gray, size: 9 });
-const sPo = style({ fill: COLORS.po, bold: true, size: 9 });
-const sBody = style({ size: 9 });
-const sGreenName = style({ size: 9, center: false, color: COLORS.green });
-const sPurpleName = style({ size: 9, center: false, color: COLORS.purple });
-const sTotal = style({ fill: COLORS.peach, color: COLORS.blue, bold: true, size: 9 });
-const sFooter = style({ fill: COLORS.peach, bold: true, size: 10 });
-const sFooterYes = style({ fill: COLORS.peach, bold: true, color: COLORS.blue, size: 10 });
-const sFooterNo = style({ fill: COLORS.peach, bold: true, color: COLORS.red, size: 10 });
-const sRotate = style({ bold: true, rotate: 90, size: 9 });
-const sTeacherBox = style({ bold: true, size: 10, border: mediumBorder });
-const sSeparator = style({ fill: COLORS.separator, border: noBorder });
-
-const n = (v) => Number(v || 0);
-const r2 = (v) => Math.round(n(v) * 100) / 100;
-const safe = (v, fb = "") => (v === undefined || v === null || v === "" ? fb : v);
-
-const gradeOrder = ["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "D", "F"];
-
-const getGrade = (mark) => {
-  const x = n(mark);
-  if (x >= 80) return "A+";
-  if (x >= 75) return "A";
-  if (x >= 70) return "A-";
-  if (x >= 65) return "B+";
-  if (x >= 60) return "B";
-  if (x >= 55) return "B-";
-  if (x >= 50) return "C+";
-  if (x >= 45) return "C";
-  if (x >= 40) return "D";
-  return "F";
-};
-
-const setCell = (ws, r, c, v = "", st = sBody) => {
-  const ref = XLSX.utils.encode_cell({ r, c });
-  ws[ref] = {
-    v,
-    t: typeof v === "number" ? "n" : "s",
-    s: st,
-  };
-};
-
-const styleRange = (ws, r1, c1, r2, c2, st) => {
-  for (let r = r1; r <= r2; r++) {
-    for (let c = c1; c <= c2; c++) {
-      const ref = XLSX.utils.encode_cell({ r, c });
-      if (!ws[ref]) ws[ref] = { v: "", t: "s" };
-      ws[ref].s = st;
-    }
+const columnNumber = (letters) => {
+  let result = 0;
+  for (const char of String(letters || "").toUpperCase()) {
+    result = result * 26 + char.charCodeAt(0) - 64;
   }
+  return result;
 };
 
-const merge = (ws, r1, c1, r2, c2) => {
-  if (r1 === r2 && c1 === c2) return;
-  ws["!merges"] = ws["!merges"] || [];
-  ws["!merges"].push({ s: { r: r1, c: c1 }, e: { r: r2, c: c2 } });
+const splitCellRef = (ref) => {
+  const match = /^([A-Z]+)(\d+)$/i.exec(ref);
+  if (!match) throw new Error(`Invalid cell reference: ${ref}`);
+  return { column: match[1].toUpperCase(), row: Number(match[2]) };
 };
 
-const mergeStyled = (ws, r1, c1, r2, c2, value, st) => {
-  styleRange(ws, r1, c1, r2, c2, st);
-  merge(ws, r1, c1, r2, c2);
-  setCell(ws, r1, c1, value, st);
+const parseXml = (text, path) => {
+  const document = new DOMParser().parseFromString(text, "application/xml");
+  const parserError = document.getElementsByTagName("parsererror")[0];
+  if (parserError) {
+    throw new Error(`Unable to parse ${path}: ${parserError.textContent || "XML error"}`);
+  }
+  return document;
 };
 
-const getStudentKeys = (st) =>
-  [st?._id, st?.id, st?.student, st?.studentId, st?.roll].filter(Boolean).map(String);
+const serializeXml = (document) =>
+  `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${new XMLSerializer().serializeToString(
+    document.documentElement
+  )}`;
+
+const childByLocalName = (parent, localName) =>
+  Array.from(parent?.childNodes || []).find(
+    (node) => node.nodeType === 1 && node.localName === localName
+  ) || null;
+
+const removeChildren = (parent, localNames) => {
+  Array.from(parent?.childNodes || []).forEach((node) => {
+    if (node.nodeType === 1 && localNames.includes(node.localName)) {
+      parent.removeChild(node);
+    }
+  });
+};
+
+const getSheetCellMap = (document) => {
+  const map = new Map();
+  Array.from(document.getElementsByTagNameNS(MAIN_NS, "c")).forEach((cell) => {
+    const ref = cell.getAttribute("r");
+    if (ref) map.set(ref.toUpperCase(), cell);
+  });
+  return map;
+};
+
+const ensureRow = (document, rowNumber) => {
+  const sheetData = document.getElementsByTagNameNS(MAIN_NS, "sheetData")[0];
+  if (!sheetData) throw new Error("The template worksheet has no sheetData element.");
+
+  const existing = Array.from(sheetData.getElementsByTagNameNS(MAIN_NS, "row")).find(
+    (row) => Number(row.getAttribute("r")) === rowNumber
+  );
+  if (existing) return existing;
+
+  const row = document.createElementNS(MAIN_NS, "row");
+  row.setAttribute("r", String(rowNumber));
+
+  const next = Array.from(sheetData.childNodes).find(
+    (node) =>
+      node.nodeType === 1 &&
+      node.localName === "row" &&
+      Number(node.getAttribute("r")) > rowNumber
+  );
+  sheetData.insertBefore(row, next || null);
+  return row;
+};
+
+const ensureCell = (document, cellMap, ref) => {
+  const normalizedRef = ref.toUpperCase();
+  if (cellMap.has(normalizedRef)) return cellMap.get(normalizedRef);
+
+  const { row, column } = splitCellRef(normalizedRef);
+  const rowNode = ensureRow(document, row);
+  const cell = document.createElementNS(MAIN_NS, "c");
+  cell.setAttribute("r", normalizedRef);
+
+  const targetColumn = columnNumber(column);
+  const next = Array.from(rowNode.childNodes).find((node) => {
+    if (node.nodeType !== 1 || node.localName !== "c") return false;
+    const nodeRef = node.getAttribute("r");
+    if (!nodeRef) return false;
+    return columnNumber(splitCellRef(nodeRef).column) > targetColumn;
+  });
+
+  rowNode.insertBefore(cell, next || null);
+  cellMap.set(normalizedRef, cell);
+  return cell;
+};
+
+const appendValueNode = (document, cell, value) => {
+  const valueNode = document.createElementNS(MAIN_NS, "v");
+  valueNode.textContent = value;
+  cell.appendChild(valueNode);
+};
+
+const writeCellValue = (document, cellMap, ref, value, { preserveFormula = true } = {}) => {
+  const cell = ensureCell(document, cellMap, ref);
+  const formula = childByLocalName(cell, "f");
+  const hasFormula = !!formula;
+
+  removeChildren(cell, ["v", "is"]);
+
+  if (!preserveFormula && hasFormula) {
+    cell.removeChild(formula);
+  }
+
+  if (value === null || value === undefined || value === "") {
+    if (!hasFormula || !preserveFormula) cell.removeAttribute("t");
+    else cell.setAttribute("t", "str");
+    return;
+  }
+
+  if (typeof value === "boolean") {
+    cell.setAttribute("t", "b");
+    appendValueNode(document, cell, value ? "1" : "0");
+    return;
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    cell.removeAttribute("t");
+    appendValueNode(document, cell, String(value));
+    return;
+  }
+
+  const text = String(value);
+
+  if (hasFormula && preserveFormula) {
+    cell.setAttribute("t", "str");
+    appendValueNode(document, cell, text);
+    return;
+  }
+
+  cell.setAttribute("t", "inlineStr");
+  const inlineString = document.createElementNS(MAIN_NS, "is");
+  const textNode = document.createElementNS(MAIN_NS, "t");
+  if (/^\s|\s$|\n/.test(text)) textNode.setAttributeNS(XML_NS, "xml:space", "preserve");
+  textNode.textContent = text;
+  inlineString.appendChild(textNode);
+  cell.appendChild(inlineString);
+};
+
+const clearInputCell = (document, cellMap, ref) =>
+  writeCellValue(document, cellMap, ref, "", { preserveFormula: false });
+
+const getTemplateUrl = () => {
+  const base = safeText(import.meta.env.BASE_URL, "/");
+  const normalizedBase = base.endsWith("/") ? base : `${base}/`;
+  return `${normalizedBase}templates/${TEMPLATE_FILE}`;
+};
+
+const resolveWorksheetPaths = async (zip) => {
+  const workbookPath = "xl/workbook.xml";
+  const relationshipsPath = "xl/_rels/workbook.xml.rels";
+  const [workbookText, relationshipsText] = await Promise.all([
+    zip.file(workbookPath)?.async("text"),
+    zip.file(relationshipsPath)?.async("text"),
+  ]);
+
+  if (!workbookText || !relationshipsText) {
+    throw new Error("The BUBT workbook template is incomplete.");
+  }
+
+  const workbookDocument = parseXml(workbookText, workbookPath);
+  const relationshipsDocument = parseXml(relationshipsText, relationshipsPath);
+
+  const relationshipMap = new Map();
+  Array.from(
+    relationshipsDocument.getElementsByTagNameNS(PACKAGE_REL_NS, "Relationship")
+  ).forEach((relationship) => {
+    relationshipMap.set(relationship.getAttribute("Id"), relationship.getAttribute("Target"));
+  });
+
+  const sheetMap = new Map();
+  Array.from(workbookDocument.getElementsByTagNameNS(MAIN_NS, "sheet")).forEach(
+    (sheet) => {
+      const name = sheet.getAttribute("name");
+      const relationshipId = sheet.getAttributeNS(REL_NS, "id");
+      let target = relationshipMap.get(relationshipId);
+      if (!name || !target) return;
+
+      target = target.replace(/^\//, "");
+      if (!target.startsWith("xl/")) target = `xl/${target.replace(/^\.\//, "")}`;
+      sheetMap.set(name, target);
+    }
+  );
+
+  return { workbookDocument, workbookPath, sheetMap };
+};
+
+const getCourseOutcomes = (payload = {}) => {
+  const outputRows = payload.output?.coAttainment;
+  if (Array.isArray(outputRows) && outputRows.length) {
+    return outputRows.map((row, index) => ({
+      code: safeText(row.code, `CO${index + 1}`).toUpperCase(),
+      statement: safeText(row.statement, ""),
+      maxMarks: round2(row.maxMarks),
+      attainmentPercent: round2(row.attainmentPercent),
+    }));
+  }
+
+  const setupRows = payload.setup?.courseOutcomes || payload.setup?.cos || [];
+  return setupRows.map((row, index) => ({
+    code: safeText(row.code || row.coCode, `CO${index + 1}`).toUpperCase(),
+    statement: safeText(row.statement, ""),
+    maxMarks: round2(row.maxMarks),
+    attainmentPercent: round2(row.attainmentPercent),
+  }));
+};
+
+const getProgramOutcomes = (payload = {}) => {
+  const outputRows = payload.output?.poAttainment;
+  if (Array.isArray(outputRows) && outputRows.length) {
+    return outputRows.map((row, index) => ({
+      code: safeText(row.code, `PO${index + 1}`).toUpperCase(),
+      statement: safeText(row.statement, ""),
+      attainmentPercent: round2(row.attainmentPercent),
+    }));
+  }
+
+  const setupRows = payload.setup?.poStatements || payload.setup?.programOutcomes || [];
+  return setupRows.map((row, index) => ({
+    code: safeText(row.code || row.poCode, `PO${index + 1}`).toUpperCase(),
+    statement: safeText(row.statement, ""),
+    attainmentPercent: round2(row.attainmentPercent),
+  }));
+};
 
 const buildMarkMap = (marks = []) => {
   const map = new Map();
 
-  marks.forEach((m) => {
-    const studentKeys = [
-      m.student,
-      m.studentId,
-      m.student?._id,
-      m.student?.id,
-      m.student?.studentId,
-      m.student?.roll,
-    ].filter(Boolean).map(String);
+  (Array.isArray(marks) ? marks : []).forEach((record) => {
+    const studentIds = [
+      record.student,
+      record.studentId,
+      record.student?._id,
+      record.student?.id,
+    ]
+      .filter(Boolean)
+      .map(String);
+    const blueprintIds = [
+      record.blueprint,
+      record.blueprintId,
+      record.blueprint?._id,
+      record.blueprint?.id,
+    ]
+      .filter(Boolean)
+      .map(String);
 
-    const blueprintKeys = [
-      m.blueprint,
-      m.blueprintId,
-      m.blueprint?._id,
-      m.blueprint?.id,
-    ].filter(Boolean).map(String);
-
-    const entries = {};
-    (m.entries || []).forEach((e) => {
-      const key = e.itemKey || e.key || e.label || e.name || e._id || e.id;
-      entries[key] = n(e.obtainedMarks ?? e.marks ?? e.value);
+    const entries = new Map();
+    (record.entries || []).forEach((entry) => {
+      const key = safeText(entry.itemKey || entry.key || entry._id || entry.id, "");
+      if (key) entries.set(key, round2(entry.obtainedMarks ?? entry.marks ?? entry.value));
     });
 
-    studentKeys.forEach((sk) => {
-      blueprintKeys.forEach((bk) => map.set(`${sk}__${bk}`, entries));
+    studentIds.forEach((studentId) => {
+      blueprintIds.forEach((blueprintId) => {
+        map.set(`${studentId}__${blueprintId}`, entries);
+      });
     });
   });
 
   return map;
 };
 
-const findEntries = (marksMap, st, bp) => {
-  const studentKeys = getStudentKeys(st);
-  const blueprintKeys = [bp?._id, bp?.id].filter(Boolean).map(String);
+const getStudentIdKeys = (student = {}) =>
+  [student.studentId, student._id, student.id, student.student]
+    .filter(Boolean)
+    .map(String);
 
-  for (const sk of studentKeys) {
-    for (const bk of blueprintKeys) {
-      const found = marksMap.get(`${sk}__${bk}`);
-      if (found) return found;
-    }
-  }
-  return {};
-};
-
-const getEntryValue = (entries, item) => {
-  const keys = [item?.key, item?.itemKey, item?.label, item?.name, item?._id, item?.id].filter(Boolean);
-  for (const k of keys) {
-    if (entries[k] !== undefined) return n(entries[k]);
+const getSlotMark = (markMap, student, slot) => {
+  for (const studentId of getStudentIdKeys(student)) {
+    const entries = markMap.get(`${studentId}__${slot.blueprintId}`);
+    if (entries?.has(slot.itemKey)) return round2(entries.get(slot.itemKey));
   }
   return 0;
 };
 
-const getBpType = (bp) =>
-  String(bp.assessmentType || bp.type || bp.category || "").toLowerCase();
-
-const getBpName = (bp) =>
-  safe(bp.assessmentName || bp.name || bp.title, "Assessment");
-
-const sortBlueprints = (blueprints = []) => {
-  const order = {
-    ct: 1,
-    class_test: 1,
-    quiz: 1,
-    mid: 2,
-    midterm: 2,
-    final: 3,
-    assignment: 4,
-    presentation: 5,
-    attendance: 6,
-  };
-
-  return [...blueprints].sort((a, b) => {
-    const oa = order[getBpType(a)] || 99;
-    const ob = order[getBpType(b)] || 99;
-    if (oa !== ob) return oa - ob;
-    return n(a.order ?? a.displayOrder) - n(b.order ?? b.displayOrder);
-  });
+const gradeCode = (mark) => {
+  const value = numberValue(mark);
+  if (value >= 80) return "A+";
+  if (value >= 75) return "A";
+  if (value >= 70) return "A-";
+  if (value >= 65) return "B+";
+  if (value >= 60) return "B";
+  if (value >= 55) return "B-";
+  if (value >= 50) return "C+";
+  if (value >= 45) return "C";
+  if (value >= 40) return "D";
+  return "F";
 };
 
-const buildGradeBlocks = (blueprints = []) => {
-  const sorted = sortBlueprints(blueprints);
+const gradeLabel = (grade) =>
+  ({
+    "A+": "A (Plus)",
+    A: "A",
+    "A-": "A (Minus)",
+    "B+": "B (Plus)",
+    B: "B",
+    "B-": "B (Minus)",
+    "C+": "C (Plus)",
+    C: "C",
+    D: "D",
+    F: "F (Fail)",
+  }[grade] || "F (Fail)");
 
-  const isCt = (b) => ["ct", "class_test", "quiz"].includes(getBpType(b));
-  const isMid = (b) => ["mid", "midterm"].includes(getBpType(b));
-  const isFinal = (b) => getBpType(b) === "final";
-  const isAp = (b) => ["assignment", "presentation"].includes(getBpType(b));
+const naturalStudentSort = (a, b) =>
+  safeText(a.roll || a.username || a.studentId).localeCompare(
+    safeText(b.roll || b.username || b.studentId),
+    undefined,
+    { numeric: true, sensitivity: "base" }
+  );
 
-  const blocks = [];
-
-const ctBps = sorted.filter(isCt);
-
-if (ctBps.length) {
-  const coItems = [];
-  const ctItems = [];
-
-  ctBps.forEach((bp, bpIndex) => {
-    const bpItems = bp.items || [];
-
-    bpItems.forEach((it) => {
-      coItems.push({
-        bp,
-        item: it,
-        type: "co",
-        coCode: safe(it.coCode || it.co || it.courseOutcome, ""),
-        label: "",
-        marks: n(it.marks ?? it.maxMarks),
-      });
-    });
-
-    ctItems.push({
-      bp,
-      itemList: bpItems,
-      type: "ct",
-      coCode: `CT${bpIndex + 1}`,
-      label: `CT${bpIndex + 1}`,
-      marks: n(bp.totalMarks ?? bp.marks),
-    });
-  });
-
-  blocks.push({
-    kind: "ct",
-    title: "CLASS TEST",
-    totalLabel: "CT",
-    subLabel: "Total CT",
-    totalSubLabel: "Total CT",
-    totalMarks: 15,
-    coColumnCount: coItems.length,
-    ctColumnCount: ctItems.length,
-    items: [...coItems, ...ctItems],
-  });
-}
-  const midBp = sorted.find(isMid);
-  if (midBp) {
-    blocks.push({
-      kind: "normal",
-      title: "MID TERM",
-      totalLabel: "MT",
-      subLabel: "All the Questions",
-      totalSubLabel: "",
-      totalMarks: n(midBp.totalMarks ?? midBp.marks),
-      items: (midBp.items || []).map((it) => ({
-        bp: midBp,
-        item: it,
-        coCode: safe(it.coCode || it.co || it.courseOutcome, ""),
-        label: "",
-        marks: n(it.marks ?? it.maxMarks),
-      })),
-    });
-  }
-
-  const finalBp = sorted.find(isFinal);
-  if (finalBp) {
-    blocks.push({
-      kind: "normal",
-      title: "FINAL EXAM",
-      totalLabel: "FE",
-      subLabel: "All the Questions",
-      totalSubLabel: "",
-      totalMarks: n(finalBp.totalMarks ?? finalBp.marks),
-      items: (finalBp.items || []).map((it) => ({
-        bp: finalBp,
-        item: it,
-        coCode: safe(it.coCode || it.co || it.courseOutcome, ""),
-        label: "",
-        marks: n(it.marks ?? it.maxMarks),
-      })),
-    });
-  }
-
-  const apBps = sorted.filter(isAp);
-  if (apBps.length) {
-    const items = [];
-    apBps.forEach((bp, i) => {
-      const list = bp.items?.length
-        ? bp.items
-        : [{ key: "default", label: getBpName(bp), marks: bp.totalMarks }];
-
-      list.forEach((it) => {
-        items.push({
-          bp,
-          item: it,
-          coCode: safe(it.coCode || it.co || it.courseOutcome, ""),
-          label: safe(it.label || it.name || `AP${i + 1}`),
-          marks: n(it.marks ?? it.maxMarks ?? bp.totalMarks),
-        });
-      });
-    });
-
-    blocks.push({
-      kind: "ap",
-      title: "Assign+Pres (AP)",
-      totalLabel: "AP",
-      subLabel: "",
-      totalSubLabel: "",
-      totalMarks: apBps.reduce((s, bp) => s + n(bp.totalMarks ?? bp.marks), 0),
-      items,
-    });
-  }
-
-  return blocks;
+const formatSemester = (course = {}) => {
+  const semester = safeText(course.semester, "");
+  const year = safeText(course.year, "");
+  if (!semester && !year) return "";
+  if (/semester/i.test(semester)) return `${semester}${year ? `, ${year}` : ""}`;
+  return `${semester}${semester ? " Semester" : ""}${year ? `, ${year}` : ""}`;
 };
 
-const getCos = (payload, blocks) => {
-  if (payload.output?.coAttainment?.length) return payload.output.coAttainment;
+const inferProgram = (course = {}, setup = {}) => {
+  const explicit = safeText(course.program || setup.program || setup.programName, "");
+  if (explicit) return explicit;
 
-  const fromSetup = payload.setup?.cos || payload.setup?.courseOutcomes || [];
-  if (fromSetup.length) {
-    return fromSetup.map((co, i) => ({
-      code: safe(co.code || co.coCode || `CO${i + 1}`),
-      maxMarks: n(co.maxMarks),
-      attainmentPercent: n(co.attainmentPercent),
-    }));
-  }
+  const department = safeText(
+    course.department || course.createdBy?.department || setup.department,
+    "Computer Science and Engineering"
+  );
+  const upper = department.toUpperCase();
 
-  const unique = [];
-  blocks.forEach((b) => {
-    b.items.forEach((it) => {
-      if (it.coCode && !unique.includes(it.coCode)) unique.push(it.coCode);
-    });
-  });
-
-  return unique.map((code) => ({ code, maxMarks: 0, attainmentPercent: 0 }));
+  if (upper.includes("COMPUTER SCIENCE") || /\bCSE\b/.test(upper)) return "B.Sc. In CSE";
+  if (upper.includes("ELECTRICAL") || /\bEEE\b/.test(upper)) return "B.Sc. In EEE";
+  if (upper.includes("INFORMATION") && upper.includes("COMMUNICATION")) return "B.Sc. In ICE";
+  return department;
 };
 
-const getPos = (payload) => {
-  if (payload.output?.poAttainment?.length) return payload.output.poAttainment;
-
-  const fromSetup = payload.setup?.pos || payload.setup?.programOutcomes || [];
-  if (fromSetup.length) {
-    return fromSetup.map((po, i) => ({
-      code: safe(po.code || po.poCode || `PO${i + 1}`),
-      attainmentPercent: n(po.attainmentPercent),
-    }));
-  }
-
-  const mappings = payload.setup?.mappings || [];
-  const unique = [];
-  mappings.forEach((m) => {
-    const code = m.targetType === "PO" ? m.targetCode : m.poCode;
-    if (code && !unique.includes(code)) unique.push(code);
-  });
-
-  return unique.map((code) => ({ code, attainmentPercent: 0 }));
+const formatDepartment = (course = {}, setup = {}) => {
+  const department = safeText(
+    course.department || course.createdBy?.department || setup.department,
+    "Computer Science and Engineering"
+  );
+  return /^department\s+of\s+/i.test(department) ? department : `Department of ${department}`;
 };
 
-const calculateCoRowsFromMarks = (student, coList, blocks, marksMap) => {
-  return coList.map((co) => {
-    let obtained = 0;
-    let max = 0;
+const getTeacherName = (payload = {}) =>
+  safeText(
+    payload.teacherName ||
+      payload.teacher?.name ||
+      payload.course?.teacherName ||
+      payload.course?.teacher?.name ||
+      payload.course?.createdBy?.name,
+    ""
+  );
 
-    blocks.forEach((block) => {
-      block.items.forEach((it) => {
-        if (it.coCode === co.code) {
-          const entries = findEntries(marksMap, student, it.bp);
-          obtained += getEntryValue(entries, it.item);
-          max += n(it.marks);
-        }
-      });
+const calculateWorkbookData = (payload, layout, courseOutcomes, programOutcomes) => {
+  const markMap = buildMarkMap(payload.marks || []);
+  const rawStudents = payload.output?.students?.length
+    ? payload.output.students
+    : payload.students || [];
+  const students = [...rawStudents].sort(naturalStudentSort);
+  const threshold = numberValue(
+    payload.output?.thresholdPercent ?? payload.setup?.thresholdPercent ?? 40
+  );
+  const mappings = Array.isArray(payload.setup?.mappings) ? payload.setup.mappings : [];
+
+  const coMax = new Map(courseOutcomes.map((co) => [co.code, 0]));
+  layout.allSlots.forEach((slot) => {
+    if (coMax.has(slot.coCode)) coMax.set(slot.coCode, round2(coMax.get(slot.coCode) + slot.marks));
+  });
+
+  const studentRows = students.map((student) => {
+    const slotMarks = new Map();
+    layout.allSlots.forEach((slot) => {
+      slotMarks.set(`${slot.blueprintId}__${slot.itemKey}`, getSlotMark(markMap, student, slot));
     });
 
-    const percent = max > 0 ? (obtained / max) * 100 : 0;
-
-    return {
-      code: co.code,
-      obtainedMarks: r2(obtained),
-      maxMarks: r2(max || co.maxMarks),
-      percent: r2(percent),
-      achieved: percent >= 40,
-    };
-  });
-};
-
-const makeNameStyle = (i) => (i % 12 === 0 ? sPurpleName : sGreenName);
-
-export const exportObeWorkbook = (payload, fileName = "CO-PO_Assessment.xlsx") => {
-  const wb = XLSX.utils.book_new();
-  const ws = { "!merges": [] };
-
-  const course = payload.course || {};
-  const setup = payload.setup || {};
-  const output = payload.output || {};
-  const students = output.students?.length ? output.students : payload.students || [];
-  const blueprints = payload.blueprints || output.blueprints || [];
-  const blocks = buildGradeBlocks(blueprints);
-  const marksMap = buildMarkMap(payload.marks || []);
-  const coList = getCos(payload, blocks);
-  const poList = getPos(payload);
-  const mappings = setup.mappings || [];
-  const threshold = n(output.thresholdPercent || setup.thresholdPercent || 40);
-
-  const department = safe(course.department || setup.department, "Department of Computer Science and Engineering");
-  const teacherName = safe(payload.teacherName || payload.teacher?.name || course.teacherName || course.teacher?.name, "-");
-
-  const dataStart = 8;
-
-  let leftCol = 0;
-  const studentIdCol = leftCol++;
-  const studentNameCol = leftCol++;
-
-  const blockPositions = [];
-
-  blocks.forEach((block) => {
-    const start = leftCol;
-    const itemStart = leftCol;
-    leftCol += block.items.length;
-    const totalCol = leftCol++;
-    blockPositions.push({ ...block, start, itemStart, totalCol, end: totalCol });
-  });
-
-  const attendanceCol = leftCol++;
-  const totalCol = leftCol++;
-  const gradeCol = leftCol++;
-  const leftEnd = gradeCol;
-
-  const gapCol = leftEnd + 1;
-  const rightStart = gapCol + 1;
-
-  const rightStudentIdCol = rightStart;
-  const rightStudentNameCol = rightStart + 1;
-
-  const coObtStart = rightStart + 2;
-  const coPercentStart = coObtStart + coList.length;
-  const coAchStart = coPercentStart + coList.length;
-  const poAchStart = coAchStart + coList.length;
-  const rightEnd = poAchStart + poList.length - 1;
-
-  const totalRow = dataStart + students.length;
-  const overallRow = totalRow + 1;
-
-  const teacherTop = totalRow + 4;
-  const teacherBottom = teacherTop + 2;
-
-  const cohortTop = overallRow + 3;
-
-  const lastRow = Math.max(teacherBottom, cohortTop + 1);
-  const lastCol = Math.max(leftEnd, rightEnd);
-
-  mergeStyled(ws, 0, 0, 0, leftEnd, department, sTitle);
-  mergeStyled(ws, 1, 0, 1, leftEnd, "Bangladesh University of Business and Technology", sUni);
-  mergeStyled(ws, 2, 0, 2, leftEnd, `GRADE SHEET [${safe(course.semester, "-")} ${safe(course.year, "-")}]`, sSheetTitle);
-
-  mergeStyled(ws, 3, 0, 3, Math.floor(leftEnd / 2), `Course Code: ${safe(course.code, "-")} (${safe(course.section, "-")})`, sBlue);
-  mergeStyled(ws, 3, Math.floor(leftEnd / 2) + 1, 3, leftEnd, `Course Title: ${safe(course.title, "-")}`, sBlue);
-
-  mergeStyled(ws, 4, studentIdCol, 6, studentIdCol, "Student ID", sHeader);
-  mergeStyled(ws, 4, studentNameCol, 6, studentNameCol, "Student Name", sHeader);
-
-  blockPositions.forEach((block) => {
-    mergeStyled(ws, 4, block.start, 4, block.end, block.title, sHeader);
-
-    block.items.forEach((it, i) => {
-      setCell(ws, 5, block.itemStart + i, it.coCode, sRed);
-
-      if (block.kind === "ct") {
-        setCell(ws, 6, block.itemStart + i, it.label, sBody);
-      } else if (block.kind === "normal") {
-        setCell(ws, 6, block.itemStart + i, "", sBody);
-      } else {
-        setCell(ws, 6, block.itemStart + i, it.label, sBody);
-      }
-
-      setCell(ws, 7, block.itemStart + i, r2(it.marks), sRed);
-    });
-
-    setCell(ws, 5, block.totalCol, block.totalLabel, sPeachBlue);
-    setCell(ws, 6, block.totalCol, block.totalSubLabel || block.subLabel || "", sBody);
-    setCell(ws, 7, block.totalCol, r2(block.totalMarks), sPeachBlue);
-
-    if (block.kind === "normal") {
-      mergeStyled(ws, 6, block.itemStart, 6, block.totalCol - 1, "All the Questions", sBody);
-    }
-
-if (block.kind === "ct") {
-  const coStart = block.itemStart;
-  const coEnd = block.itemStart + block.coColumnCount - 1;
-
-  const ctStart = coEnd + 1;
-  const ctEnd = block.totalCol - 1;
-
-  if (block.coColumnCount > 0) {
-    mergeStyled(ws, 6, coStart, 6, coEnd, "CT1+CT2", sBody);
-  }
-
-  if (block.ctColumnCount > 0) {
-    mergeStyled(ws, 6, ctStart, 6, ctEnd, "Total CT", sBody);
-  }
-
-  setCell(ws, 6, block.totalCol, "", sBody);
-}
-  });
-
-  mergeStyled(ws, 4, attendanceCol, 6, attendanceCol, "Attendance", sRotate);
-  setCell(ws, 7, attendanceCol, 5, sPeachBlue);
-
-  mergeStyled(ws, 4, totalCol, 6, totalCol, "Total", sPeachBlue);
-  setCell(ws, 7, totalCol, 100, sPeachBlue);
-
-  mergeStyled(ws, 4, gradeCol, 6, gradeCol, "Letter\nGrade", sHeader);
-
-  mergeStyled(ws, 0, rightStart, 0, rightEnd, department, sRightRedTitle);
-  mergeStyled(ws, 1, rightStart, 1, rightEnd, "Bangladesh University of Business and Technology", sRightRedSub);
-  mergeStyled(ws, 2, rightStart, 2, rightEnd, `CO Achievement  [${safe(course.semester, "-")} ${safe(course.year, "-")}]`, sRightRedTitle);
-
-  mergeStyled(ws, 3, rightStart, 3, rightStart + Math.floor((rightEnd - rightStart) / 2), `Course Code: ${safe(course.code, "-")} (${safe(course.section, "-")})`, sBlue);
-  mergeStyled(ws, 3, rightStart + Math.floor((rightEnd - rightStart) / 2) + 1, 3, rightEnd, `Course Title: ${safe(course.title, "-")}`, sBlue);
-
-  mergeStyled(ws, 4, rightStudentIdCol, 6, rightStudentIdCol, "Student ID", sHeader);
-  mergeStyled(ws, 4, rightStudentNameCol, 6, rightStudentNameCol, "Student Name", sHeader);
-
-  mergeStyled(ws, 4, coObtStart, 4, coObtStart + coList.length - 1, "CO Marks Obtained", sHeader);
-  mergeStyled(ws, 4, coPercentStart, 4, coPercentStart + coList.length - 1, "CO Marks [%]", sHeader);
-  mergeStyled(ws, 4, coAchStart, 4, coAchStart + coList.length - 1, `CO Achievement (>=${threshold}%)`, sHeader);
-  mergeStyled(ws, 4, poAchStart, 4, poAchStart + poList.length - 1, `PO Achievement (>=${threshold}%)`, sHeader);
-
-  coList.forEach((co, i) => {
-    setCell(ws, 5, coObtStart + i, co.code, sPeachBold);
-    setCell(ws, 6, coObtStart + i, r2(co.maxMarks), sRed);
-
-    setCell(ws, 5, coPercentStart + i, co.code, sPeachBold);
-    setCell(ws, 6, coPercentStart + i, "%", sRed);
-
-    setCell(ws, 5, coAchStart + i, co.code, sPeachBold);
-    setCell(ws, 6, coAchStart + i, "", sPeachBold);
-  });
-
-  poList.forEach((po, i) => {
-    setCell(ws, 5, poAchStart + i, po.code, sPeachBold);
-    setCell(ws, 6, poAchStart + i, "", sPeachBold);
-  });
-
-  students.forEach((student, i) => {
-    const row = dataStart + i;
-    const id = safe(student.roll || student.studentId || student.id, "-");
-    const name = safe(student.name, "-");
-
-    setCell(ws, row, studentIdCol, id, sBody);
-    setCell(ws, row, studentNameCol, name, makeNameStyle(i));
-
-    let computedTotal = 0;
-
-    blockPositions.forEach((block) => {
-      let blockTotal = 0;
-
-block.items.forEach((it, j) => {
-  const entries = findEntries(marksMap, student, it.bp);
-
-  let val = 0;
-
-if (block.kind === "ct" && it.type === "ct") {
-  (it.itemList || []).forEach((ctItem) => {
-    val += getEntryValue(entries, ctItem);
-  });
-} else {
-  val = getEntryValue(entries, it.item);
-}
-
-  blockTotal += val;
-  setCell(ws, row, block.itemStart + j, val || "", sBody);
-});
-
-      computedTotal += blockTotal;
-      setCell(ws, row, block.totalCol, r2(blockTotal), sPeach);
-    });
-
-    const attendance = n(student.attendanceMarks ?? student.attendance ?? 0);
-    computedTotal += attendance;
-
-    const total = r2(student.scaledTotal ?? student.totalPercent ?? student.courseObtained ?? student.total ?? computedTotal);
-
-    setCell(ws, row, attendanceCol, attendance || "", sBody);
-    setCell(ws, row, totalCol, total, sTotal);
-    setCell(ws, row, gradeCol, safe(student.grade, getGrade(total)), sBody);
-
-    setCell(ws, row, rightStudentIdCol, id, sBody);
-    setCell(ws, row, rightStudentNameCol, name, makeNameStyle(i));
-
-    const studentCoRows = student.coRows?.length
-      ? student.coRows
-      : calculateCoRowsFromMarks(student, coList, blockPositions, marksMap);
-
-    coList.forEach((co, j) => {
-      const cr = studentCoRows.find((x) => x.code === co.code) || {};
-      setCell(ws, row, coObtStart + j, r2(cr.obtainedMarks), sGray);
-      setCell(ws, row, coPercentStart + j, r2(cr.percent), sGray);
-      setCell(ws, row, coAchStart + j, cr.achieved ? "Y" : "N", sGray);
-    });
-
-    poList.forEach((po, j) => {
-      const related = mappings.filter(
-        (m) => (m.targetType === "PO" && m.targetCode === po.code) || m.poCode === po.code
+    const sumGroup = (slots) =>
+      round2(
+        slots.reduce(
+          (sum, slot) => sum + numberValue(slotMarks.get(`${slot.blueprintId}__${slot.itemKey}`)),
+          0
+        )
       );
 
-      const vals = related.map((m) => {
-        const code = m.coCode || m.sourceCode;
-        const cr = studentCoRows.find((x) => x.code === code);
-        return n(cr?.percent);
-      });
+    const caTotal = sumGroup(layout.slots.ca);
+    const midTotal = sumGroup(layout.slots.mid);
+    const finalTotal = sumGroup(layout.slots.final);
+    const total = round2(caTotal + midTotal + finalTotal);
+    const grade = gradeCode(total);
 
-      const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
-      setCell(ws, row, poAchStart + j, avg >= threshold ? "Y" : "N", sPo);
+    const coRows = courseOutcomes.map((co) => {
+      const obtained = round2(
+        layout.allSlots.reduce((sum, slot) => {
+          if (slot.coCode !== co.code) return sum;
+          return sum + numberValue(slotMarks.get(`${slot.blueprintId}__${slot.itemKey}`));
+        }, 0)
+      );
+      const maxMarks = round2(coMax.get(co.code));
+      const percent = maxMarks > 0 ? round2((obtained * 100) / maxMarks) : 0;
+      return {
+        ...co,
+        obtained,
+        maxMarks,
+        percent,
+        achieved: maxMarks > 0 && percent >= threshold,
+      };
+    });
+
+    const poRows = programOutcomes.map((po) => {
+      const relatedCodes = mappings
+        .filter(
+          (mapping) =>
+            safeText(mapping.targetType, "PO").toUpperCase() === "PO" &&
+            safeText(mapping.targetCode || mapping.poCode, "").toUpperCase() === po.code &&
+            numberValue(mapping.strength || 1) > 0
+        )
+        .map((mapping) => safeText(mapping.coCode || mapping.sourceCode, "").toUpperCase());
+
+      const relatedRows = coRows.filter((row) => relatedCodes.includes(row.code) && row.maxMarks > 0);
+      const denominator = relatedRows.reduce((sum, row) => sum + row.maxMarks, 0);
+      const weightedPercent = denominator
+        ? round2(
+            relatedRows.reduce((sum, row) => sum + row.percent * row.maxMarks, 0) /
+              denominator
+          )
+        : 0;
+
+      return {
+        ...po,
+        mapped: relatedRows.length > 0,
+        percent: weightedPercent,
+        achieved: relatedRows.length > 0 && weightedPercent >= threshold,
+      };
+    });
+
+    return {
+      student,
+      slotMarks,
+      caTotal,
+      midTotal,
+      finalTotal,
+      total,
+      grade,
+      gradeLabel: gradeLabel(grade),
+      coRows,
+      poRows,
+    };
+  });
+
+  const totalStudents = studentRows.length;
+  const coAttainment = courseOutcomes.map((co) => {
+    const rows = studentRows.map((student) => student.coRows.find((row) => row.code === co.code));
+    const validRows = rows.filter(Boolean);
+    const attainedCount = validRows.filter((row) => row.achieved).length;
+    return {
+      ...co,
+      maxMarks: round2(coMax.get(co.code)),
+      attainedCount,
+      attainmentPercent: totalStudents ? round2((attainedCount * 100) / totalStudents) : 0,
+    };
+  });
+
+  const poAttainment = programOutcomes.map((po) => {
+    const rows = studentRows.map((student) => student.poRows.find((row) => row.code === po.code));
+    const mappedRows = rows.filter((row) => row?.mapped);
+    const attainedCount = mappedRows.filter((row) => row.achieved).length;
+    return {
+      ...po,
+      mapped: mappedRows.length > 0,
+      attainedCount,
+      attainmentPercent:
+        mappedRows.length && totalStudents
+          ? round2((attainedCount * 100) / totalStudents)
+          : null,
+    };
+  });
+
+  const summaryLabels = [
+    "A (Plus)",
+    "A",
+    "A (Minus)",
+    "B (Plus)",
+    "B",
+    "B (Minus)",
+    "C (Plus)",
+    "C",
+    "D",
+    "F (Fail)",
+    "Error",
+  ];
+  const gradeCounts = Object.fromEntries(summaryLabels.map((label) => [label, 0]));
+  studentRows.forEach((row) => {
+    gradeCounts[row.gradeLabel] = (gradeCounts[row.gradeLabel] || 0) + 1;
+  });
+
+  return {
+    threshold,
+    students: studentRows,
+    totalStudents,
+    totalStudentsPresent: studentRows.filter((row) => row.total > 0).length,
+    coAttainment,
+    poAttainment,
+    gradeCounts,
+    summaryLabels,
+  };
+};
+
+const populateGradeSheet = (document, payload, layout, workbookData, courseOutcomes, programOutcomes) => {
+  const cells = getSheetCellMap(document);
+  const course = payload.course || {};
+  const setup = payload.setup || {};
+
+  writeCellValue(document, cells, "A2", formatDepartment(course, setup));
+  writeCellValue(document, cells, "A8", formatSemester(course));
+  writeCellValue(document, cells, "B14", safeText(course.code, ""));
+  writeCellValue(document, cells, "B15", safeText(course.title, ""));
+  writeCellValue(document, cells, "B16", inferProgram(course, setup));
+  writeCellValue(document, cells, "B17", getTeacherName(payload));
+  writeCellValue(document, cells, "B18", safeText(course.intake, ""));
+  writeCellValue(document, cells, "B19", safeText(course.section, ""));
+  writeCellValue(document, cells, "B20", course.shift ?? setup.shift ?? 0);
+
+  const groups = [
+    ["ca", OBE_TEMPLATE_COLUMNS.ca],
+    ["mid", OBE_TEMPLATE_COLUMNS.mid],
+    ["final", OBE_TEMPLATE_COLUMNS.final],
+  ];
+
+  groups.forEach(([group, columns]) => {
+    columns.forEach((column, index) => {
+      const slot = layout.slots[group][index];
+      writeCellValue(document, cells, `${column}27`, slot?.label || "");
+      writeCellValue(document, cells, `${column}28`, slot?.coCode || "");
+      writeCellValue(document, cells, `${column}29`, slot ? round2(slot.marks) : "");
     });
   });
 
-  mergeStyled(ws, totalRow, rightStudentIdCol, totalRow, coPercentStart - 1, "Total Number of Students", sFooter);
-  setCell(ws, totalRow, coPercentStart, students.length, sFooter);
+  writeCellValue(document, cells, "H29", round2(layout.totals.ca));
+  writeCellValue(
+    document,
+    cells,
+    "O29",
+    Math.abs(layout.totals.mid - 30) < 0.001 ? 30 : "Error"
+  );
+  writeCellValue(
+    document,
+    cells,
+    "V29",
+    Math.abs(layout.totals.final - 40) < 0.001 ? 40 : "Error"
+  );
+  const validTotal =
+    Math.abs(layout.totals.ca - 30) < 0.001 &&
+    Math.abs(layout.totals.mid - 30) < 0.001 &&
+    Math.abs(layout.totals.final - 40) < 0.001;
+  writeCellValue(document, cells, "W29", validTotal ? 100 : "Error");
+  writeCellValue(document, cells, "W28", validTotal ? 100 : "Error");
 
-  mergeStyled(ws, overallRow, rightStudentIdCol, overallRow, coPercentStart - 1, "Overall CO - PO Achievements (%)", sFooter);
+  for (let index = 0; index < OBE_TEMPLATE_LIMITS.courseOutcomes; index += 1) {
+    const co = courseOutcomes[index];
+    const code = co?.code || `CO${index + 1}`;
+    const obtainedColumn = ["AB", "AC", "AD", "AE", "AF", "AG"][index];
+    const percentColumn = ["AH", "AI", "AJ", "AK", "AL", "AM"][index];
+    const achievedColumn = ["AN", "AO", "AP", "AQ", "AR", "AS"][index];
 
-  coList.forEach((co, i) => {
-    const yesNo = n(co.attainmentPercent) >= threshold ? "YES" : "NO";
-    setCell(ws, totalRow, coAchStart + i, yesNo, yesNo === "YES" ? sFooterYes : sFooterNo);
-    setCell(ws, overallRow, coAchStart + i, r2(co.attainmentPercent), yesNo === "YES" ? sFooterYes : sFooterNo);
-  });
-
-  poList.forEach((po, i) => {
-    const yesNo = n(po.attainmentPercent) >= threshold ? "YES" : "NO";
-    setCell(ws, totalRow, poAchStart + i, yesNo, yesNo === "YES" ? sFooterYes : sFooterNo);
-    setCell(ws, overallRow, poAchStart + i, r2(po.attainmentPercent), yesNo === "YES" ? sFooterYes : sFooterNo);
-  });
-
-  const teacherStart = Math.max(2, Math.floor(leftEnd / 3));
-  const teacherEnd = Math.min(leftEnd - 2, teacherStart + 10);
-  mergeStyled(ws, teacherTop, teacherStart, teacherBottom, teacherEnd, `Course Teacher: ${teacherName}`, sTeacherBox);
-
-  const cohortStart = Math.max(poAchStart, rightEnd - 5);
-  mergeStyled(ws, cohortTop, cohortStart, cohortTop + 1, rightEnd, `(Cohort Achievement => ${threshold}%)`, sHeader);
-
-  for (let r = 0; r <= overallRow; r++) {
-    setCell(ws, r, gapCol, "", sSeparator);
+    writeCellValue(document, cells, `${obtainedColumn}28`, `[${code}]`);
+    writeCellValue(document, cells, `${percentColumn}28`, code);
+    writeCellValue(document, cells, `${achievedColumn}28`, code);
+    writeCellValue(document, cells, `${obtainedColumn}29`, co ? co.maxMarks : 0);
+    writeCellValue(document, cells, `${percentColumn}29`, "%");
   }
 
-  ws["!ref"] = XLSX.utils.encode_range({
-    s: { r: 0, c: 0 },
-    e: { r: lastRow, c: lastCol },
+  const poColumns = ["AT", "AU", "AV", "AW", "AX", "AY", "AZ", "BA", "BB", "BC", "BD", "BE"];
+  poColumns.forEach((column, index) => {
+    writeCellValue(document, cells, `${column}28`, programOutcomes[index]?.code || `PO${index + 1}`);
   });
 
-  ws["!cols"] = Array.from({ length: lastCol + 1 }, (_, c) => {
-    if (c === gapCol) return { wch: 2 };
-    if (c === studentIdCol || c === rightStudentIdCol) return { wch: 14 };
-    if (c === studentNameCol || c === rightStudentNameCol) return { wch: 22 };
-    if (c === attendanceCol) return { wch: 5 };
-    if (c === totalCol || c === gradeCol) return { wch: 7 };
-    return { wch: 7 };
+  writeCellValue(document, cells, "AQ27", workbookData.threshold);
+  writeCellValue(document, cells, "AW27", workbookData.threshold);
+
+  for (let row = STUDENT_START_ROW; row <= STUDENT_END_ROW; row += 1) {
+    const studentData = workbookData.students[row - STUDENT_START_ROW];
+
+    if (!studentData) {
+      ["A", "B", ...OBE_TEMPLATE_COLUMNS.ca, ...OBE_TEMPLATE_COLUMNS.mid, ...OBE_TEMPLATE_COLUMNS.final].forEach(
+        (column) => clearInputCell(document, cells, `${column}${row}`)
+      );
+      writeCellValue(document, cells, `H${row}`, "-");
+      writeCellValue(document, cells, `O${row}`, "-");
+      writeCellValue(document, cells, `V${row}`, "-");
+      writeCellValue(document, cells, `W${row}`, "-");
+      writeCellValue(document, cells, `X${row}`, "-");
+      writeCellValue(document, cells, `Z${row}`, "");
+      writeCellValue(document, cells, `AA${row}`, "");
+
+      for (const column of ["AB", "AC", "AD", "AE", "AF", "AG", "AH", "AI", "AJ", "AK", "AL", "AM"]) {
+        writeCellValue(document, cells, `${column}${row}`, 0);
+      }
+      for (const column of ["AN", "AO", "AP", "AQ", "AR", "AS", ...poColumns]) {
+        writeCellValue(document, cells, `${column}${row}`, "-");
+      }
+      continue;
+    }
+
+    const { student } = studentData;
+    const roll = safeText(student.roll || student.username || student.studentId, "");
+    const name = safeText(student.name, "");
+    writeCellValue(document, cells, `A${row}`, roll);
+    writeCellValue(document, cells, `B${row}`, name);
+
+    groups.forEach(([group, columns]) => {
+      columns.forEach((column, index) => {
+        const slot = layout.slots[group][index];
+        const mark = slot
+          ? studentData.slotMarks.get(`${slot.blueprintId}__${slot.itemKey}`) || 0
+          : 0;
+        writeCellValue(document, cells, `${column}${row}`, slot ? round2(mark) : "");
+      });
+    });
+
+    writeCellValue(document, cells, `H${row}`, studentData.caTotal);
+    writeCellValue(document, cells, `O${row}`, studentData.midTotal);
+    writeCellValue(document, cells, `V${row}`, studentData.finalTotal);
+    writeCellValue(document, cells, `W${row}`, studentData.total);
+    writeCellValue(document, cells, `X${row}`, studentData.gradeLabel);
+    writeCellValue(document, cells, `Z${row}`, roll);
+    writeCellValue(document, cells, `AA${row}`, name);
+
+    for (let index = 0; index < OBE_TEMPLATE_LIMITS.courseOutcomes; index += 1) {
+      const coRow = studentData.coRows[index];
+      const obtainedColumn = ["AB", "AC", "AD", "AE", "AF", "AG"][index];
+      const percentColumn = ["AH", "AI", "AJ", "AK", "AL", "AM"][index];
+      const achievedColumn = ["AN", "AO", "AP", "AQ", "AR", "AS"][index];
+      writeCellValue(document, cells, `${obtainedColumn}${row}`, coRow?.obtained || 0);
+      writeCellValue(document, cells, `${percentColumn}${row}`, coRow?.percent || 0);
+      writeCellValue(
+        document,
+        cells,
+        `${achievedColumn}${row}`,
+        coRow ? (coRow.achieved ? "Y" : "N") : "N"
+      );
+    }
+
+    poColumns.forEach((column, index) => {
+      const poRow = studentData.poRows[index];
+      writeCellValue(
+        document,
+        cells,
+        `${column}${row}`,
+        poRow?.mapped ? (poRow.achieved ? "Y" : "N") : "-"
+      );
+    });
+  }
+
+  writeCellValue(document, cells, "D102", workbookData.totalStudents);
+  writeCellValue(document, cells, "E105", workbookData.totalStudentsPresent);
+
+  workbookData.summaryLabels.forEach((label, index) => {
+    const row = 108 + index;
+    const count = workbookData.gradeCounts[label] || 0;
+    writeCellValue(document, cells, `D${row}`, count);
+    writeCellValue(
+      document,
+      cells,
+      `H${row}`,
+      workbookData.totalStudents ? round2((count * 100) / workbookData.totalStudents) : 0
+    );
+  });
+  writeCellValue(document, cells, "D119", workbookData.totalStudents);
+  writeCellValue(document, cells, "H119", workbookData.totalStudents ? 100 : 0);
+
+  for (let index = 0; index < OBE_TEMPLATE_LIMITS.courseOutcomes; index += 1) {
+    const attainment = workbookData.coAttainment[index];
+    const totalColumn = ["AN", "AO", "AP", "AQ", "AR", "AS"][index];
+    writeCellValue(
+      document,
+      cells,
+      `${totalColumn}102`,
+      attainment && attainment.attainedCount > 0
+        ? attainment.attainedCount >
+          (workbookData.totalStudentsPresent * workbookData.threshold) / 100
+          ? "YES"
+          : "NO"
+        : "-"
+    );
+    writeCellValue(
+      document,
+      cells,
+      `${totalColumn}103`,
+      attainment ? attainment.attainmentPercent : "-"
+    );
+  }
+
+  poColumns.forEach((column, index) => {
+    const attainment = workbookData.poAttainment[index];
+    writeCellValue(
+      document,
+      cells,
+      `${column}102`,
+      attainment?.mapped && attainment.attainedCount > 0
+        ? attainment.attainedCount >
+          (workbookData.totalStudentsPresent * workbookData.threshold) / 100
+          ? "YES"
+          : "NO"
+        : "-"
+    );
+    writeCellValue(
+      document,
+      cells,
+      `${column}103`,
+      attainment?.mapped ? attainment.attainmentPercent : "-"
+    );
+  });
+};
+
+const populateMappingSheet = (document, payload, courseOutcomes, programOutcomes) => {
+  const cells = getSheetCellMap(document);
+  const mappings = Array.isArray(payload.setup?.mappings) ? payload.setup.mappings : [];
+  const visiblePoColumns = ["C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N"];
+  const linkedPoColumns = ["O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"];
+
+  visiblePoColumns.forEach((column, index) => {
+    writeCellValue(document, cells, `${column}1`, programOutcomes[index]?.code || `PO${index + 1}`);
   });
 
-  ws["!rows"] = Array.from({ length: lastRow + 1 }, (_, r) => {
-    if (r === 0) return { hpt: 21 };
-    if (r === 1) return { hpt: 20 };
-    if (r === 2) return { hpt: 19 };
-    if (r >= 4 && r <= 7) return { hpt: 22 };
-    return { hpt: 18 };
+  for (let coIndex = 0; coIndex < OBE_TEMPLATE_LIMITS.courseOutcomes; coIndex += 1) {
+    const co = courseOutcomes[coIndex];
+    const row = coIndex + 2;
+    writeCellValue(document, cells, `A${row}`, co?.code || `CO${coIndex + 1}`);
+    writeCellValue(document, cells, `B${row}`, co?.statement || "");
+
+    linkedPoColumns.forEach((column, poIndex) => {
+      const po = programOutcomes[poIndex];
+      const mapped = !!(
+        co &&
+        po &&
+        mappings.some(
+          (mapping) =>
+            safeText(mapping.coCode || mapping.sourceCode, "").toUpperCase() === co.code &&
+            safeText(mapping.targetType, "PO").toUpperCase() === "PO" &&
+            safeText(mapping.targetCode || mapping.poCode, "").toUpperCase() === po.code &&
+            numberValue(mapping.strength || 1) > 0
+        )
+      );
+      writeCellValue(document, cells, `${column}${row}`, mapped);
+    });
+  }
+};
+
+const populateCourseReport = (document, payload, workbookData, courseOutcomes, programOutcomes) => {
+  const cells = getSheetCellMap(document);
+  const course = payload.course || {};
+  const setup = payload.setup || {};
+
+  writeCellValue(document, cells, "B2", formatSemester(course));
+  writeCellValue(document, cells, "B3", safeText(course.code, ""));
+  writeCellValue(document, cells, "B4", safeText(course.title, ""));
+  writeCellValue(document, cells, "B5", inferProgram(course, setup));
+  writeCellValue(document, cells, "B6", getTeacherName(payload));
+  writeCellValue(document, cells, "B7", safeText(course.intake, ""));
+  writeCellValue(document, cells, "B8", safeText(course.section, ""));
+  writeCellValue(document, cells, "B9", course.shift ?? setup.shift ?? 0);
+
+  const coColumns = ["C", "D", "E", "F", "G", "H"];
+  coColumns.forEach((column, index) => {
+    writeCellValue(document, cells, `${column}13`, courseOutcomes[index]?.code || `CO${index + 1}`);
+    writeCellValue(
+      document,
+      cells,
+      `${column}14`,
+      workbookData.coAttainment[index]?.attainmentPercent ?? "-"
+    );
   });
 
-  ws["!pageSetup"] = {
-    orientation: "landscape",
-    fitToWidth: 1,
-    fitToHeight: 1,
-    paperSize: 9,
-  };
-
-  XLSX.utils.book_append_sheet(wb, ws, "Grade_OBE");
-
-  const ws2 = { "!merges": [] };
-
-  mergeStyled(ws2, 0, 0, 0, 2, "Grade Distribution", sTitle);
-  setCell(ws2, 2, 0, "Grade", sPeachBold);
-  setCell(ws2, 2, 1, "Count", sPeachBold);
-
-  const gradeCount = Object.fromEntries(gradeOrder.map((g) => [g, 0]));
-
-  students.forEach((student) => {
-    const total = r2(student.scaledTotal ?? student.totalPercent ?? student.courseObtained ?? student.total ?? 0);
-    const grade = safe(student.grade, getGrade(total));
-    if (gradeCount[grade] !== undefined) gradeCount[grade]++;
+  const firstPoColumns = ["C", "D", "E", "F", "G", "H"];
+  firstPoColumns.forEach((column, index) => {
+    writeCellValue(document, cells, `${column}16`, programOutcomes[index]?.code || `PO${index + 1}`);
+    const attainment = workbookData.poAttainment[index];
+    writeCellValue(document, cells, `${column}17`, attainment?.mapped ? attainment.attainmentPercent : "-");
+  });
+  firstPoColumns.forEach((column, index) => {
+    const poIndex = index + 6;
+    writeCellValue(document, cells, `${column}18`, programOutcomes[poIndex]?.code || `PO${poIndex + 1}`);
+    const attainment = workbookData.poAttainment[poIndex];
+    writeCellValue(document, cells, `${column}19`, attainment?.mapped ? attainment.attainmentPercent : "-");
   });
 
-  gradeOrder.forEach((g, i) => {
-    setCell(ws2, 3 + i, 0, g, sBody);
-    setCell(ws2, 3 + i, 1, gradeCount[g], sBody);
-  });
-
-  setCell(ws2, 14, 0, "Total Students", sPeachBold);
-  setCell(ws2, 14, 1, students.length, sPeachBold);
-
-  ws2["!ref"] = "A1:C15";
-  ws2["!cols"] = [{ wch: 18 }, { wch: 15 }, { wch: 10 }];
-
-  XLSX.utils.book_append_sheet(wb, ws2, "Grade Distribution");
-
-  XLSX.writeFile(
-    wb,
-    fileName ||
-      `CO-PO_Assessment_${safe(course.code, "Course")}_${safe(course.section, "-")}_${safe(course.semester, "-")}_${safe(course.year, "-")}.xlsx`
+  writeCellValue(document, cells, "B56", "", { preserveFormula: false });
+  writeCellValue(document, cells, "B62", "", { preserveFormula: false });
+  writeCellValue(
+    document,
+    cells,
+    "B67",
+    safeText(setup.notes || payload.output?.notes, ""),
+    { preserveFormula: false }
   );
+};
+
+const setWorkbookRecalculation = (workbookDocument) => {
+  let calcProperties = workbookDocument.getElementsByTagNameNS(MAIN_NS, "calcPr")[0];
+  if (!calcProperties) {
+    calcProperties = workbookDocument.createElementNS(MAIN_NS, "calcPr");
+    workbookDocument.documentElement.appendChild(calcProperties);
+  }
+  calcProperties.setAttribute("calcMode", "auto");
+  calcProperties.setAttribute("fullCalcOnLoad", "1");
+  calcProperties.setAttribute("forceFullCalc", "1");
+  calcProperties.setAttribute("calcOnSave", "1");
+};
+
+const updateModifiedDate = async (zip) => {
+  const path = "docProps/core.xml";
+  const text = await zip.file(path)?.async("text");
+  if (!text) return;
+
+  const document = parseXml(text, path);
+  const modified = document.getElementsByTagNameNS(CORE_NS, "modified")[0];
+  if (modified) modified.textContent = new Date().toISOString();
+  zip.file(path, serializeXml(document));
+};
+
+export const exportObeWorkbook = async (payload = {}) => {
+  const courseOutcomes = getCourseOutcomes(payload);
+  const programOutcomes = getProgramOutcomes(payload);
+  const blueprints = payload.blueprints || payload.output?.blueprints || [];
+  const layout = buildObeTemplateLayout(blueprints);
+
+  const errors = [...layout.errors];
+  const rawStudents = payload.output?.students?.length
+    ? payload.output.students
+    : payload.students || [];
+
+  if (!courseOutcomes.length) errors.push("No course outcomes were found in the OBE setup.");
+  if (courseOutcomes.length > OBE_TEMPLATE_LIMITS.courseOutcomes) {
+    errors.push(
+      `The official BUBT template supports ${OBE_TEMPLATE_LIMITS.courseOutcomes} COs, but ${courseOutcomes.length} are configured.`
+    );
+  }
+  if (programOutcomes.length > OBE_TEMPLATE_LIMITS.programOutcomes) {
+    errors.push(
+      `The official BUBT template supports ${OBE_TEMPLATE_LIMITS.programOutcomes} POs, but ${programOutcomes.length} are configured.`
+    );
+  }
+  if (rawStudents.length > OBE_TEMPLATE_LIMITS.students) {
+    errors.push(
+      `The official BUBT template supports ${OBE_TEMPLATE_LIMITS.students} students, but this course has ${rawStudents.length}.`
+    );
+  }
+  if (!layout.allSlots.length) errors.push("No assessment blueprint items were found.");
+
+  if (errors.length) {
+    throw new Error(errors.join("\n"));
+  }
+
+  const response = await fetch(getTemplateUrl(), { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(
+      `Could not load the BUBT Excel template (${response.status}). Make sure public/templates/${TEMPLATE_FILE} is deployed.`
+    );
+  }
+
+  const zip = await JSZip.loadAsync(await response.arrayBuffer());
+  const { workbookDocument, workbookPath, sheetMap } = await resolveWorksheetPaths(zip);
+
+  const requiredSheets = ["GradeSheet", "Course Report", "CO-PO Mapping"];
+  requiredSheets.forEach((name) => {
+    if (!sheetMap.has(name)) throw new Error(`The template sheet “${name}” is missing.`);
+  });
+
+  const workbookData = calculateWorkbookData(
+    payload,
+    layout,
+    courseOutcomes.slice(0, OBE_TEMPLATE_LIMITS.courseOutcomes),
+    programOutcomes.slice(0, OBE_TEMPLATE_LIMITS.programOutcomes)
+  );
+
+  const [gradeText, reportText, mappingText] = await Promise.all([
+    zip.file(sheetMap.get("GradeSheet"))?.async("text"),
+    zip.file(sheetMap.get("Course Report"))?.async("text"),
+    zip.file(sheetMap.get("CO-PO Mapping"))?.async("text"),
+  ]);
+
+  if (!gradeText || !reportText || !mappingText) {
+    throw new Error("One or more BUBT template worksheets could not be read.");
+  }
+
+  const gradeDocument = parseXml(gradeText, sheetMap.get("GradeSheet"));
+  const reportDocument = parseXml(reportText, sheetMap.get("Course Report"));
+  const mappingDocument = parseXml(mappingText, sheetMap.get("CO-PO Mapping"));
+
+  populateGradeSheet(
+    gradeDocument,
+    payload,
+    layout,
+    workbookData,
+    courseOutcomes.slice(0, OBE_TEMPLATE_LIMITS.courseOutcomes),
+    programOutcomes.slice(0, OBE_TEMPLATE_LIMITS.programOutcomes)
+  );
+  populateCourseReport(
+    reportDocument,
+    payload,
+    workbookData,
+    courseOutcomes.slice(0, OBE_TEMPLATE_LIMITS.courseOutcomes),
+    programOutcomes.slice(0, OBE_TEMPLATE_LIMITS.programOutcomes)
+  );
+  populateMappingSheet(
+    mappingDocument,
+    payload,
+    courseOutcomes.slice(0, OBE_TEMPLATE_LIMITS.courseOutcomes),
+    programOutcomes.slice(0, OBE_TEMPLATE_LIMITS.programOutcomes)
+  );
+
+  setWorkbookRecalculation(workbookDocument);
+
+  zip.file(sheetMap.get("GradeSheet"), serializeXml(gradeDocument));
+  zip.file(sheetMap.get("Course Report"), serializeXml(reportDocument));
+  zip.file(sheetMap.get("CO-PO Mapping"), serializeXml(mappingDocument));
+  zip.file(workbookPath, serializeXml(workbookDocument));
+  await updateModifiedDate(zip);
+
+  const blob = await zip.generateAsync({
+    type: "blob",
+    mimeType: "application/vnd.ms-excel.sheet.macroEnabled.12",
+    compression: "DEFLATE",
+    compressionOptions: { level: 6 },
+  });
+
+  return { blob, warnings: layout.warnings };
 };

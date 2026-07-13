@@ -372,6 +372,19 @@ export default function StudentCoursePage() {
     return assessments.filter((a) => !isCtAssessment(a?.name));
   }, [assessments, courseType]);
 
+  // Hybrid Mid/Final component marks are already shown inside their total cards.
+  // Remove those same assessments from the normal list to avoid duplicate rows/cards.
+  const visibleNonCtAssessments = useMemo(() => {
+    if (courseType !== "hybrid") return nonCtAssessments;
+
+    return nonCtAssessments.filter((assessment) => {
+      const name = String(assessment?.name || "").toLowerCase();
+      const isExam = name.includes("mid") || name.includes("final");
+      const isHybridPart = name.includes("theory") || name.includes("lab");
+      return !(isExam && isHybridPart);
+    });
+  }, [nonCtAssessments, courseType]);
+
 
   const hybridExamTotals = useMemo(() => {
     if (courseType !== "hybrid") return [];
@@ -943,14 +956,22 @@ export default function StudentCoursePage() {
                             <div className="font-bold text-slate-900 dark:text-white">
                               {group.label}
                             </div>
-                            <div className="mt-2 flex flex-wrap gap-2">
+                            <div className="mt-3 grid max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">
                               {group.parts.map((part) => (
-                                <span
+                                <div
                                   key={part.key}
-                                  className="inline-flex rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                                  className="flex min-w-0 items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-900"
                                 >
-                                  {part.label}: {part.obtainedMarks == null ? "Not published" : round2(part.obtainedMarks)} / {part.fullMarks}
-                                </span>
+                                  <span className="truncate text-sm font-semibold text-slate-600 dark:text-slate-300">
+                                    {part.label}
+                                  </span>
+                                  <span className="shrink-0 text-sm font-bold text-slate-900 dark:text-white">
+                                    {part.obtainedMarks == null ? "Not published" : round2(part.obtainedMarks)}
+                                    <span className="ml-1 text-xs font-semibold text-slate-400">
+                                      / {part.fullMarks}
+                                    </span>
+                                  </span>
+                                </div>
                               ))}
                             </div>
                           </td>
@@ -1055,7 +1076,7 @@ export default function StudentCoursePage() {
                       </tr>
                     )}
 
-                    {nonCtAssessments.map((a) => {
+                    {visibleNonCtAssessments.map((a) => {
                       const key = a.id || a._id;
                       const missing = a.obtainedMarks == null;
                       const advancedRows = breakdownMap[key] || [];
@@ -1290,7 +1311,7 @@ export default function StudentCoursePage() {
                     </div>
                   ))}
 
-                {nonCtAssessments.map((a) => {
+                {visibleNonCtAssessments.map((a) => {
                   const key = a.id || a._id;
 
                   return (

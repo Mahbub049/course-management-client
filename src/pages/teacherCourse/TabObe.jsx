@@ -672,16 +672,35 @@ const saveSetup = async () => {
   const handleDownloadExcel = async () => {
     try {
       const payload = await getObeExportPayload(courseId);
-      const fileName = `${payload.course?.code || "Course"}_OBE_${payload.course?.section || "Section"
-        }_${payload.course?.semester || "Semester"}_${payload.course?.year || "Year"}.xlsx`;
+      const safePart = (value, fallback) =>
+        String(value || fallback)
+          .trim()
+          .replace(/[\\/:*?"<>|]+/g, "-");
+      const fileName = `${safePart(payload.course?.code, "Course")}_OBE_${safePart(
+        payload.course?.section,
+        "Section"
+      )}_${safePart(payload.course?.semester, "Semester")}_${safePart(
+        payload.course?.year,
+        "Year"
+      )}.xlsm`;
 
-      exportObeWorkbook(payload, fileName);
-      Swal.fire("Done", "OBE Excel exported successfully.", "success");
+      const { blob, warnings = [] } = await exportObeWorkbook(payload);
+      saveAs(blob, fileName);
+
+      Swal.fire(
+        warnings.length ? "Exported with warning" : "Done",
+        warnings.length
+          ? `The official BUBT workbook was exported. ${warnings.join(" ")}`
+          : "The official BUBT OBE workbook was exported successfully.",
+        warnings.length ? "warning" : "success"
+      );
     } catch (error) {
       console.error(error);
       Swal.fire(
         "Error",
-        error?.response?.data?.message || "Failed to export OBE Excel.",
+        error?.message ||
+          error?.response?.data?.message ||
+          "Failed to export the BUBT OBE workbook.",
         "error"
       );
     }

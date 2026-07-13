@@ -15,6 +15,7 @@
     "file-saver": "^2.0.5",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
+    "jszip": "^3.10.1",
     "multer": "^2.1.1",
     "pdfjs-dist": "^5.7.284",
     "react": "^19.2.0",
