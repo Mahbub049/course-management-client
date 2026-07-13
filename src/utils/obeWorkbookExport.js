@@ -6,6 +6,7 @@ import {
 } from "./obeTemplateLayout";
 
 const MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+const CHART_NS = "http://schemas.openxmlformats.org/drawingml/2006/chart";
 const REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships";
 const CORE_NS = "http://purl.org/dc/terms/";
@@ -27,6 +28,7 @@ const numberValue = (value) => {
 };
 
 const round2 = (value) => Math.round(numberValue(value) * 100) / 100;
+const round6 = (value) => Math.round(numberValue(value) * 1000000) / 1000000;
 
 const columnNumber = (letters) => {
   let result = 0;
@@ -302,7 +304,29 @@ const getStudentIdKeys = (student = {}) =>
     .filter(Boolean)
     .map(String);
 
-const getSlotMark = (markMap, student, slot) => {
+const getContinuousAssessmentData = (payload = {}) =>
+  payload.continuousAssessment || payload.output?.continuousAssessment || null;
+
+const buildContinuousMarkMap = (continuousAssessment) => {
+  const map = new Map();
+  (continuousAssessment?.students || []).forEach((row) => {
+    const studentId = safeText(row.studentId || row.student || row._id, "");
+    if (studentId) map.set(String(studentId), row);
+  });
+  return map;
+};
+
+const getSlotMark = (markMap, continuousMarkMap, student, slot) => {
+  if (slot?.isPlaceholder || slot?.source === "placeholder") return null;
+
+  if (slot?.source === "courseContinuousAssessment") {
+    for (const studentId of getStudentIdKeys(student)) {
+      const row = continuousMarkMap.get(studentId);
+      if (row) return round2(row[slot.continuousKey]);
+    }
+    return 0;
+  }
+
   for (const studentId of getStudentIdKeys(student)) {
     const entries = markMap.get(`${studentId}__${slot.blueprintId}`);
     if (entries?.has(slot.itemKey)) return round2(entries.get(slot.itemKey));
@@ -389,9 +413,15 @@ const getTeacherName = (payload = {}) =>
 
 const calculateWorkbookData = (payload, layout, courseOutcomes, programOutcomes) => {
   const markMap = buildMarkMap(payload.marks || []);
-  const rawStudents = payload.output?.students?.length
-    ? payload.output.students
-    : payload.students || [];
+  const continuousMarkMap = buildContinuousMarkMap(
+    getContinuousAssessmentData(payload)
+  );
+  // The top-level students array is built directly from current enrollments.
+  // Prefer it over any calculated output snapshot so removed students cannot
+  // reappear in the generated workbook.
+  const rawStudents = Array.isArray(payload.students)
+    ? payload.students
+    : payload.output?.students || [];
   const students = [...rawStudents].sort(naturalStudentSort);
   const threshold = numberValue(
     payload.output?.thresholdPercent ?? payload.setup?.thresholdPercent ?? 40
@@ -406,7 +436,10 @@ const calculateWorkbookData = (payload, layout, courseOutcomes, programOutcomes)
   const studentRows = students.map((student) => {
     const slotMarks = new Map();
     layout.allSlots.forEach((slot) => {
-      slotMarks.set(`${slot.blueprintId}__${slot.itemKey}`, getSlotMark(markMap, student, slot));
+      slotMarks.set(
+        `${slot.blueprintId}__${slot.itemKey}`,
+        getSlotMark(markMap, continuousMarkMap, student, slot)
+      );
     });
 
     const sumGroup = (slots) =>
@@ -431,7 +464,7 @@ const calculateWorkbookData = (payload, layout, courseOutcomes, programOutcomes)
         }, 0)
       );
       const maxMarks = round2(coMax.get(co.code));
-      const percent = maxMarks > 0 ? round2((obtained * 100) / maxMarks) : 0;
+      const percent = maxMarks > 0 ? round6((obtained * 100) / maxMarks) : 0;
       return {
         ...co,
         obtained,
@@ -454,7 +487,7 @@ const calculateWorkbookData = (payload, layout, courseOutcomes, programOutcomes)
       const relatedRows = coRows.filter((row) => relatedCodes.includes(row.code) && row.maxMarks > 0);
       const denominator = relatedRows.reduce((sum, row) => sum + row.maxMarks, 0);
       const weightedPercent = denominator
-        ? round2(
+        ? round6(
             relatedRows.reduce((sum, row) => sum + row.percent * row.maxMarks, 0) /
               denominator
           )
@@ -491,7 +524,7 @@ const calculateWorkbookData = (payload, layout, courseOutcomes, programOutcomes)
       ...co,
       maxMarks: round2(coMax.get(co.code)),
       attainedCount,
-      attainmentPercent: totalStudents ? round2((attainedCount * 100) / totalStudents) : 0,
+      attainmentPercent: totalStudents ? round6((attainedCount * 100) / totalStudents) : 0,
     };
   });
 
@@ -505,7 +538,7 @@ const calculateWorkbookData = (payload, layout, courseOutcomes, programOutcomes)
       attainedCount,
       attainmentPercent:
         mappedRows.length && totalStudents
-          ? round2((attainedCount * 100) / totalStudents)
+          ? round6((attainedCount * 100) / totalStudents)
           : null,
     };
   });
@@ -566,7 +599,12 @@ const populateGradeSheet = (document, payload, layout, workbookData, courseOutco
       const slot = layout.slots[group][index];
       writeCellValue(document, cells, `${column}27`, slot?.label || "");
       writeCellValue(document, cells, `${column}28`, slot?.coCode || "");
-      writeCellValue(document, cells, `${column}29`, slot ? round2(slot.marks) : "");
+      writeCellValue(
+        document,
+        cells,
+        `${column}29`,
+        slot && !slot.isPlaceholder ? round2(slot.marks) : ""
+      );
     });
   });
 
@@ -646,9 +684,14 @@ const populateGradeSheet = (document, payload, layout, workbookData, courseOutco
       columns.forEach((column, index) => {
         const slot = layout.slots[group][index];
         const mark = slot
-          ? studentData.slotMarks.get(`${slot.blueprintId}__${slot.itemKey}`) || 0
-          : 0;
-        writeCellValue(document, cells, `${column}${row}`, slot ? round2(mark) : "");
+          ? studentData.slotMarks.get(`${slot.blueprintId}__${slot.itemKey}`)
+          : null;
+        writeCellValue(
+          document,
+          cells,
+          `${column}${row}`,
+          slot && !slot.isPlaceholder ? round2(mark) : ""
+        );
       });
     });
 
@@ -697,7 +740,7 @@ const populateGradeSheet = (document, payload, layout, workbookData, courseOutco
       document,
       cells,
       `H${row}`,
-      workbookData.totalStudents ? round2((count * 100) / workbookData.totalStudents) : 0
+      workbookData.totalStudents ? round6((count * 100) / workbookData.totalStudents) : 0
     );
   });
   writeCellValue(document, cells, "D119", workbookData.totalStudents);
@@ -706,11 +749,12 @@ const populateGradeSheet = (document, payload, layout, workbookData, courseOutco
   for (let index = 0; index < OBE_TEMPLATE_LIMITS.courseOutcomes; index += 1) {
     const attainment = workbookData.coAttainment[index];
     const totalColumn = ["AN", "AO", "AP", "AQ", "AR", "AS"][index];
+    const hasAttainedStudent = !!(attainment && attainment.attainedCount > 0);
     writeCellValue(
       document,
       cells,
       `${totalColumn}102`,
-      attainment && attainment.attainedCount > 0
+      hasAttainedStudent
         ? attainment.attainedCount >
           (workbookData.totalStudentsPresent * workbookData.threshold) / 100
           ? "YES"
@@ -721,7 +765,7 @@ const populateGradeSheet = (document, payload, layout, workbookData, courseOutco
       document,
       cells,
       `${totalColumn}103`,
-      attainment ? attainment.attainmentPercent : "-"
+      hasAttainedStudent ? attainment.attainmentPercent : "-"
     );
   }
 
@@ -742,9 +786,53 @@ const populateGradeSheet = (document, payload, layout, workbookData, courseOutco
       document,
       cells,
       `${column}103`,
-      attainment?.mapped ? attainment.attainmentPercent : "-"
+      attainment?.mapped && attainment.attainedCount > 0
+        ? attainment.attainmentPercent
+        : "-"
     );
   });
+};
+
+const removeCheckboxMacroAssignments = (mappingDocument) => {
+  Array.from(mappingDocument.getElementsByTagName("*")).forEach((node) => {
+    if (node.localName !== "control") return;
+
+    const controlName = safeText(node.getAttribute("name"), "");
+    if (!/^check\s*box/i.test(controlName)) return;
+
+    const controlProperties = childByLocalName(node, "controlPr");
+    if (controlProperties?.hasAttribute("macro")) {
+      controlProperties.removeAttribute("macro");
+    }
+  });
+};
+
+const removeCheckboxVmlMacros = async (zip) => {
+  const vmlFiles = zip.file(/^xl\/drawings\/vmlDrawing\d+\.vml$/i);
+
+  await Promise.all(
+    vmlFiles.map(async (vmlFile) => {
+      const vmlText = await vmlFile.async("text");
+      const vmlDocument = parseXml(vmlText, vmlFile.name);
+      let changed = false;
+
+      Array.from(vmlDocument.getElementsByTagName("*")).forEach((node) => {
+        if (node.localName !== "ClientData") return;
+        if (safeText(node.getAttribute("ObjectType"), "").toLowerCase() !== "checkbox") {
+          return;
+        }
+
+        Array.from(node.childNodes).forEach((child) => {
+          if (child.nodeType === 1 && child.localName === "FmlaMacro") {
+            node.removeChild(child);
+            changed = true;
+          }
+        });
+      });
+
+      if (changed) zip.file(vmlFile.name, serializeXml(vmlDocument));
+    })
+  );
 };
 
 const populateMappingSheet = (document, payload, courseOutcomes, programOutcomes) => {
@@ -802,7 +890,9 @@ const populateCourseReport = (document, payload, workbookData, courseOutcomes, p
       document,
       cells,
       `${column}14`,
-      workbookData.coAttainment[index]?.attainmentPercent ?? "-"
+      workbookData.coAttainment[index]?.attainedCount > 0
+        ? workbookData.coAttainment[index].attainmentPercent
+        : "-"
     );
   });
 
@@ -810,13 +900,27 @@ const populateCourseReport = (document, payload, workbookData, courseOutcomes, p
   firstPoColumns.forEach((column, index) => {
     writeCellValue(document, cells, `${column}16`, programOutcomes[index]?.code || `PO${index + 1}`);
     const attainment = workbookData.poAttainment[index];
-    writeCellValue(document, cells, `${column}17`, attainment?.mapped ? attainment.attainmentPercent : "-");
+    writeCellValue(
+      document,
+      cells,
+      `${column}17`,
+      attainment?.mapped && attainment.attainedCount > 0
+        ? attainment.attainmentPercent
+        : "-"
+    );
   });
   firstPoColumns.forEach((column, index) => {
     const poIndex = index + 6;
     writeCellValue(document, cells, `${column}18`, programOutcomes[poIndex]?.code || `PO${poIndex + 1}`);
     const attainment = workbookData.poAttainment[poIndex];
-    writeCellValue(document, cells, `${column}19`, attainment?.mapped ? attainment.attainmentPercent : "-");
+    writeCellValue(
+      document,
+      cells,
+      `${column}19`,
+      attainment?.mapped && attainment.attainedCount > 0
+        ? attainment.attainmentPercent
+        : "-"
+    );
   });
 
   writeCellValue(document, cells, "B56", "", { preserveFormula: false });
@@ -827,6 +931,162 @@ const populateCourseReport = (document, payload, workbookData, courseOutcomes, p
     "B67",
     safeText(setup.notes || payload.output?.notes, ""),
     { preserveFormula: false }
+  );
+};
+
+const normalizeChartFormula = (formula) =>
+  safeText(formula, "")
+    .replace(/[\s']/g, "")
+    .toUpperCase();
+
+const createChartElement = (document, localName) =>
+  document.createElementNS(CHART_NS, `c:${localName}`);
+
+const replaceChartCachePoints = (document, cache, values, { numeric = false } = {}) => {
+  if (!cache) return;
+
+  Array.from(cache.childNodes).forEach((node) => {
+    if (node.nodeType === 1 && ["ptCount", "pt"].includes(node.localName)) {
+      cache.removeChild(node);
+    }
+  });
+
+  const extList = childByLocalName(cache, "extLst");
+  const pointCount = createChartElement(document, "ptCount");
+  pointCount.setAttribute("val", String(values.length));
+  cache.insertBefore(pointCount, extList || null);
+
+  values.forEach((rawValue, index) => {
+    const point = createChartElement(document, "pt");
+    point.setAttribute("idx", String(index));
+
+    const value = createChartElement(document, "v");
+    value.textContent = numeric
+      ? String(round6(numberValue(rawValue)))
+      : safeText(rawValue, "");
+
+    point.appendChild(value);
+    cache.insertBefore(point, extList || null);
+  });
+};
+
+const updateChartReferenceCache = (document, reference, values, { numeric = false } = {}) => {
+  const cache = childByLocalName(reference, numeric ? "numCache" : "strCache");
+  replaceChartCachePoints(document, cache, values, { numeric });
+};
+
+const chartCacheValues = (formula, workbookData, courseOutcomes, programOutcomes) => {
+  const normalized = normalizeChartFormula(formula);
+  const gradeLabels = workbookData.summaryLabels.slice(0, 10);
+
+  if (normalized.includes("GRADESHEET!$B$108:$B$117")) {
+    return { numeric: false, values: gradeLabels };
+  }
+
+  if (normalized.includes("GRADESHEET!$D$108:$D$117")) {
+    return {
+      numeric: true,
+      values: gradeLabels.map((label) => workbookData.gradeCounts[label] || 0),
+    };
+  }
+
+  if (normalized.includes("GRADESHEET!$H$108:$H$117")) {
+    return {
+      numeric: true,
+      values: gradeLabels.map((label) => {
+        const count = workbookData.gradeCounts[label] || 0;
+        return workbookData.totalStudents
+          ? round6((count * 100) / workbookData.totalStudents)
+          : 0;
+      }),
+    };
+  }
+
+  if (normalized.includes("COURSEREPORT!$C$13:$F$13")) {
+    return {
+      numeric: false,
+      values: Array.from(
+        { length: 4 },
+        (_, index) => courseOutcomes[index]?.code || `CO${index + 1}`
+      ),
+    };
+  }
+
+  if (normalized.includes("COURSEREPORT!$C$14:$F$14")) {
+    return {
+      numeric: true,
+      values: Array.from(
+        { length: 4 },
+        (_, index) => workbookData.coAttainment[index]?.attainmentPercent || 0
+      ),
+    };
+  }
+
+  const isPoCategoryRange =
+    normalized.includes("COURSEREPORT!$C$16:$H$16") &&
+    normalized.includes("COURSEREPORT!$C$18:$H$18");
+  if (isPoCategoryRange) {
+    return {
+      numeric: false,
+      values: Array.from(
+        { length: 12 },
+        (_, index) => programOutcomes[index]?.code || `PO${index + 1}`
+      ),
+    };
+  }
+
+  const isPoValueRange =
+    normalized.includes("COURSEREPORT!$C$17:$H$17") &&
+    normalized.includes("COURSEREPORT!$C$19:$H$19");
+  if (isPoValueRange) {
+    return {
+      numeric: true,
+      values: Array.from({ length: 12 }, (_, index) => {
+        const attainment = workbookData.poAttainment[index];
+        return attainment?.mapped ? attainment.attainmentPercent : 0;
+      }),
+    };
+  }
+
+  return null;
+};
+
+const refreshChartCaches = async (zip, workbookData, courseOutcomes, programOutcomes) => {
+  const chartFiles = zip.file(/^xl\/charts\/chart\d+\.xml$/i);
+
+  await Promise.all(
+    chartFiles.map(async (chartFile) => {
+      const chartText = await chartFile.async("text");
+      const chartDocument = parseXml(chartText, chartFile.name);
+      let changed = false;
+
+      [
+        ["strRef", false],
+        ["numRef", true],
+      ].forEach(([referenceName, numeric]) => {
+        Array.from(
+          chartDocument.getElementsByTagNameNS(CHART_NS, referenceName)
+        ).forEach((reference) => {
+          const formulaNode = childByLocalName(reference, "f");
+          const cacheData = chartCacheValues(
+            formulaNode?.textContent,
+            workbookData,
+            courseOutcomes,
+            programOutcomes
+          );
+
+          if (!cacheData || cacheData.numeric !== numeric) return;
+          updateChartReferenceCache(chartDocument, reference, cacheData.values, {
+            numeric,
+          });
+          changed = true;
+        });
+      });
+
+      if (changed) {
+        zip.file(chartFile.name, serializeXml(chartDocument));
+      }
+    })
   );
 };
 
@@ -857,12 +1117,28 @@ export const exportObeWorkbook = async (payload = {}) => {
   const courseOutcomes = getCourseOutcomes(payload);
   const programOutcomes = getProgramOutcomes(payload);
   const blueprints = payload.blueprints || payload.output?.blueprints || [];
-  const layout = buildObeTemplateLayout(blueprints);
+  const continuousAssessment = getContinuousAssessmentData(payload);
+  const courseType = safeText(
+    payload.course?.courseType || payload.course?.type,
+    "theory"
+  ).toLowerCase();
+  const needsFixedContinuousAssessment = courseType !== "lab";
+  const useFixedContinuousAssessment =
+    continuousAssessment?.enabled === true;
+  const layout = buildObeTemplateLayout(blueprints, {
+    useFixedContinuousAssessment,
+  });
 
   const errors = [...layout.errors];
-  const rawStudents = payload.output?.students?.length
-    ? payload.output.students
-    : payload.students || [];
+  const rawStudents = Array.isArray(payload.students)
+    ? payload.students
+    : payload.output?.students || [];
+
+  if (needsFixedContinuousAssessment && !useFixedContinuousAssessment) {
+    errors.push(
+      "Continuous-assessment data is missing from the export response. Update the supplied server files so AT (5), CT (15), and ASM (10) can be fetched from the course marks."
+    );
+  }
 
   if (!courseOutcomes.length) errors.push("No course outcomes were found in the OBE setup.");
   if (courseOutcomes.length > OBE_TEMPLATE_LIMITS.courseOutcomes) {
@@ -943,6 +1219,7 @@ export const exportObeWorkbook = async (payload = {}) => {
     courseOutcomes.slice(0, OBE_TEMPLATE_LIMITS.courseOutcomes),
     programOutcomes.slice(0, OBE_TEMPLATE_LIMITS.programOutcomes)
   );
+  removeCheckboxMacroAssignments(mappingDocument);
 
   setWorkbookRecalculation(workbookDocument);
 
@@ -950,6 +1227,13 @@ export const exportObeWorkbook = async (payload = {}) => {
   zip.file(sheetMap.get("Course Report"), serializeXml(reportDocument));
   zip.file(sheetMap.get("CO-PO Mapping"), serializeXml(mappingDocument));
   zip.file(workbookPath, serializeXml(workbookDocument));
+  await removeCheckboxVmlMacros(zip);
+  await refreshChartCaches(
+    zip,
+    workbookData,
+    courseOutcomes.slice(0, OBE_TEMPLATE_LIMITS.courseOutcomes),
+    programOutcomes.slice(0, OBE_TEMPLATE_LIMITS.programOutcomes)
+  );
   await updateModifiedDate(zip);
 
   const blob = await zip.generateAsync({

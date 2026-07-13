@@ -13,6 +13,17 @@ export const OBE_TEMPLATE_COLUMNS = {
   final: ["P", "Q", "R", "S", "T", "U"],
 };
 
+export const OBE_FIXED_CONTINUOUS_ASSESSMENT = [
+  { continuousKey: "attendance", label: "AT", marks: 5 },
+  // The official workbook keeps the second CA column reserved for QT.
+  // It stays visually blank when the course has no separate quiz total.
+  { continuousKey: "quiz", label: "QT", marks: 0, isPlaceholder: true },
+  { continuousKey: "ct", label: "CT", marks: 15 },
+  { continuousKey: "assignment", label: "ASM", marks: 10 },
+  // The fifth CA column is an unused/reserved slot in the supplied template.
+  { continuousKey: "reserved", label: "", marks: 0, isPlaceholder: true },
+];
+
 const toNumber = (value) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -137,7 +148,9 @@ const groupKeyForType = (type) => {
   return "unsupported";
 };
 
-export const buildObeTemplateLayout = (blueprints = []) => {
+export const buildObeTemplateLayout = (blueprints = [], options = {}) => {
+  const useFixedContinuousAssessment =
+    options?.useFixedContinuousAssessment === true;
   const sorted = sortObeBlueprints(blueprints);
 
   const semanticCounts = sorted.reduce((acc, blueprint) => {
@@ -157,6 +170,10 @@ export const buildObeTemplateLayout = (blueprints = []) => {
     const group = groupKeyForType(type);
     const blueprintName = getBlueprintName(blueprint);
     const blueprintId = getBlueprintId(blueprint);
+
+    if (useFixedContinuousAssessment && group === "ca") {
+      return;
+    }
 
     if (group === "unsupported") {
       unsupported.push(blueprintName);
@@ -213,6 +230,24 @@ export const buildObeTemplateLayout = (blueprints = []) => {
       });
     });
   });
+
+  if (useFixedContinuousAssessment) {
+    slots.ca = OBE_FIXED_CONTINUOUS_ASSESSMENT.map((slot) => ({
+      ...slot,
+      group: "ca",
+      source: slot.isPlaceholder
+        ? "placeholder"
+        : "courseContinuousAssessment",
+      blueprint: null,
+      blueprintId: "",
+      blueprintName: slot.label,
+      type: slot.continuousKey,
+      item: null,
+      itemKey: slot.continuousKey,
+      itemLabel: slot.label,
+      coCode: "",
+    }));
+  }
 
   Object.entries(OBE_TEMPLATE_COLUMNS).forEach(([group, columns]) => {
     slots[group] = slots[group].map((slot, index) => ({
