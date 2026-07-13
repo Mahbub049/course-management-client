@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "target": "bubt",
     "public": "dist",
     "ignore": [
       "firebase.json",

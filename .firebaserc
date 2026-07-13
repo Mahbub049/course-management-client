@@ -1,5 +1,15 @@
 {
   "projects": {
     "default": "bubt-courses"
-  }
+  },
+  "targets": {
+    "bubt-courses": {
+      "hosting": {
+        "bubt": [
+          "bubt"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

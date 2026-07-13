@@ -372,6 +372,63 @@ export default function StudentCoursePage() {
     return assessments.filter((a) => !isCtAssessment(a?.name));
   }, [assessments, courseType]);
 
+
+  const hybridExamTotals = useMemo(() => {
+    if (courseType !== "hybrid") return [];
+
+    const findPart = (exam, part) =>
+      assessments.find((assessment) => {
+        const name = String(assessment?.name || "").toLowerCase();
+        return name.includes(exam) && name.includes(part);
+      });
+
+    const buildGroup = (key, label, exam, fullMarks) => {
+      const theory = findPart(exam, "theory");
+      const lab = findPart(exam, "lab");
+
+      if (!theory && !lab) return null;
+
+      const parts = [
+        theory
+          ? {
+              key: theory.id || theory._id || `${key}-theory`,
+              label: `Theory ${label}`,
+              fullMarks: safeNum(theory.fullMarks, exam === "mid" ? 20 : 30),
+              obtainedMarks: theory.obtainedMarks,
+            }
+          : null,
+        lab
+          ? {
+              key: lab.id || lab._id || `${key}-lab`,
+              label: `Lab ${label}`,
+              fullMarks: safeNum(lab.fullMarks, 10),
+              obtainedMarks: lab.obtainedMarks,
+            }
+          : null,
+      ].filter(Boolean);
+
+      const publishedParts = parts.filter((part) => part.obtainedMarks != null);
+      const obtainedMarks = publishedParts.reduce(
+        (sum, part) => sum + safeNum(part.obtainedMarks, 0),
+        0
+      );
+
+      return {
+        key,
+        label: `${label} Total`,
+        fullMarks,
+        obtainedMarks,
+        isComplete: publishedParts.length === parts.length && parts.length === 2,
+        parts,
+      };
+    };
+
+    return [
+      buildGroup("hybrid-mid-total", "Mid", "mid", 30),
+      buildGroup("hybrid-final-total", "Final", "final", 40),
+    ].filter(Boolean);
+  }, [assessments, courseType]);
+
   const breakdownMap = useMemo(() => {
     const map = {};
 
@@ -876,6 +933,51 @@ export default function StudentCoursePage() {
                       </td>
                     </tr>
 
+                    {courseType === "hybrid" &&
+                      hybridExamTotals.map((group) => (
+                        <tr
+                          key={group.key}
+                          className="bg-emerald-50/50 dark:bg-emerald-500/5"
+                        >
+                          <td className="px-6 py-5">
+                            <div className="font-bold text-slate-900 dark:text-white">
+                              {group.label}
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {group.parts.map((part) => (
+                                <span
+                                  key={part.key}
+                                  className="inline-flex rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                                >
+                                  {part.label}: {part.obtainedMarks == null ? "Not published" : round2(part.obtainedMarks)} / {part.fullMarks}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+
+                          <td className="px-6 py-5 font-bold text-slate-900 dark:text-white">
+                            {group.fullMarks}
+                          </td>
+
+                          <td className="px-6 py-5">
+                            <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-bold text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+                              {round2(group.obtainedMarks)} / {group.fullMarks}
+                            </span>
+                            {!group.isComplete && (
+                              <div className="mt-1 text-xs font-medium text-amber-600 dark:text-amber-300">
+                                Partial total — all breakdown marks are not published yet
+                              </div>
+                            )}
+                          </td>
+
+                          <td className="px-6 py-5 text-right">
+                            <span className="text-xs font-semibold text-slate-400 dark:text-slate-500">
+                              Auto calculated
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+
                     {courseType === "lab" && regularLabAssessments.length > 0 && (
                       <tr className="bg-indigo-50/30 dark:bg-indigo-500/5">
                         <td colSpan={4} className="px-6 py-4">
@@ -1125,6 +1227,68 @@ export default function StudentCoursePage() {
                     </span>
                   </div>
                 </div>
+
+                {courseType === "hybrid" &&
+                  hybridExamTotals.map((group) => (
+                    <div
+                      key={group.key}
+                      className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 shadow-sm dark:border-emerald-500/20 dark:bg-emerald-500/10"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="font-bold text-slate-900 dark:text-white">
+                            {group.label}
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Auto calculated from theory and lab marks
+                          </div>
+                        </div>
+                        <div className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm font-bold text-emerald-700 dark:border-emerald-500/20 dark:bg-slate-900 dark:text-emerald-300">
+                          {group.fullMarks}
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex items-end justify-between gap-3">
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                            Your Total
+                          </div>
+                          <div className="mt-1 text-2xl font-black text-emerald-700 dark:text-emerald-300">
+                            {round2(group.obtainedMarks)}
+                            <span className="ml-1 text-sm font-bold text-slate-400">
+                              /{group.fullMarks}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="inline-flex items-center rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-500/20 dark:bg-slate-900 dark:text-emerald-300">
+                          Auto calculated
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {group.parts.map((part) => (
+                          <div
+                            key={part.key}
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900"
+                          >
+                            <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                              {part.label}
+                            </div>
+                            <div className="mt-1 font-bold text-slate-900 dark:text-white">
+                              {part.obtainedMarks == null ? "Not published" : round2(part.obtainedMarks)}
+                              <span className="ml-1 text-xs text-slate-400">/{part.fullMarks}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {!group.isComplete && (
+                        <div className="mt-3 text-xs font-medium text-amber-600 dark:text-amber-300">
+                          Partial total — all breakdown marks are not published yet.
+                        </div>
+                      )}
+                    </div>
+                  ))}
 
                 {nonCtAssessments.map((a) => {
                   const key = a.id || a._id;
