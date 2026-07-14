@@ -641,7 +641,7 @@ function advancedAssessmentItems(assessment) {
         ? "submission"
         : String(component?.sourceType || "manual");
       const sectionLabels = {
-        submission: "Submission Sync",
+        submission: "Synced Marks",
         project: "Project",
         exam: "Lab Exam",
         viva: "Viva",
@@ -1064,7 +1064,7 @@ function AdvancedBreakdownModal({
                             </div>
                             <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                               Group: {item.group} • Full marks: {item.fullMarks}
-                              {item.readOnly ? " • Synced from Submissions" : ""}
+                              {item.readOnly ? " • Synced automatically" : ""}
                             </div>
                           </div>
 
@@ -1084,7 +1084,7 @@ function AdvancedBreakdownModal({
                             onBlur={() => onSubMarkBlur(item.key, item.fullMarks)}
                             disabled={item.readOnly}
                             className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold text-slate-900 shadow-sm outline-none transition focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:disabled:bg-slate-800"
-                            placeholder={item.readOnly ? "Use Sync Marks in Submissions" : "Enter marks"}
+                            placeholder={item.readOnly ? "Managed by Marks Sync" : "Enter marks"}
                           />
                         </div>
                       </div>
@@ -1520,6 +1520,8 @@ export default function TabMarks({ courseId, course }) {
       (a) => String(a._id) === String(assessmentId)
     );
 
+    if (assessment?.syncLocked) return;
+
     if (assessment && isAttendanceAssessment(assessment)) {
       setAttMarksMap((prev) => ({
         ...prev,
@@ -1563,6 +1565,8 @@ export default function TabMarks({ courseId, course }) {
     const assessment = assessments.find(
       (a) => String(a._id) === String(assessmentId)
     );
+
+    if (assessment?.syncLocked) return;
 
     const normalizedNumber = normalized === "" ? 0 : toHalfMarkNumber(normalized);
     const nextCell = {
@@ -2854,6 +2858,11 @@ export default function TabMarks({ courseId, course }) {
                               <div className="text-[11px] font-medium normal-case text-slate-400 dark:text-slate-500">
                                 Full marks: {a.fullMarks}
                               </div>
+                              {a.syncLocked && (
+                                <div className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold normal-case text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+                                  Managed by Marks Sync
+                                </div>
+                              )}
                               <button
                                 onClick={() => handlePublish(a)}
                                 disabled={publishingAssessmentId === a._id}
@@ -2922,6 +2931,11 @@ export default function TabMarks({ courseId, course }) {
                               <div className="text-[11px] font-medium normal-case text-slate-400 dark:text-slate-500">
                                 Full marks: {a.fullMarks}
                               </div>
+                              {a.syncLocked && (
+                                <div className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold normal-case text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+                                  Managed by Marks Sync
+                                </div>
+                              )}
                               {a?.structureType === "lab_final" && (
                                 <div className="rounded-full border border-fuchsia-200 bg-fuchsia-50 px-2 py-1 text-[11px] font-semibold normal-case text-fuchsia-700 dark:border-fuchsia-500/20 dark:bg-fuchsia-500/10 dark:text-fuchsia-300">
                                   Breakdown entry enabled
@@ -3007,11 +3021,11 @@ export default function TabMarks({ courseId, course }) {
                                   <input
                                     type="text"
                                     inputMode="decimal"
-                                    disabled={isAttendanceCol}
+                                    disabled={isAttendanceCol || Boolean(a.syncLocked)}
                                     className={[
                                       "h-11 w-24 rounded-xl border px-3 text-sm shadow-sm transition",
                                       "focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500",
-                                      isAttendanceCol
+                                      isAttendanceCol || a.syncLocked
                                         ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
                                         : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
                                     ].join(" ")}
@@ -3124,11 +3138,14 @@ export default function TabMarks({ courseId, course }) {
                                 <input
                                   type="text"
                                   inputMode="decimal"
-                                  disabled={false}
+                                  disabled={Boolean(a.syncLocked)}
+                                  title={a.syncLocked ? "Managed by Marks Sync" : ""}
                                   className={[
                                     "h-11 w-24 rounded-xl border px-3 text-sm shadow-sm transition",
                                     "focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500",
-                                    "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
+                                    a.syncLocked
+                                      ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                                      : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
                                   ].join(" ")}
                                   value={cell == null ? "" : getMarkDisplayValue(cell)}
                                   onChange={(e) =>

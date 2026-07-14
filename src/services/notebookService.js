@@ -29,3 +29,18 @@ export const refreshNotebookStudents = async (noteId) => {
   const res = await api.post(`/notebook/${noteId}/refresh-students`);
   return res.data;
 };
+
+export const fetchNotebookMarkSync = async (noteId) => {
+  const res = await api.get(`/notebook/${noteId}/mark-sync`);
+  return res.data;
+};
+
+export const saveNotebookMarkSync = async (noteId, mappings) => {
+  const res = await api.put(`/notebook/${noteId}/mark-sync`, { mappings });
+  return res.data;
+};
+
+export const syncNotebookMarks = async (noteId) => {
+  const res = await api.post(`/notebook/${noteId}/sync-marks`);
+  return res.data;
+};

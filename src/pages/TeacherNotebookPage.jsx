@@ -12,6 +12,9 @@ import {
   fetchNotebookNotes,
   updateNotebookNote,
   refreshNotebookStudents,
+  fetchNotebookMarkSync,
+  saveNotebookMarkSync,
+  syncNotebookMarks,
 } from "../services/notebookService";
 
 const TYPE_LABELS = {
@@ -1754,6 +1757,8 @@ function EvaluationEditor({ note, onChange }) {
         </div>
       </div>
 
+      <NotebookMarksSyncPanel note={note} />
+
       <div className="overflow-hidden rounded-3xl border border-slate-200 dark:border-slate-800">
         <div className="max-h-[70vh] overflow-auto overscroll-contain">
           <div className="sticky left-0 top-0 z-40 border-b border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
@@ -1812,6 +1817,486 @@ function EvaluationEditor({ note, onChange }) {
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+
+function NotebookMarksSyncPanel({ note }) {
+  const noteId = getNoteId(note);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [config, setConfig] = useState({
+    sourceOptions: [],
+    targetAssessments: [],
+    mappings: [],
+    locks: [],
+  });
+  const [mappings, setMappings] = useState([]);
+
+  const loadSyncConfig = async () => {
+    if (!noteId) return;
+    try {
+      setLoading(true);
+      const data = await fetchNotebookMarkSync(noteId);
+      const normalized = {
+        sourceOptions: Array.isArray(data?.sourceOptions) ? data.sourceOptions : [],
+        targetAssessments: Array.isArray(data?.targetAssessments)
+          ? data.targetAssessments
+          : [],
+        mappings: Array.isArray(data?.mappings) ? data.mappings : [],
+        locks: Array.isArray(data?.locks) ? data.locks : [],
+      };
+      setConfig(normalized);
+      setMappings(normalized.mappings);
+    } catch (error) {
+      console.error(error);
+      Swal.fire({
+        icon: "error",
+        title: "Could not load Marks Sync",
+        text:
+          error?.response?.data?.message ||
+          "Please save the evaluation sheet and try again.",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!open || !noteId) return;
+    loadSyncConfig();
+    // Reload only when a different sheet is opened. Local mapping edits must remain intact.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, noteId]);
+
+  const getTarget = (targetId) =>
+    config.targetAssessments.find(
+      (assessment) => String(assessment.id || assessment._id) === String(targetId)
+    );
+
+  const targetKey = (targetId, componentKey = "") =>
+    `${String(targetId || "")}:${String(componentKey || "")}`;
+
+  const lockForTarget = (targetId, componentKey = "") =>
+    config.locks.find(
+      (lock) =>
+        targetKey(lock.targetAssessment, lock.targetComponentKey) ===
+        targetKey(targetId, componentKey)
+    );
+
+  const sourceKey = (mapping) =>
+    mapping?.sourceType === "total"
+      ? "total"
+      : `blank:${String(mapping?.sourceFieldId || "")}`;
+
+  const addMapping = () => {
+    const firstSource = config.sourceOptions.find(
+      (source) => !mappings.some((mapping) => sourceKey(mapping) === source.key)
+    );
+
+    setMappings((current) => [
+      ...current,
+      {
+        id: `draft_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        sourceType: firstSource?.sourceType || "blank",
+        sourceFieldId: firstSource?.sourceFieldId || "",
+        sourceLabel: firstSource?.label || "",
+        targetAssessment: "",
+        targetComponentKey: "",
+      },
+    ]);
+  };
+
+  const updateMapping = (mappingId, patch) => {
+    setMappings((current) =>
+      current.map((mapping) =>
+        mapping.id === mappingId ? { ...mapping, ...patch } : mapping
+      )
+    );
+  };
+
+  const removeMapping = (mappingId) => {
+    setMappings((current) =>
+      current.filter((mapping) => mapping.id !== mappingId)
+    );
+  };
+
+  const prepareMappings = () =>
+    mappings.map((mapping) => {
+      const source = config.sourceOptions.find(
+        (option) => option.key === sourceKey(mapping)
+      );
+      const target = getTarget(mapping.targetAssessment);
+      return {
+        ...mapping,
+        sourceType: source?.sourceType || mapping.sourceType || "blank",
+        sourceFieldId: source?.sourceFieldId || mapping.sourceFieldId || "",
+        sourceLabel: source?.label || mapping.sourceLabel || "",
+        targetComponentKey:
+          target?.structureType === "lab_final"
+            ? mapping.targetComponentKey || ""
+            : "",
+      };
+    });
+
+  const validateLocalMappings = (prepared) => {
+    for (const mapping of prepared) {
+      if (
+        mapping.sourceType !== "total" &&
+        !String(mapping.sourceFieldId || "").trim()
+      ) {
+        return "Please select a source field.";
+      }
+      if (!mapping.targetAssessment) return "Please select a target assessment.";
+
+      const target = getTarget(mapping.targetAssessment);
+      if (!target) return "One selected target assessment could not be found.";
+      if (
+        target.structureType === "lab_final" &&
+        !mapping.targetComponentKey
+      ) {
+        return `Please select a component under ${target.name}.`;
+      }
+
+      const lock = lockForTarget(
+        mapping.targetAssessment,
+        mapping.targetComponentKey
+      );
+      if (lock) {
+        return `The selected destination is already connected to ${
+          lock.label || "another mark source"
+        }.`;
+      }
+    }
+
+    const sourceKeys = prepared.map(sourceKey);
+    if (new Set(sourceKeys).size !== sourceKeys.length) {
+      return "The same source field cannot be mapped more than once.";
+    }
+
+    const destinationKeys = prepared.map((mapping) =>
+      targetKey(mapping.targetAssessment, mapping.targetComponentKey)
+    );
+    if (new Set(destinationKeys).size !== destinationKeys.length) {
+      return "The same assessment destination cannot be mapped more than once.";
+    }
+
+    return "";
+  };
+
+  const saveLatestSheet = async () => {
+    if (!noteId) return;
+    await updateNotebookNote(noteId, buildSavePayload(note));
+  };
+
+  const handleSaveMapping = async () => {
+    const prepared = prepareMappings();
+    const localError = validateLocalMappings(prepared);
+    if (localError) {
+      Swal.fire({ icon: "warning", title: "Mapping incomplete", text: localError });
+      return;
+    }
+
+    try {
+      setSaving(true);
+      await saveLatestSheet();
+      const result = await saveNotebookMarkSync(noteId, prepared);
+      const nextConfig = {
+        sourceOptions: Array.isArray(result?.sourceOptions)
+          ? result.sourceOptions
+          : config.sourceOptions,
+        targetAssessments: Array.isArray(result?.targetAssessments)
+          ? result.targetAssessments
+          : config.targetAssessments,
+        mappings: Array.isArray(result?.mappings) ? result.mappings : prepared,
+        locks: Array.isArray(result?.locks) ? result.locks : config.locks,
+      };
+      setConfig(nextConfig);
+      setMappings(nextConfig.mappings);
+
+      const updated = Number(result?.summary?.updatedRecords || 0);
+      const skipped = Number(result?.summary?.skippedRows || 0);
+      Swal.fire({
+        icon: "success",
+        title: "Mapping saved",
+        text: `${updated} student mark record${updated === 1 ? "" : "s"} synchronized${
+          skipped ? `; ${skipped} invalid or unmatched value${skipped === 1 ? "" : "s"} skipped` : ""
+        }.`,
+        timer: 2400,
+        showConfirmButton: false,
+      });
+    } catch (error) {
+      console.error(error);
+      Swal.fire({
+        icon: "error",
+        title: "Could not save mapping",
+        text: error?.response?.data?.message || "Please try again.",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSyncNow = async () => {
+    try {
+      setSyncing(true);
+      await saveLatestSheet();
+      const result = await syncNotebookMarks(noteId);
+      const updated = Number(result?.summary?.updatedRecords || 0);
+      const skipped = Number(result?.summary?.skippedRows || 0);
+
+      Swal.fire({
+        icon: updated > 0 ? "success" : "info",
+        title: updated > 0 ? "Marks synchronized" : "Nothing to synchronize",
+        text: `${result?.message || "Sync completed."}${
+          skipped ? ` ${skipped} invalid or unmatched value${skipped === 1 ? " was" : "s were"} skipped.` : ""
+        }`,
+      });
+    } catch (error) {
+      console.error(error);
+      Swal.fire({
+        icon: "error",
+        title: "Sync failed",
+        text: error?.response?.data?.message || "Please try again.",
+      });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  return (
+    <div className="rounded-3xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-500/20 dark:bg-emerald-500/5">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center justify-between gap-3 text-left"
+      >
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-black text-slate-950 dark:text-white">
+              Marks Sync
+            </h3>
+            <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
+              Roll matched
+            </span>
+          </div>
+          <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-300">
+            Map any numeric blank field or the automatic Total to a regular assessment or a Structured Lab Mid/Final component.
+          </p>
+        </div>
+        <span className="rounded-2xl border border-emerald-200 bg-white px-3 py-2 text-xs font-black text-emerald-700 dark:border-emerald-500/30 dark:bg-slate-950 dark:text-emerald-300">
+          {open ? "Hide" : "Show"}
+        </span>
+      </button>
+
+      {open && (
+        <div className="mt-4 space-y-4">
+          {loading ? (
+            <div className="rounded-2xl border border-emerald-200 bg-white p-5 text-center text-sm font-bold text-slate-500 dark:border-emerald-500/20 dark:bg-slate-950 dark:text-slate-400">
+              Loading assessment destinations...
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-white p-3 dark:border-emerald-500/20 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-xs leading-5 text-slate-600 dark:text-slate-300">
+                  Filled numeric values overwrite the selected destination. Empty cells are ignored. Marks update automatically after the sheet autosaves.
+                </div>
+                <button
+                  type="button"
+                  onClick={addMapping}
+                  className="shrink-0 rounded-2xl border border-emerald-200 px-3 py-2 text-xs font-black text-emerald-700 hover:bg-emerald-50 dark:border-emerald-500/30 dark:text-emerald-300 dark:hover:bg-emerald-500/10"
+                >
+                  + Add Mapping
+                </button>
+              </div>
+
+              {mappings.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-emerald-300 bg-white/70 p-6 text-center dark:border-emerald-500/30 dark:bg-slate-950/70">
+                  <div className="text-sm font-black text-slate-800 dark:text-slate-100">
+                    No mark mapping configured
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Add a mapping to send one sheet field or Total into the course marksheet.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {mappings.map((mapping, index) => {
+                    const target = getTarget(mapping.targetAssessment);
+                    const components = Array.isArray(target?.components)
+                      ? [...target.components].sort(
+                          (a, b) => Number(a.order || 0) - Number(b.order || 0)
+                        )
+                      : [];
+
+                    return (
+                      <div
+                        key={mapping.id}
+                        className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950"
+                      >
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                          <span className="text-xs font-black uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                            Mapping {index + 1}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeMapping(mapping.id)}
+                            className="rounded-xl border border-red-200 px-3 py-1.5 text-xs font-black text-red-600 hover:bg-red-50 dark:border-red-500/30 dark:text-red-300 dark:hover:bg-red-500/10"
+                          >
+                            Remove
+                          </button>
+                        </div>
+
+                        <div className="grid gap-3 lg:grid-cols-3">
+                          <div>
+                            <div className="mb-2 text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                              Source from Sheet
+                            </div>
+                            <select
+                              value={sourceKey(mapping)}
+                              onChange={(event) => {
+                                const selected = config.sourceOptions.find(
+                                  (option) => option.key === event.target.value
+                                );
+                                updateMapping(mapping.id, {
+                                  sourceType: selected?.sourceType || "blank",
+                                  sourceFieldId: selected?.sourceFieldId || "",
+                                  sourceLabel: selected?.label || "",
+                                });
+                              }}
+                              className="input-soft"
+                            >
+                              <option value="">Select source</option>
+                              {config.sourceOptions.map((source) => (
+                                <option key={source.key} value={source.key}>
+                                  {source.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <div className="mb-2 text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                              Target Assessment
+                            </div>
+                            <select
+                              value={mapping.targetAssessment || ""}
+                              onChange={(event) =>
+                                updateMapping(mapping.id, {
+                                  targetAssessment: event.target.value,
+                                  targetComponentKey: "",
+                                })
+                              }
+                              className="input-soft"
+                            >
+                              <option value="">Select assessment</option>
+                              {config.targetAssessments.map((assessment) => {
+                                const assessmentId = assessment.id || assessment._id;
+                                const directLock =
+                                  assessment.structureType === "regular"
+                                    ? lockForTarget(assessmentId, "")
+                                    : null;
+                                const period =
+                                  assessment.structureType === "lab_final"
+                                    ? `Structured Lab ${
+                                        assessment.period === "mid" ? "Mid" : "Final"
+                                      }`
+                                    : "Regular Assessment";
+
+                                return (
+                                  <option
+                                    key={assessmentId}
+                                    value={assessmentId}
+                                    disabled={Boolean(directLock)}
+                                  >
+                                    {assessment.name} — {period} /{assessment.fullMarks}
+                                    {directLock ? ` — Used by ${directLock.label}` : ""}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          </div>
+
+                          <div>
+                            <div className="mb-2 text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                              Target Component
+                            </div>
+                            {target?.structureType === "lab_final" ? (
+                              <select
+                                value={mapping.targetComponentKey || ""}
+                                onChange={(event) =>
+                                  updateMapping(mapping.id, {
+                                    targetComponentKey: event.target.value,
+                                  })
+                                }
+                                className="input-soft"
+                              >
+                                <option value="">Select component</option>
+                                {components.map((component) => {
+                                  const lock = lockForTarget(
+                                    mapping.targetAssessment,
+                                    component.key
+                                  );
+                                  const reservedBy =
+                                    component.sourceType === "project"
+                                      ? "Project Sync"
+                                      : component.sourceType === "submission"
+                                        ? "Submission Sync"
+                                        : "";
+                                  return (
+                                    <option
+                                      key={component.key}
+                                      value={component.key}
+                                      disabled={Boolean(lock || reservedBy)}
+                                    >
+                                      {component.name} /{component.marks}
+                                      {reservedBy
+                                        ? ` — Reserved for ${reservedBy}`
+                                        : lock
+                                          ? ` — Used by ${lock.label}`
+                                          : ""}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            ) : (
+                              <div className="flex h-[46px] items-center rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+                                {target ? "Direct assessment marks" : "Choose assessment first"}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="flex flex-col gap-3 border-t border-emerald-200 pt-4 dark:border-emerald-500/20 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={handleSyncNow}
+                  disabled={syncing || saving || mappings.length === 0}
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-black text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900"
+                >
+                  {syncing ? "Syncing..." : "Sync Now"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveMapping}
+                  disabled={saving || syncing}
+                  className="rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-black text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {saving ? "Saving..." : "Save Mapping & Sync"}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

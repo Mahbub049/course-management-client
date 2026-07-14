@@ -40,6 +40,7 @@ const DEFAULT_ALLOWED_EXTENSIONS = FILE_TYPE_OPTIONS.map((item) => item.value);
 const FIXED_FILE_TYPE_VALUES = new Set(DEFAULT_ALLOWED_EXTENSIONS);
 const EXTENSION_PATTERN = /^[a-z0-9][a-z0-9_+-]{0,15}$/;
 const AUTO_SAVE_DELAY = 700;
+const CREATE_REGULAR_TARGET = "__create_lab_assessment__";
 
 const initialForm = {
   name: "Lab Assessment Submission",
@@ -74,9 +75,22 @@ const TAB_ITEMS = [
   {
     id: "sync",
     label: "Marks Sync",
-    description: "Connect submissions with Lab Mid or Final",
+    description: "Sync to Lab Assessments, Mid, or Final",
   },
 ];
+
+function deriveLabAssessmentName(sourceName = "") {
+  let name = String(sourceName || "")
+    .replace(/\bsubmission\b/gi, " ")
+    .replace(/\b(mid|final|attendance)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .replace(/\s*[-–—:]\s*$/g, "")
+    .trim();
+
+  if (!name) name = "Lab Assessment";
+  if (!/\blab\b/i.test(name)) name = `Lab Assessment - ${name}`;
+  return name;
+}
 
 function sanitizeExtension(value = "") {
   const ext = String(value || "")
@@ -432,6 +446,8 @@ export default function TeacherLabSubmissions({ courseId }) {
         nextDrafts[assessment.id] = {
           targetAssessmentId: assessment?.mapping?.targetAssessmentId || "",
           targetComponentKey: assessment?.mapping?.targetComponentKey || "",
+          createRegularAssessment: false,
+          regularAssessmentName: deriveLabAssessmentName(assessment.name),
         };
       });
       setSyncDrafts(nextDrafts);
@@ -825,6 +841,10 @@ export default function TeacherLabSubmissions({ courseId }) {
           previous[assessmentId]?.targetAssessmentId || "",
         targetComponentKey:
           previous[assessmentId]?.targetComponentKey || "",
+        createRegularAssessment:
+          previous[assessmentId]?.createRegularAssessment || false,
+        regularAssessmentName:
+          previous[assessmentId]?.regularAssessmentName || "Lab Assessment",
         ...patch,
       },
     }));
@@ -834,14 +854,42 @@ export default function TeacherLabSubmissions({ courseId }) {
     const draft = syncDrafts[sourceAssessment.id] || {
       targetAssessmentId: "",
       targetComponentKey: "",
+      createRegularAssessment: false,
+      regularAssessmentName: deriveLabAssessmentName(sourceAssessment.name),
     };
     const current = sourceAssessment.mapping || {
       targetAssessmentId: "",
       targetComponentKey: "",
+      targetType: "",
       isLegacy: false,
     };
 
-    if (draft.targetAssessmentId && !draft.targetComponentKey) {
+    const isCreateRegular =
+      draft.createRegularAssessment === true ||
+      draft.targetAssessmentId === CREATE_REGULAR_TARGET;
+    const actualTargetAssessmentId = isCreateRegular
+      ? ""
+      : draft.targetAssessmentId;
+    const selectedTarget = syncConfig.targets.find(
+      (target) => target.id === actualTargetAssessmentId
+    );
+    const targetComponentKey =
+      selectedTarget?.kind === "structured" ? draft.targetComponentKey : "";
+
+    if (isCreateRegular && !String(draft.regularAssessmentName || "").trim()) {
+      Swal.fire(
+        "Enter assessment name",
+        "Give the new Lab Assessment a name before creating the mapping.",
+        "warning"
+      );
+      return;
+    }
+
+    if (
+      actualTargetAssessmentId &&
+      selectedTarget?.kind === "structured" &&
+      !targetComponentKey
+    ) {
       Swal.fire(
         "Choose component",
         "Select the exact Lab Mid or Lab Final component for this submission.",
@@ -851,25 +899,33 @@ export default function TeacherLabSubmissions({ courseId }) {
     }
 
     const isChanging =
+      isCreateRegular ||
       current.isLegacy === true ||
-      current.targetAssessmentId !== draft.targetAssessmentId ||
-      current.targetComponentKey !== draft.targetComponentKey;
+      current.targetAssessmentId !== actualTargetAssessmentId ||
+      current.targetComponentKey !== targetComponentKey;
 
     if (!isChanging) {
       Swal.fire("No changes", "This mapping is already saved.", "info");
       return;
     }
 
+    const hasNewDestination =
+      isCreateRegular || !!actualTargetAssessmentId;
+
     if (current.targetAssessmentId || current.targetComponentKey) {
       const result = await Swal.fire({
-        title: draft.targetAssessmentId ? "Change marks mapping?" : "Remove marks mapping?",
-        text: draft.targetAssessmentId
-          ? "Marks already synchronized to the old component will be removed, then existing marks will be synchronized to the new component."
-          : "Marks synchronized to the current component will be removed from the marks table.",
+        title: hasNewDestination
+          ? "Change marks mapping?"
+          : "Remove marks mapping?",
+        text: hasNewDestination
+          ? "Marks synchronized to the old destination will be removed, then existing marks will be synchronized to the new destination."
+          : "Marks synchronized to the current destination will be removed from the marks table.",
         icon: "warning",
         showCancelButton: true,
-        confirmButtonText: draft.targetAssessmentId ? "Change Mapping" : "Remove Mapping",
-        confirmButtonColor: draft.targetAssessmentId ? "#4f46e5" : "#dc2626",
+        confirmButtonText: hasNewDestination
+          ? "Change Mapping"
+          : "Remove Mapping",
+        confirmButtonColor: hasNewDestination ? "#4f46e5" : "#dc2626",
       });
       if (!result.isConfirmed) return;
     }
@@ -880,7 +936,14 @@ export default function TeacherLabSubmissions({ courseId }) {
       const response = await updateTeacherMarksSyncConfiguration(
         courseId,
         sourceAssessment.id,
-        draft
+        {
+          targetAssessmentId: actualTargetAssessmentId,
+          targetComponentKey,
+          createRegularAssessment: isCreateRegular,
+          regularAssessmentName: String(
+            draft.regularAssessmentName || ""
+          ).trim(),
+        }
       );
       await loadMarksSyncConfiguration();
       await loadAssessments(selectedId || null);
@@ -1423,7 +1486,7 @@ export default function TeacherLabSubmissions({ courseId }) {
                   Marks Sync
                 </h3>
                 <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-                  Connect each file-submission assessment to one Structured Lab Mid or Lab Final component. Publishing is not required. Once connected, marks entered in Student Submissions are synchronized automatically.
+                  Connect each file-submission assessment to an existing Lab Assessment, a Structured Lab Mid/Final component, or create a new Lab Assessment directly from here. Publishing is not required.
                 </p>
               </div>
 
@@ -1442,17 +1505,12 @@ export default function TeacherLabSubmissions({ courseId }) {
             {loadingSyncConfig ? (
               <EmptyState
                 title="Loading marks sync"
-                text="Please wait while submission and structured assessment components are loaded."
+                text="Please wait while submission and assessment destinations are loaded."
               />
             ) : syncConfig.submissions.length === 0 ? (
               <EmptyState
                 title="No submission assessment"
                 text="Create a file-submission assessment first. It does not need to be published before mapping."
-              />
-            ) : syncConfig.targets.length === 0 ? (
-              <EmptyState
-                title="No structured component available"
-                text="Create a Structured Lab Mid or Structured Lab Final with component breakdowns from the Assessments tab first."
               />
             ) : (
               <div className="space-y-4">
@@ -1460,19 +1518,35 @@ export default function TeacherLabSubmissions({ courseId }) {
                   const draft = syncDrafts[sourceAssessment.id] || {
                     targetAssessmentId: "",
                     targetComponentKey: "",
+                    createRegularAssessment: false,
+                    regularAssessmentName: deriveLabAssessmentName(
+                      sourceAssessment.name
+                    ),
                   };
+                  const isCreateRegular =
+                    draft.createRegularAssessment === true ||
+                    draft.targetAssessmentId === CREATE_REGULAR_TARGET;
                   const selectedTarget = syncConfig.targets.find(
                     (target) => target.id === draft.targetAssessmentId
                   );
-                  const compatibleComponents = (selectedTarget?.components || []).filter(
+                  const compatibleComponents = (
+                    selectedTarget?.components || []
+                  ).filter(
                     (component) =>
                       Number(component.marks || 0) ===
                         Number(sourceAssessment.fullMarks || 0) &&
                       (!component.mappedSubmissionAssessmentId ||
-                        component.mappedSubmissionAssessmentId === sourceAssessment.id)
+                        component.mappedSubmissionAssessmentId ===
+                          sourceAssessment.id)
                   );
                   const savedMapping = sourceAssessment.mapping || {};
                   const isMapped = !!savedMapping.targetAssessmentId;
+                  const regularTargets = syncConfig.targets.filter(
+                    (target) => target.kind === "regular"
+                  );
+                  const structuredTargets = syncConfig.targets.filter(
+                    (target) => target.kind === "structured"
+                  );
 
                   return (
                     <article
@@ -1493,75 +1567,173 @@ export default function TeacherLabSubmissions({ courseId }) {
                             </Badge>
                           </div>
                           <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                            Source: file-submission marks. Student visibility and publishing status do not affect this mapping.
+                            Choose a normal Lab Assessment for direct marks, or a
+                            matching Structured Lab Mid/Final component.
                           </p>
                         </div>
 
-                        <div className="grid min-w-0 flex-[1.5] gap-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_minmax(240px,1fr)_auto]">
+                        <div className="grid min-w-0 flex-[1.7] gap-3 md:grid-cols-2 xl:grid-cols-[minmax(250px,1fr)_minmax(260px,1fr)_auto]">
                           <Field label="Target Assessment">
                             <select
                               value={draft.targetAssessmentId}
-                              onChange={(event) =>
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                const createNew =
+                                  value === CREATE_REGULAR_TARGET;
                                 updateSyncDraft(sourceAssessment.id, {
-                                  targetAssessmentId: event.target.value,
+                                  targetAssessmentId: value,
                                   targetComponentKey: "",
-                                })
-                              }
+                                  createRegularAssessment: createNew,
+                                  regularAssessmentName: createNew
+                                    ? draft.regularAssessmentName ||
+                                      deriveLabAssessmentName(
+                                        sourceAssessment.name
+                                      )
+                                    : draft.regularAssessmentName,
+                                });
+                              }}
                               className="field-input"
                             >
                               <option value="">No mapping</option>
-                              {syncConfig.targets.map((target) => (
-                                <option key={target.id} value={target.id}>
-                                  {target.period === "mid" ? "Lab Mid" : "Lab Final"} — {target.name}
-                                </option>
-                              ))}
+
+                              {regularTargets.length ? (
+                                <optgroup label="Existing Lab Assessments">
+                                  {regularTargets.map((target) => {
+                                    const marksMismatch =
+                                      Number(target.fullMarks || 0) !==
+                                      Number(sourceAssessment.fullMarks || 0);
+                                    const usedByAnother = !!(
+                                      target.mappedSubmissionAssessmentId &&
+                                      target.mappedSubmissionAssessmentId !==
+                                        sourceAssessment.id
+                                    );
+
+                                    return (
+                                      <option
+                                        key={target.id}
+                                        value={target.id}
+                                        disabled={marksMismatch || usedByAnother}
+                                      >
+                                        Lab Assessment — {target.name} (
+                                        {target.fullMarks} marks)
+                                        {marksMismatch
+                                          ? " — marks mismatch"
+                                          : usedByAnother
+                                            ? " — already mapped"
+                                            : ""}
+                                      </option>
+                                    );
+                                  })}
+                                </optgroup>
+                              ) : null}
+
+                              <option value={CREATE_REGULAR_TARGET}>
+                                ＋ Create new Lab Assessment
+                              </option>
+
+                              {structuredTargets.length ? (
+                                <optgroup label="Structured Lab Mid / Final">
+                                  {structuredTargets.map((target) => (
+                                    <option key={target.id} value={target.id}>
+                                      {target.period === "mid"
+                                        ? "Structured Lab Mid"
+                                        : "Structured Lab Final"}{" "}
+                                      — {target.name}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              ) : null}
                             </select>
                           </Field>
 
-                          <Field label="Target Component">
-                            <select
-                              value={draft.targetComponentKey}
-                              onChange={(event) =>
-                                updateSyncDraft(sourceAssessment.id, {
-                                  targetComponentKey: event.target.value,
-                                })
-                              }
-                              disabled={!draft.targetAssessmentId}
-                              className="field-input disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              <option value="">
-                                {draft.targetAssessmentId
-                                  ? "Select matching component"
-                                  : "Choose assessment first"}
-                              </option>
-                              {compatibleComponents.map((component) => (
-                                <option key={component.key} value={component.key}>
-                                  {component.name} ({component.marks} marks)
-                                </option>
-                              ))}
-                            </select>
-                          </Field>
+                          {isCreateRegular ? (
+                            <Field label="New Lab Assessment Name">
+                              <input
+                                type="text"
+                                value={draft.regularAssessmentName}
+                                onChange={(event) =>
+                                  updateSyncDraft(sourceAssessment.id, {
+                                    regularAssessmentName: event.target.value,
+                                  })
+                                }
+                                placeholder="Example: Lab Task-03"
+                                className="field-input"
+                              />
+                            </Field>
+                          ) : selectedTarget?.kind === "structured" ? (
+                            <Field label="Target Component">
+                              <select
+                                value={draft.targetComponentKey}
+                                onChange={(event) =>
+                                  updateSyncDraft(sourceAssessment.id, {
+                                    targetComponentKey: event.target.value,
+                                  })
+                                }
+                                className="field-input"
+                              >
+                                <option value="">Select matching component</option>
+                                {compatibleComponents.map((component) => (
+                                  <option
+                                    key={component.key}
+                                    value={component.key}
+                                  >
+                                    {component.name} ({component.marks} marks)
+                                  </option>
+                                ))}
+                              </select>
+                            </Field>
+                          ) : (
+                            <Field label="Target Component">
+                              <input
+                                type="text"
+                                value={
+                                  selectedTarget?.kind === "regular"
+                                    ? "Direct marks — no component required"
+                                    : "Choose an assessment first"
+                                }
+                                readOnly
+                                disabled
+                                className="field-input disabled:cursor-not-allowed disabled:opacity-60"
+                              />
+                            </Field>
+                          )}
 
                           <button
                             type="button"
-                            onClick={() => handleSaveSyncMapping(sourceAssessment)}
+                            onClick={() =>
+                              handleSaveSyncMapping(sourceAssessment)
+                            }
                             disabled={savingSyncId === sourceAssessment.id}
                             className="inline-flex min-h-[46px] items-center justify-center rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60 md:col-span-2 xl:col-span-1"
                           >
                             {savingSyncId === sourceAssessment.id
                               ? "Saving…"
-                              : draft.targetAssessmentId
-                                ? "Save Mapping"
-                                : isMapped
-                                  ? "Remove Mapping"
-                                  : "Keep Unmapped"}
+                              : isCreateRegular
+                                ? "Create & Sync"
+                                : draft.targetAssessmentId
+                                  ? "Save Mapping"
+                                  : isMapped
+                                    ? "Remove Mapping"
+                                    : "Keep Unmapped"}
                           </button>
                         </div>
                       </div>
 
-                      {draft.targetAssessmentId && compatibleComponents.length === 0 ? (
+                      {selectedTarget?.kind === "structured" &&
+                      compatibleComponents.length === 0 ? (
                         <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
-                          No unused component with exactly {sourceAssessment.fullMarks || 0} marks is available in the selected assessment.
+                          No unused component with exactly{" "}
+                          {sourceAssessment.fullMarks || 0} marks is available in
+                          the selected structured assessment.
+                        </p>
+                      ) : null}
+
+                      {isCreateRegular ? (
+                        <p className="mt-3 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs leading-5 text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300">
+                          Saving will create this Lab Assessment in the
+                          Assessments tab with {sourceAssessment.fullMarks || 0}{" "}
+                          full marks, then synchronize all marks already entered
+                          for this submission.
                         </p>
                       ) : null}
                     </article>
