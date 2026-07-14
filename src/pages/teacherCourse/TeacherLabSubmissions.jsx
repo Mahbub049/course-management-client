@@ -2,14 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
 import {
   createTeacherSubmissionAssessment,
+  deleteTeacherLabSubmission,
   deleteTeacherSubmissionAssessment,
   downloadAllTeacherSubmissions,
   fetchTeacherAssessmentSubmissions,
+  fetchTeacherMarksSyncConfiguration,
   fetchTeacherSubmissionAssessments,
   getPublicFileUrl,
-  saveAllSubmissionMarks,
   syncAllSubmissionMarks,
   updateLabSubmissionStatus,
+  updateTeacherMarksSyncConfiguration,
   updateTeacherSubmissionAssessment,
 } from "../../services/labSubmissionService";
 import TeacherPublicSubmissionLinkPanel from "./TeacherPublicSubmissionLinkPanel";
@@ -37,15 +39,7 @@ const FILE_TYPE_OPTIONS = [
 const DEFAULT_ALLOWED_EXTENSIONS = FILE_TYPE_OPTIONS.map((item) => item.value);
 const FIXED_FILE_TYPE_VALUES = new Set(DEFAULT_ALLOWED_EXTENSIONS);
 const EXTENSION_PATTERN = /^[a-z0-9][a-z0-9_+-]{0,15}$/;
-
-function sanitizeExtension(value = "") {
-  const ext = String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/^\.+/, "");
-
-  return EXTENSION_PATTERN.test(ext) ? ext : "";
-}
+const AUTO_SAVE_DELAY = 700;
 
 const initialForm = {
   name: "Lab Assessment Submission",
@@ -61,29 +55,63 @@ const initialForm = {
   customExtension: "",
 };
 
+const TAB_ITEMS = [
+  {
+    id: "create",
+    label: "Create Assessment",
+    description: "Create or edit a submission task",
+  },
+  {
+    id: "public",
+    label: "Public Submission",
+    description: "Manage the no-login upload page",
+  },
+  {
+    id: "submissions",
+    label: "Student Submissions",
+    description: "Review files and enter marks",
+  },
+  {
+    id: "sync",
+    label: "Marks Sync",
+    description: "Connect submissions with Lab Mid or Final",
+  },
+];
+
+function sanitizeExtension(value = "") {
+  const ext = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^\.+/, "");
+
+  return EXTENSION_PATTERN.test(ext) ? ext : "";
+}
+
 function formatDateTime(value) {
   if (!value) return "No deadline set";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "No deadline set";
-  return d.toLocaleString();
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "No deadline set";
+  return date.toLocaleString();
 }
 
 function toDateInputValue(value) {
   if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "";
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
 function toTimeInputValue(value) {
   if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "";
-  const hour = String(d.getHours()).padStart(2, "0");
-  const minute = String(d.getMinutes()).padStart(2, "0");
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
   return `${hour}:${minute}`;
 }
 
@@ -96,9 +124,6 @@ function combineDateTime(date, time) {
     .map(Number);
 
   if (!year || !month || !day) return null;
-
-  // Create the deadline in the browser's local timezone, then send ISO UTC.
-  // This prevents Vercel/Render server timezone from shifting the selected date/time.
   return new Date(year, month - 1, day, hour, minute, 0, 0).toISOString();
 }
 
@@ -115,7 +140,6 @@ function normalizeAllowedExtensions(value, fallbackToDefault = true) {
     : [];
 
   const unique = Array.from(new Set(selected));
-
   if (unique.length) return unique;
   return fallbackToDefault ? DEFAULT_ALLOWED_EXTENSIONS : [];
 }
@@ -144,11 +168,15 @@ function sortSubmissions(rows = [], sortBy = "roll-asc") {
   }
 
   if (sortBy === "time-newest") {
-    return sorted.sort((a, b) => getDateMs(b?.submittedAt) - getDateMs(a?.submittedAt));
+    return sorted.sort(
+      (a, b) => getDateMs(b?.submittedAt) - getDateMs(a?.submittedAt)
+    );
   }
 
   if (sortBy === "time-oldest") {
-    return sorted.sort((a, b) => getDateMs(a?.submittedAt) - getDateMs(b?.submittedAt));
+    return sorted.sort(
+      (a, b) => getDateMs(a?.submittedAt) - getDateMs(b?.submittedAt)
+    );
   }
 
   return sorted.sort((a, b) =>
@@ -161,23 +189,14 @@ function sortSubmissions(rows = [], sortBy = "roll-asc") {
 
 function getSubmissionStatusMeta(item) {
   if (item?.closedReason === "due_date_passed" || item?.dueDatePassed) {
-    return {
-      label: "Deadline Passed",
-      tone: "rose",
-    };
+    return { label: "Deadline Passed", tone: "rose" };
   }
 
   if (item?.submissionsOpen) {
-    return {
-      label: "Open",
-      tone: "sky",
-    };
+    return { label: "Open", tone: "sky" };
   }
 
-  return {
-    label: "Closed",
-    tone: "rose",
-  };
+  return { label: "Closed", tone: "rose" };
 }
 
 function Badge({ children, tone = "slate" }) {
@@ -196,26 +215,77 @@ function Badge({ children, tone = "slate" }) {
 
   return (
     <span
-      className={`inline-flex max-w-full min-w-0 items-center rounded-full border px-2.5 py-1 text-left text-[11px] font-semibold leading-tight whitespace-normal break-words ${tones[tone] || tones.slate}`}
+      className={`inline-flex max-w-full min-w-0 items-center rounded-full border px-2.5 py-1 text-left text-[11px] font-semibold leading-tight ${tones[tone] || tones.slate}`}
     >
       {children}
     </span>
   );
 }
 
+function AutoSaveIndicator({ state }) {
+  if (!state || state.status === "idle") {
+    return (
+      <span className="text-[11px] text-slate-400 dark:text-slate-500">
+        Saves automatically
+      </span>
+    );
+  }
+
+  if (state.status === "waiting") {
+    return (
+      <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+        Waiting to save…
+      </span>
+    );
+  }
+
+  if (state.status === "saving") {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-indigo-600 dark:text-indigo-300">
+        <SpinnerIcon /> Saving…
+      </span>
+    );
+  }
+
+  if (state.status === "saved") {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-300">
+        <CheckIcon /> Saved and checked
+      </span>
+    );
+  }
+
+  return (
+    <span className="text-[11px] font-semibold text-rose-600 dark:text-rose-300">
+      {state.message || "Could not save"}
+    </span>
+  );
+}
+
 export default function TeacherLabSubmissions({ courseId }) {
+  const [activeTab, setActiveTab] = useState("submissions");
   const [form, setForm] = useState(initialForm);
   const [editingId, setEditingId] = useState("");
   const [items, setItems] = useState([]);
   const [selectedId, setSelectedId] = useState("");
   const [selectedData, setSelectedData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingSubmissions, setLoadingSubmissions] = useState(false);
   const [savingForm, setSavingForm] = useState(false);
   const [actionLoading, setActionLoading] = useState("");
   const [submissionSortBy, setSubmissionSortBy] = useState("roll-asc");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [autoSaveStates, setAutoSaveStates] = useState({});
+  const [syncConfig, setSyncConfig] = useState({ submissions: [], targets: [] });
+  const [syncDrafts, setSyncDrafts] = useState({});
+  const [loadingSyncConfig, setLoadingSyncConfig] = useState(false);
+  const [savingSyncId, setSavingSyncId] = useState("");
 
   const dateInputRef = useRef(null);
   const timeInputRef = useRef(null);
+  const autoSaveTimersRef = useRef(new Map());
+  const savedStateTimersRef = useRef(new Map());
+  const saveVersionsRef = useRef(new Map());
 
   const selectedAssessment = useMemo(
     () => items.find((item) => item.id === selectedId) || null,
@@ -246,17 +316,42 @@ export default function TeacherLabSubmissions({ courseId }) {
     (ext) => !FIXED_FILE_TYPE_VALUES.has(ext)
   );
 
+  const clearSubmissionTimers = (submissionId) => {
+    const autoSaveTimer = autoSaveTimersRef.current.get(submissionId);
+    if (autoSaveTimer) clearTimeout(autoSaveTimer);
+    autoSaveTimersRef.current.delete(submissionId);
+
+    const savedStateTimer = savedStateTimersRef.current.get(submissionId);
+    if (savedStateTimer) clearTimeout(savedStateTimer);
+    savedStateTimersRef.current.delete(submissionId);
+  };
+
+  const clearAllSubmissionTimers = () => {
+    autoSaveTimersRef.current.forEach((timer) => clearTimeout(timer));
+    savedStateTimersRef.current.forEach((timer) => clearTimeout(timer));
+    autoSaveTimersRef.current.clear();
+    savedStateTimersRef.current.clear();
+  };
+
+  useEffect(() => clearAllSubmissionTimers, []);
+
+  useEffect(() => {
+    clearAllSubmissionTimers();
+    setAutoSaveStates({});
+  }, [selectedId]);
+
   const loadAssessments = async (preferredId = null) => {
     setLoading(true);
+
     try {
       const data = await fetchTeacherSubmissionAssessments(courseId);
       const rows = Array.isArray(data) ? data : [];
       setItems(rows);
 
       const nextSelected =
-        preferredId && rows.find((r) => r.id === preferredId)
+        preferredId && rows.some((row) => row.id === preferredId)
           ? preferredId
-          : selectedId && rows.find((r) => r.id === selectedId)
+          : selectedId && rows.some((row) => row.id === selectedId)
             ? selectedId
             : rows[0]?.id || "";
 
@@ -267,7 +362,7 @@ export default function TeacherLabSubmissions({ courseId }) {
       Swal.fire(
         "Failed",
         err?.response?.data?.message ||
-        "Could not load submission assessments.",
+          "Could not load submission assessments.",
         "error"
       );
       return [];
@@ -282,12 +377,11 @@ export default function TeacherLabSubmissions({ courseId }) {
       return;
     }
 
+    setLoadingSubmissions(true);
+
     try {
-      const data = await fetchTeacherAssessmentSubmissions(
-        courseId,
-        assessmentId
-      );
-      const withDraftMarks = {
+      const data = await fetchTeacherAssessmentSubmissions(courseId, assessmentId);
+      setSelectedData({
         ...data,
         submissions: (data?.submissions || []).map((row) => ({
           ...row,
@@ -296,8 +390,7 @@ export default function TeacherLabSubmissions({ courseId }) {
               ? ""
               : String(row.awardedMarks),
         })),
-      };
-      setSelectedData(withDraftMarks);
+      });
     } catch (err) {
       console.error(err);
       setSelectedData(null);
@@ -306,13 +399,13 @@ export default function TeacherLabSubmissions({ courseId }) {
         err?.response?.data?.message || "Could not load submissions.",
         "error"
       );
+    } finally {
+      setLoadingSubmissions(false);
     }
   };
 
   useEffect(() => {
-    if (courseId) {
-      loadAssessments();
-    }
+    if (courseId) loadAssessments();
   }, [courseId]);
 
   useEffect(() => {
@@ -323,15 +416,55 @@ export default function TeacherLabSubmissions({ courseId }) {
     }
   }, [selectedId, courseId]);
 
+  const loadMarksSyncConfiguration = async () => {
+    setLoadingSyncConfig(true);
+
+    try {
+      const data = await fetchTeacherMarksSyncConfiguration(courseId);
+      const nextConfig = {
+        submissions: Array.isArray(data?.submissions) ? data.submissions : [],
+        targets: Array.isArray(data?.targets) ? data.targets : [],
+      };
+      setSyncConfig(nextConfig);
+
+      const nextDrafts = {};
+      nextConfig.submissions.forEach((assessment) => {
+        nextDrafts[assessment.id] = {
+          targetAssessmentId: assessment?.mapping?.targetAssessmentId || "",
+          targetComponentKey: assessment?.mapping?.targetComponentKey || "",
+        };
+      });
+      setSyncDrafts(nextDrafts);
+    } catch (err) {
+      console.error(err);
+      Swal.fire(
+        "Failed",
+        err?.response?.data?.message || "Could not load marks sync settings.",
+        "error"
+      );
+    } finally {
+      setLoadingSyncConfig(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "sync" && courseId) {
+      loadMarksSyncConfiguration();
+    }
+  }, [activeTab, courseId]);
+
   const resetForm = () => {
     setForm(initialForm);
     setEditingId("");
   };
 
-  const handleCreateOrUpdate = async (e) => {
-    e.preventDefault();
+  const handleCreateOrUpdate = async (event) => {
+    event.preventDefault();
 
-    const allowedExtensions = normalizeAllowedExtensions(form.allowedExtensions, false);
+    const allowedExtensions = normalizeAllowedExtensions(
+      form.allowedExtensions,
+      false
+    );
 
     if (!allowedExtensions.length) {
       Swal.fire(
@@ -359,6 +492,8 @@ export default function TeacherLabSubmissions({ courseId }) {
         },
       };
 
+      let nextAssessmentId = editingId;
+
       if (editingId) {
         await updateTeacherSubmissionAssessment(courseId, editingId, {
           action: "update",
@@ -380,29 +515,26 @@ export default function TeacherLabSubmissions({ courseId }) {
           "Submission assessment updated successfully.",
           "success"
         );
-
-        await loadAssessments(editingId);
-        await loadSelectedSubmissions(editingId);
       } else {
-        const res = await createTeacherSubmissionAssessment(courseId, payload);
+        const response = await createTeacherSubmissionAssessment(courseId, payload);
+        nextAssessmentId = response?.assessment?.id || "";
 
         await Swal.fire(
           "Created",
           "Submission assessment created successfully.",
           "success"
         );
-
-        const createdId = res?.assessment?.id || "";
-        await loadAssessments(createdId || null);
       }
 
       resetForm();
+      await loadAssessments(nextAssessmentId || null);
+      setActiveTab("submissions");
     } catch (err) {
       console.error(err);
       Swal.fire(
         "Failed",
         err?.response?.data?.message ||
-        "Could not save submission assessment.",
+          "Could not save submission assessment.",
         "error"
       );
     } finally {
@@ -425,14 +557,14 @@ export default function TeacherLabSubmissions({ courseId }) {
       allowedExtensions: normalizeAllowedExtensions(item.allowedExtensions),
       customExtension: "",
     });
-
+    setActiveTab("create");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const handleDelete = async (assessmentId, name) => {
+  const handleDeleteAssessment = async (assessmentId, name) => {
     const result = await Swal.fire({
       title: "Delete assessment?",
-      text: `This will delete "${name}" and its submissions.`,
+      text: `This will delete “${name}” and every submitted file under it.`,
       icon: "warning",
       showCancelButton: true,
       confirmButtonText: "Delete",
@@ -441,16 +573,15 @@ export default function TeacherLabSubmissions({ courseId }) {
 
     if (!result.isConfirmed) return;
 
-    setActionLoading(`delete-${assessmentId}`);
+    setActionLoading(`delete-assessment-${assessmentId}`);
+
     try {
       await deleteTeacherSubmissionAssessment(courseId, assessmentId);
-      await Swal.fire("Deleted", "Assessment deleted successfully.", "success");
 
-      if (editingId === assessmentId) {
-        resetForm();
-      }
+      if (editingId === assessmentId) resetForm();
 
       await loadAssessments();
+      await Swal.fire("Deleted", "Assessment deleted successfully.", "success");
     } catch (err) {
       console.error(err);
       Swal.fire(
@@ -465,10 +596,9 @@ export default function TeacherLabSubmissions({ courseId }) {
 
   const handleAssessmentAction = async (assessmentId, action) => {
     setActionLoading(`${assessmentId}-${action}`);
+
     try {
-      await updateTeacherSubmissionAssessment(courseId, assessmentId, {
-        action,
-      });
+      await updateTeacherSubmissionAssessment(courseId, assessmentId, { action });
       await loadAssessments(assessmentId);
       await loadSelectedSubmissions(assessmentId);
     } catch (err) {
@@ -485,7 +615,9 @@ export default function TeacherLabSubmissions({ courseId }) {
 
   const handleDownloadAll = async () => {
     if (!selectedId) return;
+
     setActionLoading(`download-${selectedId}`);
+
     try {
       await downloadAllTeacherSubmissions(courseId, selectedId);
     } catch (err) {
@@ -501,105 +633,158 @@ export default function TeacherLabSubmissions({ courseId }) {
   };
 
   const updateDraftMarks = (submissionId, value) => {
-    setSelectedData((prev) => {
-      if (!prev) return prev;
+    setSelectedData((previous) => {
+      if (!previous) return previous;
+
       return {
-        ...prev,
-        submissions: prev.submissions.map((row) =>
+        ...previous,
+        submissions: previous.submissions.map((row) =>
           row.id === submissionId ? { ...row, draftMarks: value } : row
         ),
       };
     });
   };
 
-  const handleSaveMarks = async (row) => {
-    setActionLoading(`save-marks-${row.id}`);
+  const setAutoSaveState = (submissionId, nextState) => {
+    setAutoSaveStates((previous) => ({
+      ...previous,
+      [submissionId]: nextState,
+    }));
+  };
+
+  const persistMarks = async (submissionId, rawValue) => {
+    clearSubmissionTimers(submissionId);
+
+    const value = String(rawValue ?? "").trim();
+    const maxMarks = Number(selectedAssessment?.fullMarks || 0);
+    const isEmpty = value === "";
+    const numericMarks = isEmpty ? null : Number(value);
+
+    if (
+      !isEmpty &&
+      (!Number.isFinite(numericMarks) || numericMarks < 0 || numericMarks > maxMarks)
+    ) {
+      setAutoSaveState(submissionId, {
+        status: "error",
+        message: `Use a value from 0 to ${maxMarks}.`,
+      });
+      return;
+    }
+
+    const nextVersion = (saveVersionsRef.current.get(submissionId) || 0) + 1;
+    saveVersionsRef.current.set(submissionId, nextVersion);
+    setAutoSaveState(submissionId, { status: "saving" });
+
     try {
-      await updateLabSubmissionStatus(row.id, {
-        status: row.status === "checked" ? "checked" : "submitted",
-        awardedMarks: row.draftMarks,
+      await updateLabSubmissionStatus(submissionId, {
+        status: isEmpty ? "submitted" : "checked",
+        awardedMarks: isEmpty ? "" : numericMarks,
       });
 
-      await loadSelectedSubmissions(selectedId);
-      await loadAssessments(selectedId);
+      if (saveVersionsRef.current.get(submissionId) !== nextVersion) return;
+
+      setSelectedData((previous) => {
+        if (!previous) return previous;
+
+        return {
+          ...previous,
+          submissions: previous.submissions.map((row) =>
+            row.id === submissionId
+              ? {
+                  ...row,
+                  awardedMarks: numericMarks,
+                  draftMarks: isEmpty ? "" : String(numericMarks),
+                  status: isEmpty ? "submitted" : "checked",
+                }
+              : row
+          ),
+        };
+      });
+
+      setAutoSaveState(submissionId, { status: "saved" });
+
+      const timer = setTimeout(() => {
+        setAutoSaveStates((previous) => ({
+          ...previous,
+          [submissionId]: { status: "idle" },
+        }));
+        savedStateTimersRef.current.delete(submissionId);
+      }, 1800);
+
+      savedStateTimersRef.current.set(submissionId, timer);
     } catch (err) {
       console.error(err);
-      Swal.fire(
-        "Failed",
-        err?.response?.data?.message || "Could not save marks.",
-        "error"
-      );
-    } finally {
-      setActionLoading("");
+
+      if (saveVersionsRef.current.get(submissionId) !== nextVersion) return;
+
+      setAutoSaveState(submissionId, {
+        status: "error",
+        message: err?.response?.data?.message || "Could not save marks.",
+      });
     }
   };
 
-  const handleMarkChecked = async (row) => {
-    setActionLoading(`checked-${row.id}`);
-    try {
-      await updateLabSubmissionStatus(row.id, {
-        status: "checked",
-        awardedMarks: row.draftMarks,
-      });
+  const scheduleMarksAutoSave = (submissionId, value) => {
+    updateDraftMarks(submissionId, value);
+    clearSubmissionTimers(submissionId);
+    setAutoSaveState(submissionId, { status: "waiting" });
 
-      await loadSelectedSubmissions(selectedId);
-      await loadAssessments(selectedId);
-    } catch (err) {
-      console.error(err);
-      Swal.fire(
-        "Failed",
-        err?.response?.data?.message || "Could not update submission.",
-        "error"
-      );
-    } finally {
-      setActionLoading("");
-    }
+    const timer = setTimeout(() => {
+      autoSaveTimersRef.current.delete(submissionId);
+      persistMarks(submissionId, value);
+    }, AUTO_SAVE_DELAY);
+
+    autoSaveTimersRef.current.set(submissionId, timer);
   };
 
-  const handleUncheckSubmission = async (row) => {
-    setActionLoading(`uncheck-${row.id}`);
-    try {
-      await updateLabSubmissionStatus(row.id, {
-        status: "submitted",
-        awardedMarks: "",
-      });
+  const handleMarksBlur = (submissionId, value) => {
+    const timer = autoSaveTimersRef.current.get(submissionId);
+    if (!timer) return;
 
-      await loadSelectedSubmissions(selectedId);
-      await loadAssessments(selectedId);
-    } catch (err) {
-      console.error(err);
-      Swal.fire(
-        "Failed",
-        err?.response?.data?.message || "Could not uncheck submission.",
-        "error"
-      );
-    } finally {
-      setActionLoading("");
-    }
+    clearTimeout(timer);
+    autoSaveTimersRef.current.delete(submissionId);
+    persistMarks(submissionId, value);
   };
 
-  const handleSaveAllMarks = async () => {
-    if (!selectedId || !selectedData?.submissions?.length) return;
+  const handleDeleteSubmission = async (row) => {
+    const result = await Swal.fire({
+      title: "Delete submitted file?",
+      text: `${row.studentName}'s file “${row.originalFileName}” will be permanently removed. The student may submit again while the task is open.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Delete File",
+      confirmButtonColor: "#dc2626",
+    });
 
-    setActionLoading(`save-all-${selectedId}`);
+    if (!result.isConfirmed) return;
+
+    clearSubmissionTimers(row.id);
+    setActionLoading(`delete-submission-${row.id}`);
+
     try {
-      await saveAllSubmissionMarks(
-        courseId,
-        selectedId,
-        selectedData.submissions.map((row) => ({
-          submissionId: row.id,
-          awardedMarks: row.draftMarks,
-        }))
-      );
+      await deleteTeacherLabSubmission(row.id);
 
-      await Swal.fire("Saved", "All marks saved successfully.", "success");
-      await loadSelectedSubmissions(selectedId);
+      setSelectedData((previous) => {
+        if (!previous) return previous;
+        return {
+          ...previous,
+          submissions: previous.submissions.filter((item) => item.id !== row.id),
+        };
+      });
+
+      setAutoSaveStates((previous) => {
+        const next = { ...previous };
+        delete next[row.id];
+        return next;
+      });
+
       await loadAssessments(selectedId);
+      await Swal.fire("Deleted", "Student submission deleted successfully.", "success");
     } catch (err) {
       console.error(err);
       Swal.fire(
         "Failed",
-        err?.response?.data?.message || "Could not save all marks.",
+        err?.response?.data?.message || "Could not delete the submission.",
         "error"
       );
     } finally {
@@ -611,17 +796,15 @@ export default function TeacherLabSubmissions({ courseId }) {
     if (!selectedId) return;
 
     setActionLoading(`sync-all-${selectedId}`);
-    try {
-      const res = await syncAllSubmissionMarks(courseId, selectedId);
 
+    try {
+      const response = await syncAllSubmissionMarks(courseId, selectedId);
       await Swal.fire(
         "Synced",
-        res?.message || "All saved marks synced successfully.",
+        response?.message || "All saved marks synced successfully.",
         "success"
       );
-
       await loadSelectedSubmissions(selectedId);
-      await loadAssessments(selectedId);
     } catch (err) {
       console.error(err);
       Swal.fire(
@@ -634,38 +817,125 @@ export default function TeacherLabSubmissions({ courseId }) {
     }
   };
 
-  const isDeadlinePassed = !!selectedAssessment?.dueDatePassed;
-  const submissionToggleAction = selectedAssessment?.submissionsOpen
-    ? "close"
-    : "open";
+  const updateSyncDraft = (assessmentId, patch) => {
+    setSyncDrafts((previous) => ({
+      ...previous,
+      [assessmentId]: {
+        targetAssessmentId:
+          previous[assessmentId]?.targetAssessmentId || "",
+        targetComponentKey:
+          previous[assessmentId]?.targetComponentKey || "",
+        ...patch,
+      },
+    }));
+  };
+
+  const handleSaveSyncMapping = async (sourceAssessment) => {
+    const draft = syncDrafts[sourceAssessment.id] || {
+      targetAssessmentId: "",
+      targetComponentKey: "",
+    };
+    const current = sourceAssessment.mapping || {
+      targetAssessmentId: "",
+      targetComponentKey: "",
+      isLegacy: false,
+    };
+
+    if (draft.targetAssessmentId && !draft.targetComponentKey) {
+      Swal.fire(
+        "Choose component",
+        "Select the exact Lab Mid or Lab Final component for this submission.",
+        "warning"
+      );
+      return;
+    }
+
+    const isChanging =
+      current.isLegacy === true ||
+      current.targetAssessmentId !== draft.targetAssessmentId ||
+      current.targetComponentKey !== draft.targetComponentKey;
+
+    if (!isChanging) {
+      Swal.fire("No changes", "This mapping is already saved.", "info");
+      return;
+    }
+
+    if (current.targetAssessmentId || current.targetComponentKey) {
+      const result = await Swal.fire({
+        title: draft.targetAssessmentId ? "Change marks mapping?" : "Remove marks mapping?",
+        text: draft.targetAssessmentId
+          ? "Marks already synchronized to the old component will be removed, then existing marks will be synchronized to the new component."
+          : "Marks synchronized to the current component will be removed from the marks table.",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: draft.targetAssessmentId ? "Change Mapping" : "Remove Mapping",
+        confirmButtonColor: draft.targetAssessmentId ? "#4f46e5" : "#dc2626",
+      });
+      if (!result.isConfirmed) return;
+    }
+
+    setSavingSyncId(sourceAssessment.id);
+
+    try {
+      const response = await updateTeacherMarksSyncConfiguration(
+        courseId,
+        sourceAssessment.id,
+        draft
+      );
+      await loadMarksSyncConfiguration();
+      await loadAssessments(selectedId || null);
+      await Swal.fire(
+        "Saved",
+        response?.message || "Marks sync mapping saved successfully.",
+        "success"
+      );
+    } catch (err) {
+      console.error(err);
+      Swal.fire(
+        "Failed",
+        err?.response?.data?.message || "Could not save marks sync mapping.",
+        "error"
+      );
+    } finally {
+      setSavingSyncId("");
+    }
+  };
 
   const toggleAllowedExtension = (extension) => {
     const cleanExtension = sanitizeExtension(extension);
     if (!cleanExtension) return;
 
-    setForm((prev) => {
-      const current = normalizeAllowedExtensions(prev.allowedExtensions, false);
+    setForm((previous) => {
+      const current = normalizeAllowedExtensions(
+        previous.allowedExtensions,
+        false
+      );
       const exists = current.includes(cleanExtension);
-      const next = exists
-        ? current.filter((item) => item !== cleanExtension)
-        : [...current, cleanExtension];
 
       return {
-        ...prev,
-        allowedExtensions: next,
+        ...previous,
+        allowedExtensions: exists
+          ? current.filter((item) => item !== cleanExtension)
+          : [...current, cleanExtension],
       };
     });
   };
 
   const toggleAllAllowedExtensions = () => {
-    setForm((prev) => {
-      const current = normalizeAllowedExtensions(prev.allowedExtensions, false);
-      const selectable = Array.from(new Set([...DEFAULT_ALLOWED_EXTENSIONS, ...current]));
+    setForm((previous) => {
+      const current = normalizeAllowedExtensions(
+        previous.allowedExtensions,
+        false
+      );
+      const selectable = Array.from(
+        new Set([...DEFAULT_ALLOWED_EXTENSIONS, ...current])
+      );
       const isAllSelected =
-        selectable.length > 0 && selectable.every((ext) => current.includes(ext));
+        selectable.length > 0 &&
+        selectable.every((ext) => current.includes(ext));
 
       return {
-        ...prev,
+        ...previous,
         allowedExtensions: isAllSelected ? [] : selectable,
       };
     });
@@ -677,16 +947,20 @@ export default function TeacherLabSubmissions({ courseId }) {
     if (!extension) {
       Swal.fire(
         "Invalid file type",
-        "Enter a valid extension like c, java, cpp, py, js, html, or css. Do not include any space.",
+        "Enter a valid extension such as c, java, cpp, py, js, html, or css without a dot or space.",
         "warning"
       );
       return;
     }
 
-    setForm((prev) => {
-      const current = normalizeAllowedExtensions(prev.allowedExtensions, false);
+    setForm((previous) => {
+      const current = normalizeAllowedExtensions(
+        previous.allowedExtensions,
+        false
+      );
+
       return {
-        ...prev,
+        ...previous,
         allowedExtensions: current.includes(extension)
           ? current
           : [...current, extension],
@@ -695,854 +969,1206 @@ export default function TeacherLabSubmissions({ courseId }) {
     });
   };
 
+  const isDeadlinePassed = !!selectedAssessment?.dueDatePassed;
+  const submissionToggleAction = selectedAssessment?.submissionsOpen
+    ? "close"
+    : "open";
+
   return (
-    <div className="min-w-0 max-w-full space-y-4 sm:space-y-6">
-      <form
-        onSubmit={handleCreateOrUpdate}
-        className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:rounded-3xl sm:p-5"
-      >
-        <div className="mb-4 flex flex-col gap-3 sm:mb-5 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white sm:text-xl">
-              {editingId
-                ? "Edit File Submission Assessment"
-                : "Create File Submission Assessment"}
-            </h3>
-            <p className="mt-1 hidden text-sm text-slate-500 dark:text-slate-400 sm:block">
-              Create, edit, publish, close, and manage student files from this
-              tab.
-            </p>
-          </div>
+    <div className="min-w-0 max-w-full space-y-4 sm:space-y-5">
+      <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:rounded-3xl sm:p-3">
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+          {TAB_ITEMS.map((tab) => {
+            const isActive = activeTab === tab.id;
+            const count =
+              tab.id === "submissions"
+                ? items.reduce(
+                    (total, item) => total + Number(item.submissionCount || 0),
+                    0
+                  )
+                : tab.id === "create"
+                  ? items.length
+                  : tab.id === "sync"
+                    ? syncConfig.submissions.filter(
+                        (item) => item?.mapping?.targetAssessmentId
+                      ).length
+                    : null;
 
-          {editingId ? (
-            <button
-              type="button"
-              onClick={resetForm}
-              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 sm:w-auto"
-            >
-              Cancel Edit
-            </button>
-          ) : null}
-        </div>
-
-        <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
-          {/* Assessment Title */}
-          <div>
-            <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              Assessment Title
-            </label>
-            <input
-              type="text"
-              value={form.name}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, name: e.target.value }))
-              }
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              placeholder="Example: Lab Assessment Submission"
-              required
-            />
-          </div>
-
-          {/* Full Marks */}
-          <div>
-            <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              Full Marks
-            </label>
-            <input
-              type="number"
-              min="0"
-              value={form.fullMarks}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, fullMarks: e.target.value }))
-              }
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              placeholder="Example: 10"
-              required
-            />
-          </div>
-
-          {/* Max File Size */}
-          <div>
-            <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              Maximum File Size
-            </label>
-            <input
-              type="number"
-              min="1"
-              max="10"
-              value={form.maxFileSizeMB}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, maxFileSizeMB: e.target.value }))
-              }
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              placeholder="Example: 10"
-            />
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Enter file size in MB. Maximum allowed value is 10 MB.
-            </p>
-          </div>
-
-          {/* Resource Button Text */}
-          <div>
-            <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              Resource Button Text
-            </label>
-            <input
-              type="text"
-              value={form.resourceTitle}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, resourceTitle: e.target.value }))
-              }
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              placeholder="Example: View Resource"
-            />
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              This text will be shown as a button on the student side.
-            </p>
-          </div>
-
-          {/* Resource Link */}
-          <div>
-            <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              Resource Link
-            </label>
-            <input
-              type="url"
-              value={form.resourceUrl}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, resourceUrl: e.target.value }))
-              }
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              placeholder="Example: Google Drive PDF link"
-            />
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Paste any resource link such as Google Drive PDF, class instruction file,
-              or reference document.
-            </p>
-          </div>
-
-          {/* Due Date and Due Time */}
-          <div className="grid grid-cols-2 gap-3 sm:gap-4">
-            <div>
-              <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                Submission Deadline Date
-              </label>
+            return (
               <button
+                key={tab.id}
                 type="button"
-                onClick={() => {
-                  if (dateInputRef.current?.showPicker) {
-                    dateInputRef.current.showPicker();
-                  } else {
-                    dateInputRef.current?.focus();
-                  }
-                }}
-                className="relative w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm text-slate-900 transition hover:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                onClick={() => setActiveTab(tab.id)}
+                className={`group flex min-w-0 items-center gap-3 rounded-2xl border px-3 py-3 text-left transition sm:px-4 ${
+                  isActive
+                    ? "border-indigo-500 bg-indigo-600 text-white shadow-sm"
+                    : "border-transparent bg-slate-50 text-slate-700 hover:border-slate-200 hover:bg-white dark:bg-slate-800 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-800/70"
+                }`}
               >
-                <input
-                  ref={dateInputRef}
-                  type="date"
-                  value={form.dueDate}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, dueDate: e.target.value }))
-                  }
-                  className="absolute inset-0 opacity-0"
-                />
-                <div className="flex items-center justify-between gap-2">
-                  <span>{form.dueDate || "Pick date"}</span>
-                  <CalendarIcon />
-                </div>
-              </button>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                Submission Deadline Time
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  if (timeInputRef.current?.showPicker) {
-                    timeInputRef.current.showPicker();
-                  } else {
-                    timeInputRef.current?.focus();
-                  }
-                }}
-                className="relative w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm text-slate-900 transition hover:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              >
-                <input
-                  ref={timeInputRef}
-                  type="time"
-                  value={form.dueTime}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, dueTime: e.target.value }))
-                  }
-                  className="absolute inset-0 opacity-0"
-                />
-                <div className="flex items-center justify-between gap-2">
-                  <span>{form.dueTime || "Pick time"}</span>
-                  <ClockIcon />
-                </div>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-4 grid gap-3 sm:gap-4 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
-          {/* Allow Resubmission */}
-          <label className="flex min-h-[112px] items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-            <input
-              type="checkbox"
-              checked={form.allowResubmission}
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  allowResubmission: e.target.checked,
-                }))
-              }
-            />
-            <span>
-              <span className="block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                Resubmission Permission
-              </span>
-              <span className="mt-1 block font-semibold">Allow resubmission</span>
-              <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
-                Students can replace their submitted file before the deadline.
-              </span>
-            </span>
-          </label>
-
-          {/* Allowed File Types */}
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800">
-            <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <div className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  Allowed File Types
-                </div>
-                <div className="mt-1 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                  Select accepted submission formats
-                </div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">
-                  Students can upload only the checked file formats.
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={toggleAllAllowedExtensions}
-                className="w-fit rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-700"
-              >
-                {allAllowedSelected ? "Unselect all" : "Select all"}
-              </button>
-            </div>
-
-            <div className="flex max-h-44 flex-wrap gap-2 overflow-y-auto pr-1 sm:max-h-none sm:overflow-visible sm:pr-0">
-              {FILE_TYPE_OPTIONS.map((option) => {
-                const checked = selectedAllowedExtensions.includes(option.value);
-
-                return (
-                  <label
-                    key={option.value}
-                    className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition ${checked
-                        ? "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300"
-                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-700"
-                      }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleAllowedExtension(option.value)}
-                    />
-                    {option.label}
-                  </label>
-                );
-              })}
-
-              {customSelectedExtensions.map((extension) => (
-                <label
-                  key={extension}
-                  className="flex cursor-pointer items-center gap-2 rounded-xl border border-indigo-300 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300"
+                <span
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                    isActive
+                      ? "bg-white/15"
+                      : "bg-white text-indigo-600 shadow-sm dark:bg-slate-900 dark:text-indigo-300"
+                  }`}
                 >
-                  <input
-                    type="checkbox"
-                    checked
-                    onChange={() => toggleAllowedExtension(extension)}
-                  />
-                  {extension.toUpperCase()}
-                </label>
-              ))}
-            </div>
+                  {tab.id === "create" ? (
+                    <PlusIcon />
+                  ) : tab.id === "public" ? (
+                    <LinkIcon />
+                  ) : tab.id === "sync" ? (
+                    <SyncIcon />
+                  ) : (
+                    <FolderIcon />
+                  )}
+                </span>
 
-            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-              <input
-                type="text"
-                value={form.customExtension}
-                onChange={(e) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    customExtension: e.target.value,
-                  }))
-                }
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleAddCustomExtension();
-                  }
-                }}
-                className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                placeholder="Add custom type: c, java, cpp"
-              />
-
-              <button
-                type="button"
-                onClick={handleAddCustomExtension}
-                className="rounded-xl border border-indigo-300 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
-              >
-                Add Type
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Instructions */}
-        <div className="mt-4">
-          <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            Instructions for Students
-          </label>
-          <textarea
-            value={form.instructions}
-            onChange={(e) =>
-              setForm((prev) => ({ ...prev, instructions: e.target.value }))
-            }
-            rows={4}
-            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-            placeholder="Example: Upload your lab report before the deadline. File name should include your ID and name."
-          />
-        </div>
-
-        <div className="mt-4 grid gap-3 sm:flex sm:flex-wrap">
-          <button
-            type="submit"
-            disabled={savingForm}
-            className="inline-flex w-full items-center justify-center rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-          >
-            {savingForm
-              ? editingId
-                ? "Updating..."
-                : "Creating..."
-              : editingId
-                ? "Update Submission Assessment"
-                : "Create Submission Assessment"}
-          </button>
-
-          {editingId ? (
-            <button
-              type="button"
-              onClick={() => handleDelete(editingId, form.name)}
-              disabled={actionLoading === `delete-${editingId}`}
-              className="inline-flex w-full items-center justify-center rounded-2xl bg-rose-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:opacity-60 sm:w-auto"
-            >
-              Delete This Assessment
-            </button>
-          ) : null}
-        </div>
-      </form>
-
-      <TeacherPublicSubmissionLinkPanel
-        courseId={courseId}
-        assessments={items}
-      />
-
-      <div className="grid min-w-0 gap-4 sm:gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
-        <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:rounded-3xl sm:p-5">
-          <div className="mb-3 sm:mb-4">
-            <h3 className="text-base font-semibold text-slate-900 dark:text-white sm:text-xl">
-              Submission Assessments
-            </h3>
-            <p className="mt-1 hidden text-sm text-slate-500 dark:text-slate-400 sm:block">
-              Select one assessment to manage files, visibility, and marks.
-            </p>
-          </div>
-
-          {loading ? (
-            <div className="text-sm text-slate-500 dark:text-slate-400">
-              Loading...
-            </div>
-          ) : items.length === 0 ? (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
-              No submission assessments created yet.
-            </div>
-          ) : (
-            <div className="grid min-w-0 gap-3 xl:block xl:space-y-3">
-              {items.map((item) => {
-                const isSelected = item.id === selectedId;
-                const statusMeta = getSubmissionStatusMeta(item);
-
-                return (
-                  <div
-                    key={item.id}
-                    className={`min-w-0 rounded-2xl border p-3 transition sm:p-4 ${isSelected
-                        ? "border-indigo-500 bg-indigo-50 dark:border-indigo-500/40 dark:bg-indigo-500/10"
-                        : "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800"
-                      }`}
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="truncate text-sm font-bold sm:text-base">
+                      {tab.label}
+                    </span>
+                    {count !== null ? (
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                          isActive
+                            ? "bg-white/15 text-white"
+                            : "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+                        }`}
+                      >
+                        {count}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span
+                    className={`mt-0.5 hidden truncate text-xs sm:block ${
+                      isActive
+                        ? "text-indigo-100"
+                        : "text-slate-500 dark:text-slate-400"
+                    }`}
                   >
-                    <button
-                      type="button"
-                      onClick={() => setSelectedId(item.id)}
-                      className="w-full min-w-0 text-left"
-                    >
-                      <div className="break-words text-sm font-semibold leading-snug text-slate-900 dark:text-white sm:text-base">
-                        {item.name}
-                      </div>
-
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <Badge tone={item.isVisibleToStudents ? "emerald" : "amber"}>
-                          {item.isVisibleToStudents ? "Published" : "Unpublished"}
-                        </Badge>
-
-                        <Badge tone={statusMeta.tone}>{statusMeta.label}</Badge>
-                      </div>
-
-                      <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                        {item.submissionCount || 0} submission(s) • Full marks:{" "}
-                        {item.fullMarks || 0}
-                      </div>
-
-                      <div className="mt-1 break-words text-xs text-slate-500 dark:text-slate-400">
-                        Files: {formatAllowedExtensions(item.allowedExtensions)}
-                      </div>
-                    </button>
-
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleStartEdit(item)}
-                        className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-700"
-                      >
-                        Edit
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(item.id, item.name)}
-                        disabled={actionLoading === `delete-${item.id}`}
-                        className="rounded-xl border border-rose-300 bg-white px-3 py-2 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 dark:border-rose-500/30 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-500/10"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                    {tab.description}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
         </div>
+      </div>
 
-        <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:rounded-3xl sm:p-5">
-          <div className="mb-4 flex min-w-0 flex-col gap-4 sm:mb-5 xl:flex-row xl:items-start xl:justify-between">
-            <div className="min-w-0">
-              <h3 className="text-base font-semibold text-slate-900 dark:text-white sm:text-xl">
-                Student Submissions
+      {activeTab === "create" ? (
+        <form
+          onSubmit={handleCreateOrUpdate}
+          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:rounded-3xl sm:p-5"
+        >
+          <div className="mb-4 flex flex-col gap-3 border-b border-slate-100 pb-4 dark:border-slate-800 sm:mb-5 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="inline-flex rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300">
+                {editingId ? "Editing Assessment" : "New Assessment"}
+              </div>
+              <h3 className="mt-3 text-lg font-semibold text-slate-900 dark:text-white sm:text-xl">
+                {editingId
+                  ? "Edit File Submission Assessment"
+                  : "Create File Submission Assessment"}
               </h3>
-
-              {selectedAssessment ? (
-                <div className="mt-2 space-y-2 text-xs text-slate-500 dark:text-slate-400 sm:text-sm">
-                  <div className="grid min-w-0 grid-cols-[76px_minmax(0,1fr)] gap-2 sm:block">
-                    <span className="font-semibold text-slate-600 dark:text-slate-300 sm:font-normal sm:text-inherit">Assessment:</span>
-                    <span className="min-w-0 break-words">{selectedAssessment.name}</span>
-                  </div>
-                  <div className="grid min-w-0 grid-cols-[76px_minmax(0,1fr)] gap-2 sm:block">
-                    <span className="font-semibold text-slate-600 dark:text-slate-300 sm:font-normal sm:text-inherit">Due:</span>
-                    <span className="min-w-0 break-words">{formatDateTime(selectedAssessment.dueDate)}</span>
-                  </div>
-                  <div className="grid min-w-0 grid-cols-[76px_minmax(0,1fr)] gap-2 sm:block">
-                    <span className="font-semibold text-slate-600 dark:text-slate-300 sm:font-normal sm:text-inherit">Marks:</span>
-                    <span>{selectedAssessment.fullMarks || 0}</span>
-                  </div>
-                  <div className="grid min-w-0 grid-cols-[76px_minmax(0,1fr)] gap-2 sm:block">
-                    <span className="font-semibold text-slate-600 dark:text-slate-300 sm:font-normal sm:text-inherit">Files:</span>
-                    <span className="min-w-0 break-words">{formatAllowedExtensions(selectedAssessment.allowedExtensions)}</span>
-                  </div>
-
-                  {selectedAssessment.resourceUrl ? (
-                    <a
-                      href={getPublicFileUrl(selectedAssessment.resourceUrl)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex max-w-full items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
-                    >
-                      <span className="shrink-0"><LinkIcon /></span>
-                      <span className="min-w-0 truncate">{selectedAssessment.resourceTitle || "View Resource"}</span>
-                    </a>
-                  ) : null}
-
-                  <div className="flex min-w-0 flex-wrap gap-2">
-                    <Badge
-                      tone={selectedAssessment.isVisibleToStudents ? "emerald" : "amber"}
-                    >
-                      Visibility:{" "}
-                      {selectedAssessment.isVisibleToStudents
-                        ? "Published"
-                        : "Unpublished"}
-                    </Badge>
-
-                    <Badge tone={selectedStatusMeta.tone}>
-                      Submission: {selectedStatusMeta.label}
-                    </Badge>
-                  </div>
-
-                  {selectedAssessment?.dueDatePassed ? (
-                    <div className="break-words text-xs font-medium leading-5 text-rose-600 dark:text-rose-300">
-                      This submission is auto-closed because the due date has
-                      passed. Update the due date first if you want to reopen it.
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                  Select an assessment first.
-                </div>
-              )}
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Keep creation settings separate from the student file review area.
+              </p>
             </div>
 
-            {selectedAssessment ? (
-              <div className="grid w-full min-w-0 grid-cols-1 gap-2 sm:flex sm:flex-wrap xl:w-auto xl:justify-end">
-                <select
-                  value={submissionSortBy}
-                  onChange={(e) => setSubmissionSortBy(e.target.value)}
-                  className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 sm:w-auto"
-                >
-                  <option value="roll-asc">Sort: Roll number</option>
-                  <option value="roll-desc">Sort: Roll number desc</option>
-                  <option value="time-newest">Sort: Newest submitted</option>
-                  <option value="time-oldest">Sort: Oldest submitted</option>
-                </select>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleAssessmentAction(
-                      selectedAssessment.id,
-                      selectedAssessment.isVisibleToStudents ? "unpublish" : "publish"
-                    )
-                  }
-                  disabled={
-                    actionLoading ===
-                    `${selectedAssessment.id}-${selectedAssessment.isVisibleToStudents
-                      ? "unpublish"
-                      : "publish"
-                    }`
-                  }
-                  className="w-full rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-60 sm:w-auto"
-                >
-                  {selectedAssessment.isVisibleToStudents ? "Unpublish" : "Publish"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleAssessmentAction(
-                      selectedAssessment.id,
-                      submissionToggleAction
-                    )
-                  }
-                  disabled={
-                    isDeadlinePassed ||
-                    actionLoading ===
-                    `${selectedAssessment.id}-${submissionToggleAction}`
-                  }
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 sm:w-auto"
-                >
-                  {isDeadlinePassed
-                    ? "Deadline Passed"
-                    : selectedAssessment.submissionsOpen
-                      ? "Turn Off Submission"
-                      : "Turn On Submission"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleSaveAllMarks}
-                  disabled={actionLoading === `save-all-${selectedAssessment.id}`}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 sm:w-auto"
-                >
-                  Save All Marks
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleSyncAllMarks}
-                  disabled={actionLoading === `sync-all-${selectedAssessment.id}`}
-                  className="w-full rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60 sm:w-auto"
-                >
-                  Sync Marks
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleDownloadAll}
-                  disabled={actionLoading === `download-${selectedAssessment.id}`}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 sm:w-auto"
-                >
-                  Download All
-                </button>
-              </div>
+            {editingId ? (
+              <button
+                type="button"
+                onClick={resetForm}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+              >
+                Cancel Edit
+              </button>
             ) : null}
           </div>
 
-          {!selectedId ? (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
-              No assessment selected.
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Field label="Assessment Title">
+              <input
+                type="text"
+                value={form.name}
+                onChange={(event) =>
+                  setForm((previous) => ({
+                    ...previous,
+                    name: event.target.value,
+                  }))
+                }
+                className="field-input"
+                placeholder="Example: Lab Assessment Submission"
+                required
+              />
+            </Field>
+
+            <Field label="Full Marks">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.fullMarks}
+                onChange={(event) =>
+                  setForm((previous) => ({
+                    ...previous,
+                    fullMarks: event.target.value,
+                  }))
+                }
+                className="field-input"
+                placeholder="Example: 10"
+                required
+              />
+            </Field>
+
+            <Field
+              label="Maximum File Size"
+              help="Enter file size in MB. Maximum allowed value is 10 MB."
+            >
+              <input
+                type="number"
+                min="1"
+                max="10"
+                value={form.maxFileSizeMB}
+                onChange={(event) =>
+                  setForm((previous) => ({
+                    ...previous,
+                    maxFileSizeMB: event.target.value,
+                  }))
+                }
+                className="field-input"
+                placeholder="Example: 10"
+              />
+            </Field>
+
+            <Field
+              label="Resource Button Text"
+              help="This text will be shown as a button on the student side."
+            >
+              <input
+                type="text"
+                value={form.resourceTitle}
+                onChange={(event) =>
+                  setForm((previous) => ({
+                    ...previous,
+                    resourceTitle: event.target.value,
+                  }))
+                }
+                className="field-input"
+                placeholder="Example: View Resource"
+              />
+            </Field>
+
+            <Field
+              label="Resource Link"
+              help="Paste a Google Drive, PDF, instruction, or reference link."
+            >
+              <input
+                type="url"
+                value={form.resourceUrl}
+                onChange={(event) =>
+                  setForm((previous) => ({
+                    ...previous,
+                    resourceUrl: event.target.value,
+                  }))
+                }
+                className="field-input"
+                placeholder="Example: Google Drive PDF link"
+              />
+            </Field>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Deadline Date">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (dateInputRef.current?.showPicker) {
+                      dateInputRef.current.showPicker();
+                    } else {
+                      dateInputRef.current?.focus();
+                    }
+                  }}
+                  className="relative w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm text-slate-900 transition hover:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                >
+                  <input
+                    ref={dateInputRef}
+                    type="date"
+                    value={form.dueDate}
+                    onChange={(event) =>
+                      setForm((previous) => ({
+                        ...previous,
+                        dueDate: event.target.value,
+                      }))
+                    }
+                    className="absolute inset-0 opacity-0"
+                  />
+                  <span className="flex items-center justify-between gap-2">
+                    <span>{form.dueDate || "Pick date"}</span>
+                    <CalendarIcon />
+                  </span>
+                </button>
+              </Field>
+
+              <Field label="Deadline Time">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (timeInputRef.current?.showPicker) {
+                      timeInputRef.current.showPicker();
+                    } else {
+                      timeInputRef.current?.focus();
+                    }
+                  }}
+                  className="relative w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm text-slate-900 transition hover:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                >
+                  <input
+                    ref={timeInputRef}
+                    type="time"
+                    value={form.dueTime}
+                    onChange={(event) =>
+                      setForm((previous) => ({
+                        ...previous,
+                        dueTime: event.target.value,
+                      }))
+                    }
+                    className="absolute inset-0 opacity-0"
+                  />
+                  <span className="flex items-center justify-between gap-2">
+                    <span>{form.dueTime || "Pick time"}</span>
+                    <ClockIcon />
+                  </span>
+                </button>
+              </Field>
             </div>
-          ) : !sortedSubmissions.length ? (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
-              No student has submitted yet.
-            </div>
-          ) : (
-            <>
-              <div className="min-w-0 space-y-3 md:hidden">
-                {sortedSubmissions.map((row) => (
-                  <div
-                    key={row.id}
-                    className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm dark:border-slate-700 dark:bg-slate-800/70 sm:p-4"
-                  >
-                    <div className="flex min-w-0 items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="break-words text-sm font-bold leading-snug text-slate-900 dark:text-white">
-                          {row.studentName}
-                        </div>
-                        <div className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                          Roll: {row.roll}
-                        </div>
-                      </div>
+          </div>
 
-                      <Badge tone={row.status === "checked" ? "emerald" : "amber"}>
-                        {row.status}
-                      </Badge>
-                    </div>
+          <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(260px,0.65fr)_minmax(0,1.35fr)]">
+            <label className="flex min-h-[120px] cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 transition hover:border-indigo-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+              <input
+                type="checkbox"
+                checked={form.allowResubmission}
+                onChange={(event) =>
+                  setForm((previous) => ({
+                    ...previous,
+                    allowResubmission: event.target.checked,
+                  }))
+                }
+              />
+              <span>
+                <span className="block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  Resubmission Permission
+                </span>
+                <span className="mt-1 block font-semibold">
+                  Allow students to replace files
+                </span>
+                <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
+                  Replacement remains available until the deadline while submission is open.
+                </span>
+              </span>
+            </label>
 
-                    {row.isPublicSubmission || row.source === "public-link" ? (
-                      <div className="mt-2">
-                        <Badge tone="emerald">Public Link</Badge>
-                      </div>
-                    ) : null}
-
-                    <div className="mt-3 min-w-0 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
-                      <div className="break-words text-sm font-semibold leading-snug text-slate-900 dark:text-white">
-                        {row.originalFileName}
-                      </div>
-                      <div className="mt-1 break-words text-xs text-slate-500 dark:text-slate-400">
-                        {formatFileSize(row.fileSize)} • {formatDateTime(row.submittedAt)}
-                      </div>
-                      <div className="mt-3 grid min-w-0 grid-cols-2 gap-2">
-                        <a
-                          href={getPublicFileUrl(row.downloadUrl)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
-                        >
-                          <EyeIcon />
-                          View
-                        </a>
-
-                        <a
-                          href={getPublicFileUrl(row.downloadUrl)}
-                          download
-                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                        >
-                          <DownloadIcon />
-                          Download
-                        </a>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 grid min-w-0 grid-cols-[minmax(0,1fr)_72px] gap-2">
-                      <input
-                        type="number"
-                        min="0"
-                        max={selectedAssessment?.fullMarks || 0}
-                        value={row.draftMarks}
-                        onChange={(e) => updateDraftMarks(row.id, e.target.value)}
-                        className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                        placeholder={`Marks / ${selectedAssessment?.fullMarks || 0}`}
-                      />
-
-                      <button
-                        type="button"
-                        onClick={() => handleSaveMarks(row)}
-                        disabled={actionLoading === `save-marks-${row.id}`}
-                        className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60 dark:bg-slate-700 dark:hover:bg-slate-600"
-                      >
-                        Save
-                      </button>
-                    </div>
-
-                    <div className="mt-3">
-                      {row.status === "checked" ? (
-                        <button
-                          type="button"
-                          onClick={() => handleUncheckSubmission(row)}
-                          disabled={actionLoading === `uncheck-${row.id}`}
-                          className="w-full rounded-xl border border-rose-300 bg-white px-4 py-2.5 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-60 dark:border-rose-500/30 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-500/10"
-                        >
-                          Uncheck
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleMarkChecked(row)}
-                          disabled={actionLoading === `checked-${row.id}`}
-                          className="w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
-                        >
-                          Mark Checked
-                        </button>
-                      )}
-                    </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
+              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    Allowed File Types
                   </div>
+                  <div className="mt-1 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                    Select accepted submission formats
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={toggleAllAllowedExtensions}
+                  className="w-fit rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-700"
+                >
+                  {allAllowedSelected ? "Unselect all" : "Select all"}
+                </button>
+              </div>
+
+              <div className="flex max-h-44 flex-wrap gap-2 overflow-y-auto pr-1 sm:max-h-none sm:overflow-visible">
+                {FILE_TYPE_OPTIONS.map((option) => {
+                  const checked = selectedAllowedExtensions.includes(option.value);
+
+                  return (
+                    <label
+                      key={option.value}
+                      className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition ${
+                        checked
+                          ? "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300"
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-700"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleAllowedExtension(option.value)}
+                      />
+                      {option.label}
+                    </label>
+                  );
+                })}
+
+                {customSelectedExtensions.map((extension) => (
+                  <label
+                    key={extension}
+                    className="flex cursor-pointer items-center gap-2 rounded-xl border border-indigo-300 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300"
+                  >
+                    <input
+                      type="checkbox"
+                      checked
+                      onChange={() => toggleAllowedExtension(extension)}
+                    />
+                    {extension.toUpperCase()}
+                  </label>
                 ))}
               </div>
 
-              <div className="hidden overflow-x-auto md:block">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-left text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                    <th className="px-3 py-3">Student</th>
-                    <th className="px-3 py-3">File</th>
-                    <th className="px-3 py-3">Submitted</th>
-                    <th className="px-3 py-3">Marks</th>
-                    <th className="px-3 py-3">Status</th>
-                    <th className="px-3 py-3">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedSubmissions.map((row) => (
-                    <tr
-                      key={row.id}
-                      className="border-b border-slate-100 align-top dark:border-slate-800"
-                    >
-                      <td className="px-3 py-4">
-                        <div className="font-semibold text-slate-900 dark:text-white">
-                          {row.studentName}
-                        </div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400">
-                          {row.roll}
-                        </div>
-                        {row.isPublicSubmission || row.source === "public-link" ? (
-                          <div className="mt-2">
-                            <Badge tone="emerald">Public Link</Badge>
-                          </div>
-                        ) : null}
-                      </td>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <input
+                  type="text"
+                  value={form.customExtension}
+                  onChange={(event) =>
+                    setForm((previous) => ({
+                      ...previous,
+                      customExtension: event.target.value,
+                    }))
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      handleAddCustomExtension();
+                    }
+                  }}
+                  className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  placeholder="Add custom type: c, java, cpp"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddCustomExtension}
+                  className="rounded-xl border border-indigo-300 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
+                >
+                  Add Type
+                </button>
+              </div>
+            </div>
+          </div>
 
-                      <td className="px-3 py-4">
-                        <div className="max-w-[260px]">
-                          <div className="truncate text-sm font-medium text-slate-900 dark:text-white">
+          <div className="mt-4">
+            <Field label="Instructions for Students">
+              <textarea
+                value={form.instructions}
+                onChange={(event) =>
+                  setForm((previous) => ({
+                    ...previous,
+                    instructions: event.target.value,
+                  }))
+                }
+                rows={4}
+                className="field-input resize-y"
+                placeholder="Example: Upload your lab report before the deadline. Use your ID and name in the file name."
+              />
+            </Field>
+          </div>
+
+          <div className="mt-5 flex flex-col gap-3 border-t border-slate-100 pt-4 dark:border-slate-800 sm:flex-row sm:flex-wrap">
+            <button
+              type="submit"
+              disabled={savingForm}
+              className="inline-flex items-center justify-center rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {savingForm
+                ? editingId
+                  ? "Updating…"
+                  : "Creating…"
+                : editingId
+                  ? "Update Submission Assessment"
+                  : "Create Submission Assessment"}
+            </button>
+
+            {editingId ? (
+              <button
+                type="button"
+                onClick={() => handleDeleteAssessment(editingId, form.name)}
+                disabled={
+                  actionLoading === `delete-assessment-${editingId}`
+                }
+                className="inline-flex items-center justify-center rounded-2xl border border-rose-300 bg-white px-5 py-3 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-60 dark:border-rose-500/30 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-500/10"
+              >
+                Delete This Assessment
+              </button>
+            ) : null}
+          </div>
+        </form>
+      ) : null}
+
+      {activeTab === "public" ? (
+        <TeacherPublicSubmissionLinkPanel
+          courseId={courseId}
+          assessments={items}
+        />
+      ) : null}
+
+      {activeTab === "sync" ? (
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:rounded-3xl">
+          <div className="border-b border-slate-100 p-4 dark:border-slate-800 sm:p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="inline-flex rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300">
+                  Submission Mapping
+                </div>
+                <h3 className="mt-3 text-lg font-semibold text-slate-900 dark:text-white sm:text-xl">
+                  Marks Sync
+                </h3>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500 dark:text-slate-400">
+                  Connect each file-submission assessment to one Structured Lab Mid or Lab Final component. Publishing is not required. Once connected, marks entered in Student Submissions are synchronized automatically.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={loadMarksSyncConfiguration}
+                disabled={loadingSyncConfig}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+              >
+                <SyncIcon /> Refresh
+              </button>
+            </div>
+          </div>
+
+          <div className="p-4 sm:p-5">
+            {loadingSyncConfig ? (
+              <EmptyState
+                title="Loading marks sync"
+                text="Please wait while submission and structured assessment components are loaded."
+              />
+            ) : syncConfig.submissions.length === 0 ? (
+              <EmptyState
+                title="No submission assessment"
+                text="Create a file-submission assessment first. It does not need to be published before mapping."
+              />
+            ) : syncConfig.targets.length === 0 ? (
+              <EmptyState
+                title="No structured component available"
+                text="Create a Structured Lab Mid or Structured Lab Final with component breakdowns from the Assessments tab first."
+              />
+            ) : (
+              <div className="space-y-4">
+                {syncConfig.submissions.map((sourceAssessment) => {
+                  const draft = syncDrafts[sourceAssessment.id] || {
+                    targetAssessmentId: "",
+                    targetComponentKey: "",
+                  };
+                  const selectedTarget = syncConfig.targets.find(
+                    (target) => target.id === draft.targetAssessmentId
+                  );
+                  const compatibleComponents = (selectedTarget?.components || []).filter(
+                    (component) =>
+                      Number(component.marks || 0) ===
+                        Number(sourceAssessment.fullMarks || 0) &&
+                      (!component.mappedSubmissionAssessmentId ||
+                        component.mappedSubmissionAssessmentId === sourceAssessment.id)
+                  );
+                  const savedMapping = sourceAssessment.mapping || {};
+                  const isMapped = !!savedMapping.targetAssessmentId;
+
+                  return (
+                    <article
+                      key={sourceAssessment.id}
+                      className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-800/60 sm:p-5"
+                    >
+                      <div className="flex flex-col gap-4 xl:flex-row xl:items-end">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="break-words text-base font-bold text-slate-900 dark:text-white">
+                              {sourceAssessment.name}
+                            </h4>
+                            <Badge tone={isMapped ? "emerald" : "amber"}>
+                              {isMapped ? "Mapped" : "Not Mapped"}
+                            </Badge>
+                            <Badge tone="slate">
+                              {sourceAssessment.fullMarks || 0} marks
+                            </Badge>
+                          </div>
+                          <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                            Source: file-submission marks. Student visibility and publishing status do not affect this mapping.
+                          </p>
+                        </div>
+
+                        <div className="grid min-w-0 flex-[1.5] gap-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_minmax(240px,1fr)_auto]">
+                          <Field label="Target Assessment">
+                            <select
+                              value={draft.targetAssessmentId}
+                              onChange={(event) =>
+                                updateSyncDraft(sourceAssessment.id, {
+                                  targetAssessmentId: event.target.value,
+                                  targetComponentKey: "",
+                                })
+                              }
+                              className="field-input"
+                            >
+                              <option value="">No mapping</option>
+                              {syncConfig.targets.map((target) => (
+                                <option key={target.id} value={target.id}>
+                                  {target.period === "mid" ? "Lab Mid" : "Lab Final"} — {target.name}
+                                </option>
+                              ))}
+                            </select>
+                          </Field>
+
+                          <Field label="Target Component">
+                            <select
+                              value={draft.targetComponentKey}
+                              onChange={(event) =>
+                                updateSyncDraft(sourceAssessment.id, {
+                                  targetComponentKey: event.target.value,
+                                })
+                              }
+                              disabled={!draft.targetAssessmentId}
+                              className="field-input disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <option value="">
+                                {draft.targetAssessmentId
+                                  ? "Select matching component"
+                                  : "Choose assessment first"}
+                              </option>
+                              {compatibleComponents.map((component) => (
+                                <option key={component.key} value={component.key}>
+                                  {component.name} ({component.marks} marks)
+                                </option>
+                              ))}
+                            </select>
+                          </Field>
+
+                          <button
+                            type="button"
+                            onClick={() => handleSaveSyncMapping(sourceAssessment)}
+                            disabled={savingSyncId === sourceAssessment.id}
+                            className="inline-flex min-h-[46px] items-center justify-center rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60 md:col-span-2 xl:col-span-1"
+                          >
+                            {savingSyncId === sourceAssessment.id
+                              ? "Saving…"
+                              : draft.targetAssessmentId
+                                ? "Save Mapping"
+                                : isMapped
+                                  ? "Remove Mapping"
+                                  : "Keep Unmapped"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {draft.targetAssessmentId && compatibleComponents.length === 0 ? (
+                        <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+                          No unused component with exactly {sourceAssessment.fullMarks || 0} marks is available in the selected assessment.
+                        </p>
+                      ) : null}
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === "submissions" ? (
+        <div
+          className={`grid min-w-0 gap-4 transition-all sm:gap-5 ${
+            sidebarOpen
+              ? "xl:grid-cols-[300px_minmax(0,1fr)]"
+              : "xl:grid-cols-[72px_minmax(0,1fr)]"
+          }`}
+        >
+          <aside
+            className={`min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-all dark:border-slate-800 dark:bg-slate-900 sm:rounded-3xl ${
+              sidebarOpen ? "p-3 sm:p-4" : "p-2"
+            }`}
+          >
+            <div
+              className={`flex items-center gap-2 ${
+                sidebarOpen ? "justify-between" : "justify-center"
+              }`}
+            >
+              {sidebarOpen ? (
+                <div className="min-w-0">
+                  <h3 className="truncate text-base font-semibold text-slate-900 dark:text-white">
+                    Assessments
+                  </h3>
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                    {items.length} created
+                  </p>
+                </div>
+              ) : null}
+
+              <button
+                type="button"
+                onClick={() => setSidebarOpen((previous) => !previous)}
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-indigo-500/40 dark:hover:text-indigo-300"
+                title={sidebarOpen ? "Hide assessments" : "Show assessments"}
+                aria-label={sidebarOpen ? "Hide assessments" : "Show assessments"}
+              >
+                <ChevronIcon direction={sidebarOpen ? "left" : "right"} />
+              </button>
+            </div>
+
+            {sidebarOpen ? (
+              <div className="mt-4">
+                {loading ? (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                    Loading assessments…
+                  </div>
+                ) : items.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                    No assessment created yet.
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("create")}
+                      className="mt-3 block font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-300"
+                    >
+                      Create the first assessment
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2 xl:max-h-[calc(100vh-270px)] xl:grid-cols-1 xl:overflow-y-auto xl:pr-1">
+                    {items.map((item) => {
+                      const isSelected = item.id === selectedId;
+                      const statusMeta = getSubmissionStatusMeta(item);
+
+                      return (
+                        <article
+                          key={item.id}
+                          className={`min-w-0 rounded-2xl border p-3 transition ${
+                            isSelected
+                              ? "border-indigo-500 bg-indigo-50 shadow-sm dark:border-indigo-500/40 dark:bg-indigo-500/10"
+                              : "border-slate-200 bg-slate-50 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-slate-600"
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setSelectedId(item.id)}
+                            className="w-full min-w-0 text-left"
+                          >
+                            <div className="break-words text-sm font-bold leading-snug text-slate-900 dark:text-white">
+                              {item.name}
+                            </div>
+
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              <Badge
+                                tone={
+                                  item.isVisibleToStudents ? "emerald" : "amber"
+                                }
+                              >
+                                {item.isVisibleToStudents
+                                  ? "Published"
+                                  : "Unpublished"}
+                              </Badge>
+                              <Badge tone={statusMeta.tone}>
+                                {statusMeta.label}
+                              </Badge>
+                            </div>
+
+                            <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                              {item.submissionCount || 0} file(s) · {item.fullMarks || 0} marks
+                            </div>
+                          </button>
+
+                          <div className="mt-3 grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleStartEdit(item)}
+                              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-700"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleDeleteAssessment(item.id, item.name)
+                              }
+                              disabled={
+                                actionLoading ===
+                                `delete-assessment-${item.id}`
+                              }
+                              className="rounded-xl border border-rose-300 bg-white px-3 py-2 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-60 dark:border-rose-500/30 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(true)}
+                className="mt-3 flex w-full flex-col items-center gap-2 rounded-xl bg-slate-50 px-1 py-4 text-center text-[11px] font-bold text-slate-500 transition hover:text-indigo-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-indigo-300"
+              >
+                <FolderIcon />
+                <span className="hidden xl:block [writing-mode:vertical-rl]">
+                  Assessments
+                </span>
+                <span className="xl:hidden">Show Assessments</span>
+              </button>
+            )}
+          </aside>
+
+          <section className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:rounded-3xl">
+            <div className="border-b border-slate-100 p-4 dark:border-slate-800 sm:p-5">
+              <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white sm:text-xl">
+                      Student Submissions
+                    </h3>
+                    {selectedAssessment ? (
+                      <Badge tone="indigo">
+                        {selectedAssessment.submissionCount || 0} file(s)
+                      </Badge>
+                    ) : null}
+                  </div>
+
+                  {selectedAssessment ? (
+                    <div className="mt-3 grid gap-2 text-xs text-slate-500 dark:text-slate-400 sm:grid-cols-2 sm:text-sm xl:grid-cols-4">
+                      <InfoPill label="Assessment" value={selectedAssessment.name} />
+                      <InfoPill
+                        label="Deadline"
+                        value={formatDateTime(selectedAssessment.dueDate)}
+                      />
+                      <InfoPill
+                        label="Full Marks"
+                        value={String(selectedAssessment.fullMarks || 0)}
+                      />
+                      <InfoPill
+                        label="File Types"
+                        value={formatAllowedExtensions(
+                          selectedAssessment.allowedExtensions
+                        )}
+                      />
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                      Select an assessment to review submitted files.
+                    </p>
+                  )}
+
+                  {selectedAssessment ? (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <Badge
+                        tone={
+                          selectedAssessment.isVisibleToStudents
+                            ? "emerald"
+                            : "amber"
+                        }
+                      >
+                        {selectedAssessment.isVisibleToStudents
+                          ? "Published"
+                          : "Unpublished"}
+                      </Badge>
+                      <Badge tone={selectedStatusMeta.tone}>
+                        {selectedStatusMeta.label}
+                      </Badge>
+
+                      {selectedAssessment.resourceUrl ? (
+                        <a
+                          href={getPublicFileUrl(
+                            selectedAssessment.resourceUrl
+                          )}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex max-w-full items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-[11px] font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
+                        >
+                          <LinkIcon />
+                          <span className="truncate">
+                            {selectedAssessment.resourceTitle || "View Resource"}
+                          </span>
+                        </a>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {selectedAssessment?.dueDatePassed ? (
+                    <p className="mt-3 max-w-3xl text-xs font-medium leading-5 text-rose-600 dark:text-rose-300">
+                      This task is automatically closed because its deadline has passed. Edit the deadline before reopening it.
+                    </p>
+                  ) : null}
+                </div>
+
+                {selectedAssessment ? (
+                  <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap xl:w-auto xl:max-w-[560px] xl:justify-end">
+                    <select
+                      value={submissionSortBy}
+                      onChange={(event) =>
+                        setSubmissionSortBy(event.target.value)
+                      }
+                      className="col-span-2 min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 sm:col-span-1"
+                    >
+                      <option value="roll-asc">Roll: Ascending</option>
+                      <option value="roll-desc">Roll: Descending</option>
+                      <option value="time-newest">Newest Submitted</option>
+                      <option value="time-oldest">Oldest Submitted</option>
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleAssessmentAction(
+                          selectedAssessment.id,
+                          selectedAssessment.isVisibleToStudents
+                            ? "unpublish"
+                            : "publish"
+                        )
+                      }
+                      disabled={
+                        actionLoading ===
+                        `${selectedAssessment.id}-${
+                          selectedAssessment.isVisibleToStudents
+                            ? "unpublish"
+                            : "publish"
+                        }`
+                      }
+                      className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-60 sm:text-sm"
+                    >
+                      {selectedAssessment.isVisibleToStudents
+                        ? "Unpublish"
+                        : "Publish"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleAssessmentAction(
+                          selectedAssessment.id,
+                          submissionToggleAction
+                        )
+                      }
+                      disabled={
+                        isDeadlinePassed ||
+                        actionLoading ===
+                          `${selectedAssessment.id}-${submissionToggleAction}`
+                      }
+                      className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 sm:text-sm"
+                    >
+                      {isDeadlinePassed
+                        ? "Deadline Passed"
+                        : selectedAssessment.submissionsOpen
+                          ? "Close Uploads"
+                          : "Open Uploads"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSyncAllMarks}
+                      disabled={
+                        !selectedAssessment?.markSync?.isConfigured ||
+                        actionLoading === `sync-all-${selectedAssessment.id}`
+                      }
+                      className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60 sm:text-sm"
+                    >
+                      Re-sync Marks
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleDownloadAll}
+                      disabled={
+                        actionLoading === `download-${selectedAssessment.id}`
+                      }
+                      className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 sm:text-sm"
+                    >
+                      Download All
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="p-3 sm:p-5">
+              {!selectedId ? (
+                <EmptyState
+                  title="No assessment selected"
+                  text="Choose an assessment from the left panel to view student files."
+                />
+              ) : loadingSubmissions ? (
+                <EmptyState
+                  title="Loading submissions"
+                  text="Please wait while the student files are loaded."
+                />
+              ) : !sortedSubmissions.length ? (
+                <EmptyState
+                  title="No files submitted yet"
+                  text="Student submissions will appear here as soon as files are uploaded."
+                />
+              ) : (
+                <>
+                  <div className="space-y-3 md:hidden">
+                    {sortedSubmissions.map((row) => (
+                      <article
+                        key={row.id}
+                        className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm dark:border-slate-700 dark:bg-slate-800/70 sm:p-4"
+                      >
+                        <div className="flex min-w-0 items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="break-words text-sm font-bold leading-snug text-slate-900 dark:text-white">
+                              {row.studentName}
+                            </div>
+                            <div className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                              Roll: {row.roll}
+                            </div>
+                          </div>
+
+                          {row.isPublicSubmission ||
+                          row.source === "public-link" ? (
+                            <Badge tone="emerald">Public Link</Badge>
+                          ) : null}
+                        </div>
+
+                        <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+                          <div className="break-words text-sm font-semibold leading-snug text-slate-900 dark:text-white">
                             {row.originalFileName}
                           </div>
                           <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                            {formatFileSize(row.fileSize)}
+                            {formatFileSize(row.fileSize)} · {formatDateTime(row.submittedAt)}
                           </div>
-
-                          <div className="mt-3 grid min-w-0 grid-cols-2 gap-2">
+                          <div className="mt-3 grid grid-cols-2 gap-2">
                             <a
                               href={getPublicFileUrl(row.downloadUrl)}
                               target="_blank"
                               rel="noreferrer"
-                              className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
+                              className="inline-flex items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
                             >
-                              <EyeIcon />
-                              View
+                              <EyeIcon /> View
                             </a>
-
                             <a
                               href={getPublicFileUrl(row.downloadUrl)}
                               download
-                              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                             >
-                              <DownloadIcon />
-                              Download
+                              <DownloadIcon /> Download
                             </a>
                           </div>
                         </div>
-                      </td>
 
-                      <td className="px-3 py-4 text-slate-600 dark:text-slate-300">
-                        {formatDateTime(row.submittedAt)}
-                      </td>
-
-                      <td className="px-3 py-4">
-                        <div className="flex min-w-[180px] flex-col gap-2">
+                        <div className="mt-3">
+                          <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                            Marks / {selectedAssessment?.fullMarks || 0}
+                          </label>
                           <input
                             type="number"
                             min="0"
+                            step="0.01"
                             max={selectedAssessment?.fullMarks || 0}
                             value={row.draftMarks}
-                            onChange={(e) => updateDraftMarks(row.id, e.target.value)}
-                            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            onChange={(event) =>
+                              scheduleMarksAutoSave(row.id, event.target.value)
+                            }
+                            onBlur={(event) =>
+                              handleMarksBlur(row.id, event.target.value)
+                            }
+                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                             placeholder="Enter marks"
                           />
-
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleSaveMarks(row)}
-                              disabled={actionLoading === `save-marks-${row.id}`}
-                              className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60 dark:bg-slate-700 dark:hover:bg-slate-600"
-                            >
-                              Save
-                            </button>
+                          <div className="mt-1.5 min-h-[17px]">
+                            <AutoSaveIndicator state={autoSaveStates[row.id]} />
                           </div>
                         </div>
-                      </td>
 
-                      <td className="px-3 py-4">
-                        <Badge tone={row.status === "checked" ? "emerald" : "amber"}>
-                          {row.status}
-                        </Badge>
-                      </td>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSubmission(row)}
+                          disabled={
+                            actionLoading === `delete-submission-${row.id}`
+                          }
+                          className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-rose-300 bg-white px-4 py-2.5 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-60 dark:border-rose-500/30 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                        >
+                          <TrashIcon /> Delete Submission
+                        </button>
+                      </article>
+                    ))}
+                  </div>
 
-                      <td className="px-3 py-4">
-                        {row.status === "checked" ? (
-                          <button
-                            type="button"
-                            onClick={() => handleUncheckSubmission(row)}
-                            disabled={actionLoading === `uncheck-${row.id}`}
-                            className="rounded-xl border border-rose-300 bg-white px-4 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-60 dark:border-rose-500/30 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                  <div className="hidden overflow-x-auto md:block">
+                    <table className="min-w-full table-fixed text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200 text-left text-xs font-bold uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                          <th className="w-[19%] px-3 py-3">Student</th>
+                          <th className="w-[28%] px-3 py-3">File</th>
+                          <th className="w-[18%] px-3 py-3">Submitted</th>
+                          <th className="w-[25%] px-3 py-3">Marks</th>
+                          <th className="w-[10%] px-3 py-3 text-center">Delete</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sortedSubmissions.map((row) => (
+                          <tr
+                            key={row.id}
+                            className="border-b border-slate-100 align-top transition hover:bg-slate-50/70 dark:border-slate-800 dark:hover:bg-slate-800/30"
                           >
-                            Uncheck
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleMarkChecked(row)}
-                            disabled={actionLoading === `checked-${row.id}`}
-                            className="w-full rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60 sm:w-auto"
-                          >
-                            Mark Checked
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              </div>
-            </>
-          )}
+                            <td className="px-3 py-4">
+                              <div className="break-words font-semibold text-slate-900 dark:text-white">
+                                {row.studentName}
+                              </div>
+                              <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                                {row.roll}
+                              </div>
+                              {row.isPublicSubmission ||
+                              row.source === "public-link" ? (
+                                <div className="mt-2">
+                                  <Badge tone="emerald">Public Link</Badge>
+                                </div>
+                              ) : null}
+                            </td>
+
+                            <td className="px-3 py-4">
+                              <div className="min-w-0">
+                                <div
+                                  className="truncate font-medium text-slate-900 dark:text-white"
+                                  title={row.originalFileName}
+                                >
+                                  {row.originalFileName}
+                                </div>
+                                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                  {formatFileSize(row.fileSize)}
+                                </div>
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  <a
+                                    href={getPublicFileUrl(row.downloadUrl)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
+                                  >
+                                    <EyeIcon /> View
+                                  </a>
+                                  <a
+                                    href={getPublicFileUrl(row.downloadUrl)}
+                                    download
+                                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                                  >
+                                    <DownloadIcon /> Download
+                                  </a>
+                                </div>
+                              </div>
+                            </td>
+
+                            <td className="px-3 py-4 text-xs leading-5 text-slate-600 dark:text-slate-300">
+                              {formatDateTime(row.submittedAt)}
+                            </td>
+
+                            <td className="px-3 py-4">
+                              <div className="min-w-[150px] max-w-[220px]">
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    max={selectedAssessment?.fullMarks || 0}
+                                    value={row.draftMarks}
+                                    onChange={(event) =>
+                                      scheduleMarksAutoSave(
+                                        row.id,
+                                        event.target.value
+                                      )
+                                    }
+                                    onBlur={(event) =>
+                                      handleMarksBlur(row.id, event.target.value)
+                                    }
+                                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 pr-14 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                    placeholder="Enter marks"
+                                  />
+                                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-semibold text-slate-400">
+                                    / {selectedAssessment?.fullMarks || 0}
+                                  </span>
+                                </div>
+                                <div className="mt-1.5 min-h-[17px]">
+                                  <AutoSaveIndicator
+                                    state={autoSaveStates[row.id]}
+                                  />
+                                </div>
+                              </div>
+                            </td>
+
+                            <td className="px-3 py-4 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSubmission(row)}
+                                disabled={
+                                  actionLoading ===
+                                  `delete-submission-${row.id}`
+                                }
+                                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-rose-300 bg-white text-rose-600 transition hover:bg-rose-50 disabled:opacity-60 dark:border-rose-500/30 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                                title="Delete this student submission"
+                                aria-label={`Delete submission of ${row.studentName}`}
+                              >
+                                <TrashIcon />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          </section>
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+function Field({ label, help, children }) {
+  return (
+    <div>
+      <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        {label}
+      </label>
+      {children}
+      {help ? (
+        <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+          {help}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function InfoPill({ label, value }) {
+  return (
+    <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
+      <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+        {label}
       </div>
+      <div className="mt-0.5 truncate font-semibold text-slate-700 dark:text-slate-200" title={value}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ title, text }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center dark:border-slate-700 dark:bg-slate-800/60">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-400 shadow-sm dark:bg-slate-900 dark:text-slate-500">
+        <FolderIcon />
+      </div>
+      <div className="mt-3 font-semibold text-slate-800 dark:text-slate-200">
+        {title}
+      </div>
+      <p className="mx-auto mt-1 max-w-md text-sm text-slate-500 dark:text-slate-400">
+        {text}
+      </p>
     </div>
   );
 }
 
 function CalendarIcon() {
   return (
-    <svg
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
       <line x1="16" y1="2" x2="16" y2="6" />
       <line x1="8" y1="2" x2="8" y2="6" />
@@ -1553,13 +2179,7 @@ function CalendarIcon() {
 
 function ClockIcon() {
   return (
-    <svg
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <circle cx="12" cy="12" r="10" />
       <polyline points="12 6 12 12 16 14" />
     </svg>
@@ -1568,13 +2188,7 @@ function ClockIcon() {
 
 function LinkIcon() {
   return (
-    <svg
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
       <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
     </svg>
@@ -1583,13 +2197,7 @@ function LinkIcon() {
 
 function EyeIcon() {
   return (
-    <svg
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
       <circle cx="12" cy="12" r="3" />
     </svg>
@@ -1598,16 +2206,75 @@ function EyeIcon() {
 
 function DownloadIcon() {
   return (
-    <svg
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
       <polyline points="7 10 12 15 17 10" />
       <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
+
+function FolderIcon() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6l-1 14H6L5 6m3 0V4h8v2" />
+      <line x1="10" y1="11" x2="10" y2="17" />
+      <line x1="14" y1="11" x2="14" y2="17" />
+    </svg>
+  );
+}
+
+function ChevronIcon({ direction = "left" }) {
+  const points = direction === "left" ? "15 18 9 12 15 6" : "9 18 15 12 9 6";
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <polyline points={points} />
+    </svg>
+  );
+}
+
+function SyncIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <polyline points="23 4 23 10 17 10" />
+      <polyline points="1 20 1 14 7 14" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10" />
+      <path d="M20.49 15a9 9 0 0 1-14.85 3.36L1 14" />
+    </svg>
+  );
+}
+
+function SpinnerIcon() {
+  return (
+    <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4z" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+      <polyline points="20 6 9 17 4 12" />
     </svg>
   );
 }

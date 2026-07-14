@@ -72,12 +72,43 @@ function buildSubMarksMap(subMarks = []) {
   return map;
 }
 
+function getStructuredLabPeriod(assessment) {
+  if (assessment?.structureType !== "lab_final") return "";
+  return String(assessment?.labFinalConfig?.period || "final").toLowerCase() ===
+    "mid"
+    ? "mid"
+    : "final";
+}
+
 function buildAdvancedBreakdown(assessment) {
   if (assessment?.structureType !== "lab_final") return [];
 
   const config = assessment?.labFinalConfig || {};
   const subMarksMap = buildSubMarksMap(assessment?.subMarks || []);
   const items = [];
+
+  if (config.mode === "components") {
+    const sourceLabels = {
+      submission: "Submission",
+      project: "Project",
+      exam: "Lab Exam",
+      viva: "Viva",
+      manual: "Manual Entry",
+    };
+
+    (config.genericComponents || []).forEach((component) => {
+      const sourceType = String(component?.sourceType || "manual");
+      items.push({
+        key: component.key,
+        group: sourceLabels[sourceType] || "Manual Entry",
+        label: component.name,
+        fullMarks: Number(component.marks || 0),
+        obtainedMarks: Number(subMarksMap[component.key] || 0),
+      });
+    });
+
+    return items;
+  }
 
   if (config.mode === "project_only" || config.mode === "mixed") {
     (config.projectComponents || []).forEach((component) => {
@@ -120,11 +151,12 @@ function buildAdvancedBreakdown(assessment) {
 
 function getAssessmentHint(assessment, courseType) {
   if (assessment?.structureType === "lab_final") {
+    const period = getStructuredLabPeriod(assessment) === "mid" ? "Mid" : "Final";
     const mode = String(assessment?.labFinalConfig?.mode || "")
       .replaceAll("_", " ")
       .trim();
 
-    return mode ? `Advanced Lab Final • ${mode}` : "Advanced Lab Final";
+    return mode ? `Structured Lab ${period} • ${mode}` : `Structured Lab ${period}`;
   }
 
   const name = String(assessment?.name || "").toLowerCase();
@@ -167,7 +199,7 @@ export default function StudentCoursePage() {
   const [summary, setSummary] = useState(null);
   const [baseTotal, setBaseTotal] = useState(0);
   const [baseGrade, setBaseGrade] = useState("-");
-  const [baseAPlusInfo, setBaseAPlusInfo] = useState(null);
+  const [, setBaseAPlusInfo] = useState(null);
 
   const [attLoading, setAttLoading] = useState(true);
   const [attError, setAttError] = useState("");
@@ -819,7 +851,7 @@ export default function StudentCoursePage() {
                 Assessment Breakdown
               </h2>
               <p className="mt-1 hidden text-[15px] text-slate-500 dark:text-slate-400 sm:block">
-                Published marks for this course. Advanced lab final now shows detailed breakdown.
+                Published marks for this course. Structured Lab Mid and Lab Final show their component breakdowns.
               </p>
             </div>
 
@@ -1135,10 +1167,10 @@ export default function StudentCoursePage() {
                                     <div className="mb-3 flex items-center justify-between gap-3">
                                       <div>
                                         <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                                          Advanced Lab Final Breakdown
+                                          Structured Lab Breakdown
                                         </div>
                                         <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                          Project phases, project components, and lab final questions
+                                          Component-wise marks for this structured lab assessment
                                         </div>
                                       </div>
                                       <div className="rounded-full border border-fuchsia-200 bg-fuchsia-50 px-3 py-1 text-xs font-bold text-fuchsia-700 dark:border-fuchsia-500/20 dark:bg-fuchsia-500/10 dark:text-fuchsia-300">

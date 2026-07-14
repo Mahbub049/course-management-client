@@ -83,7 +83,17 @@ export default function TeacherProjectFinalSync({ course }) {
     }
   };
 
-  const selectedAssessment = assessments.find((item) => item.id === targetAssessmentId);
+  const eligibleAssessments = assessments.filter(
+    (item) =>
+      !(
+        item.structureType === "lab_final" &&
+        String(item.labFinalPeriod || "final") === "mid"
+      )
+  );
+
+  const selectedAssessment = eligibleAssessments.find(
+    (item) => item.id === targetAssessmentId
+  );
 
   return (
     <div className="space-y-6">
@@ -105,7 +115,7 @@ export default function TeacherProjectFinalSync({ course }) {
             Final Sync Settings
           </h3>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            For Advanced Lab Final, project marks now sync into the project breakdown items. For regular assessments, project total syncs as one flat value.
+            For Structured Lab Final, project phases sync into components whose source is Project. Structured Lab Mid is intentionally excluded from final sync.
           </p>
         </div>
 
@@ -126,11 +136,11 @@ export default function TeacherProjectFinalSync({ course }) {
                   className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-800 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                 >
                   <option value="">Select assessment</option>
-                  {assessments.map((item) => (
+                  {eligibleAssessments.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.title} ({item.marks}){" "}
                       {item.structureType === "lab_final"
-                        ? `• Advanced Lab Final${item.labFinalMode ? ` • ${item.labFinalMode}` : ""}`
+                        ? `• Structured Lab Final${item.labFinalMode ? ` • ${item.labFinalMode.replaceAll("_", " ")}` : ""}`
                         : "• Regular"}
                     </option>
                   ))}
@@ -140,7 +150,7 @@ export default function TeacherProjectFinalSync({ course }) {
                   <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
                     <span className="font-semibold">Selected type:</span>{" "}
                     {selectedAssessment.structureType === "lab_final"
-                      ? `Advanced Lab Final${selectedAssessment.labFinalMode ? ` (${selectedAssessment.labFinalMode})` : ""}`
+                      ? `Structured Lab Final${selectedAssessment.labFinalMode ? ` (${selectedAssessment.labFinalMode.replaceAll("_", " ")})` : ""}`
                       : "Regular Assessment"}
                   </div>
                 ) : null}
@@ -219,7 +229,7 @@ export default function TeacherProjectFinalSync({ course }) {
                     Phase to Assessment Breakdown Mapping
                   </h4>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    These project phases were synced into these advanced lab final breakdown items.
+                    These project phases were synced into the selected Structured Lab Final project components.
                   </p>
                 </div>
 

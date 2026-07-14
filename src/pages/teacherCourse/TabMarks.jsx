@@ -113,9 +113,20 @@ function isIncompleteCell(cellValue) {
   return status === "absent" || status === "incomplete";
 }
 
+function getStructuredLabPeriod(assessment) {
+  if (assessment?.structureType !== "lab_final") return "";
+  return String(assessment?.labFinalConfig?.period || "final").toLowerCase() ===
+    "mid"
+    ? "mid"
+    : "final";
+}
+
 function isFinalAssessment(assessment) {
   const name = String(assessment?.name || "").toLowerCase();
-  return assessment?.structureType === "lab_final" || name.includes("final");
+  if (assessment?.structureType === "lab_final") {
+    return getStructuredLabPeriod(assessment) === "final";
+  }
+  return name.includes("final");
 }
 
 function isAttendanceAssessment(assessment) {
@@ -425,15 +436,25 @@ function getAssessmentPlanSummary(course, assessments = []) {
     if (list.some(isRegularLabAssessment)) regularTotal += 25;
     if (hasAttendance) regularTotal += 5;
 
-    if (list.some((a) => String(a?.name || "").toLowerCase().includes("mid"))) {
+    if (
+      list.some(
+        (a) =>
+          (a?.structureType === "lab_final" &&
+            getStructuredLabPeriod(a) === "mid") ||
+          (a?.structureType !== "lab_final" &&
+            String(a?.name || "").toLowerCase().includes("mid"))
+      )
+    ) {
       midTotal += 30;
     }
 
     if (
       list.some(
         (a) =>
-          a?.structureType === "lab_final" ||
-          String(a?.name || "").toLowerCase().includes("final")
+          (a?.structureType === "lab_final" &&
+            getStructuredLabPeriod(a) === "final") ||
+          (a?.structureType !== "lab_final" &&
+            String(a?.name || "").toLowerCase().includes("final"))
       )
     ) {
       finalTotal += 40;
@@ -607,6 +628,41 @@ function advancedAssessmentItems(assessment) {
   const mode = config.mode;
   const items = [];
 
+  if (mode === "components") {
+    const syncLockedKeys = new Set(
+      (assessment?.syncLockedComponentKeys || []).map((key) => String(key))
+    );
+
+    (config.genericComponents || []).forEach((component) => {
+      const isSubmissionSynced =
+        syncLockedKeys.has(String(component?.key || "")) ||
+        component?.sourceType === "submission";
+      const sourceType = isSubmissionSynced
+        ? "submission"
+        : String(component?.sourceType || "manual");
+      const sectionLabels = {
+        submission: "Submission Sync",
+        project: "Project",
+        exam: "Lab Exam",
+        viva: "Viva",
+        manual: "Marks Entry",
+      };
+
+      items.push({
+        key: component.key,
+        label: component.name,
+        fullMarks: Number(component.marks || 0),
+        group: sectionLabels[sourceType] || "Marks Entry",
+        section: sectionLabels[sourceType] || "Marks Entry",
+        sourceType,
+        linkedAssessmentId: component.linkedAssessmentId || null,
+        readOnly: isSubmissionSynced,
+      });
+    });
+
+    return items;
+  }
+
   if (mode === "project_only" || mode === "mixed") {
     (config.projectComponents || []).forEach((component) => {
       if (component.entryMode === "phased") {
@@ -617,6 +673,7 @@ function advancedAssessmentItems(assessment) {
             fullMarks: Number(phase.marks || 0),
             group: component.name,
             section: "Project",
+            sourceType: "project",
           });
         });
       } else {
@@ -626,6 +683,7 @@ function advancedAssessmentItems(assessment) {
           fullMarks: Number(component.marks || 0),
           group: "Project",
           section: "Project",
+          sourceType: "project",
         });
       }
     });
@@ -639,6 +697,7 @@ function advancedAssessmentItems(assessment) {
         fullMarks: Number(q.marks || 0),
         group: "Lab Final",
         section: "Lab Final",
+        sourceType: "exam",
       });
     });
   }
@@ -714,15 +773,25 @@ function computeTotal100(course, assessments, rowMarks, attendanceMarks5 = 0) {
   const attScore5 = clamp(attendanceMarks5, 0, 5);
 
   if (courseType === "lab") {
-    const mid = list.find((a) => name(a).includes("mid"));
+    const structuredMid = list.find(
+      (a) =>
+        a?.structureType === "lab_final" && getStructuredLabPeriod(a) === "mid"
+    );
+    const regularMid = list.find(
+      (a) => a?.structureType !== "lab_final" && name(a).includes("mid")
+    );
+    const mid = structuredMid || regularMid;
 
-    const advancedFinal = list.find((a) => a?.structureType === "lab_final");
+    const structuredFinal = list.find(
+      (a) =>
+        a?.structureType === "lab_final" && getStructuredLabPeriod(a) === "final"
+    );
 
     const regularFinal = list.find(
       (a) => a?.structureType !== "lab_final" && name(a).includes("final")
     );
 
-    const finalAssessment = advancedFinal || regularFinal;
+    const finalAssessment = structuredFinal || regularFinal;
 
     const labScore25 = roundPolicyTotal(
       computeLabAssessmentScore25(list, rowMarks)
@@ -905,7 +974,7 @@ function AdvancedBreakdownModal({
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center rounded-full border border-fuchsia-200 bg-fuchsia-50 px-3 py-1 text-xs font-semibold text-fuchsia-700 dark:border-fuchsia-500/20 dark:bg-fuchsia-500/10 dark:text-fuchsia-300">
-                  Advanced Lab Final Entry
+                  Structured Lab {getStructuredLabPeriod(assessment) === "mid" ? "Mid" : "Final"} Entry
                 </span>
                 <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
                   Full Marks: {assessment.fullMarks}
@@ -956,7 +1025,7 @@ function AdvancedBreakdownModal({
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
           {items.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-              No advanced breakdown found for this assessment.
+              No structured breakdown found for this assessment.
             </div>
           ) : (
             <div className="space-y-6">
@@ -995,6 +1064,7 @@ function AdvancedBreakdownModal({
                             </div>
                             <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                               Group: {item.group} • Full marks: {item.fullMarks}
+                              {item.readOnly ? " • Synced from Submissions" : ""}
                             </div>
                           </div>
 
@@ -1012,8 +1082,9 @@ function AdvancedBreakdownModal({
                               onSubMarkChange(item.key, e.target.value, item.fullMarks)
                             }
                             onBlur={() => onSubMarkBlur(item.key, item.fullMarks)}
-                            className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold text-slate-900 shadow-sm outline-none transition focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                            placeholder="Enter marks"
+                            disabled={item.readOnly}
+                            className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold text-slate-900 shadow-sm outline-none transition focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:disabled:bg-slate-800"
+                            placeholder={item.readOnly ? "Use Sync Marks in Submissions" : "Enter marks"}
                           />
                         </div>
                       </div>
@@ -2187,7 +2258,7 @@ export default function TabMarks({ courseId, course }) {
             parsed?.teacher?.displayName;
 
           if (possibleName) return possibleName;
-        } catch (e) {
+        } catch {
           // ignore non-json values
         }
       }
@@ -2228,10 +2299,16 @@ export default function TabMarks({ courseId, course }) {
       });
     };
 
-    const midAssessment = getAssessmentByName(["mid"]);
+    const midAssessment =
+      sortedAssessments.find(
+        (a) =>
+          a?.structureType === "lab_final" && getStructuredLabPeriod(a) === "mid"
+      ) || getAssessmentByName(["mid"]);
     const finalAssessment =
-      sortedAssessments.find((a) => a?.structureType === "lab_final") ||
-      getAssessmentByName(["final"]);
+      sortedAssessments.find(
+        (a) =>
+          a?.structureType === "lab_final" && getStructuredLabPeriod(a) === "final"
+      ) || getAssessmentByName(["final"]);
 
     const assignmentAssessment = getAssessmentByName(["assign", "present"]);
     const hybridTheoryMid = findHybridTheoryMid(sortedAssessments);
@@ -2847,7 +2924,7 @@ export default function TabMarks({ courseId, course }) {
                               </div>
                               {a?.structureType === "lab_final" && (
                                 <div className="rounded-full border border-fuchsia-200 bg-fuchsia-50 px-2 py-1 text-[11px] font-semibold normal-case text-fuchsia-700 dark:border-fuchsia-500/20 dark:bg-fuchsia-500/10 dark:text-fuchsia-300">
-                                  Faster entry enabled
+                                  Breakdown entry enabled
                                 </div>
                               )}
                               <button
@@ -3004,9 +3081,6 @@ export default function TabMarks({ courseId, course }) {
                               (item) => String(item._id) === String(a._id)
                             );
                             const actualColIndex = firstPartCount + assessmentIndex + 1;
-                            const isAttendanceCol = String(a.name || "")
-                              .toLowerCase()
-                              .includes("att");
                             const cell = row[a._id];
 
                             if (a?.structureType === "lab_final") {

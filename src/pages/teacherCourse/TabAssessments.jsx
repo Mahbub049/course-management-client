@@ -33,7 +33,11 @@ function sortByOrder(list) {
 }
 
 function classifyForBadge(assessment, courseType) {
-  if (assessment?.structureType === "lab_final") return "advanced_lab_final";
+  if (assessment?.structureType === "lab_final") {
+    return getStructuredLabPeriod(assessment) === "mid"
+      ? "structured_lab_mid"
+      : "structured_lab_final";
+  }
 
   const name = String(assessment?.name || "").toLowerCase();
 
@@ -61,7 +65,8 @@ function classifyForBadge(assessment, courseType) {
 }
 
 function badgeLabel(type) {
-  if (type === "advanced_lab_final") return "Advanced Lab Final";
+  if (type === "structured_lab_mid") return "Structured Lab Mid";
+  if (type === "structured_lab_final") return "Structured Lab Final";
   if (type === "lab_final_regular") return "Lab Final";
   if (type === "theory_final") return "Theory Final";
   if (type === "lab_mid") return "Lab Mid";
@@ -77,7 +82,7 @@ function badgeLabel(type) {
 }
 
 function badgeClass(type) {
-  if (type === "advanced_lab_final") {
+  if (type === "structured_lab_mid" || type === "structured_lab_final") {
     return "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700 dark:border-fuchsia-500/20 dark:bg-fuchsia-500/10 dark:text-fuchsia-300";
   }
   if (type === "final" || type === "theory_final" || type === "lab_final_regular") {
@@ -207,17 +212,40 @@ function getSavedAssessmentList(response) {
   return response ? [response] : [];
 }
 
-function createDefaultAdvancedLabFinal() {
+function getStructuredLabPeriod(assessmentOrForm) {
+  const config = assessmentOrForm?.labFinalConfig || assessmentOrForm || {};
+  return String(config?.period || "final").toLowerCase() === "mid"
+    ? "mid"
+    : "final";
+}
+
+function getStructuredLabTotal(period = "final") {
+  return period === "mid" ? 30 : 40;
+}
+
+function createGenericComponent(index = 1, marks = 0) {
   return {
-    name: "Lab Final",
-    totalMarks: 40,
-    mode: "lab_exam_only",
+    key: createKey("component"),
+    name: `Component ${index}`,
+    marks,
+    sourceType: "manual",
+    linkedAssessmentId: "",
+    order: index - 1,
+  };
+}
+
+function createDefaultAdvancedLabFinal(period = "final") {
+  const totalMarks = getStructuredLabTotal(period);
+  return {
+    name: period === "mid" ? "Lab Mid" : "Lab Final",
+    period,
+    totalMarks,
+    mode: "components",
+    genericComponents: [createGenericComponent(1, totalMarks)],
     projectMarks: 0,
-    labExamMarks: 40,
+    labExamMarks: period === "final" ? 40 : 0,
     projectComponents: [],
-    examQuestions: [
-      { key: createKey("q"), label: "Question 1", marks: 40, order: 0 },
-    ],
+    examQuestions: [],
   };
 }
 
@@ -262,25 +290,41 @@ function createExamQuestion(index = 1) {
 }
 
 function buildAdvancedLabFinalPayload(advancedForm) {
+  const period = getStructuredLabPeriod(advancedForm);
   const mode = advancedForm.mode;
-  const totalMarks = 40;
+  const totalMarks = getStructuredLabTotal(period);
+
+  const genericComponents =
+    mode === "components"
+      ? (advancedForm.genericComponents || []).map((component, idx) => ({
+        key: component.key,
+        name: String(component.name || "").trim(),
+        marks: Number(component.marks || 0),
+        sourceType: component.sourceType || "manual",
+        linkedAssessmentId:
+          component.sourceType === "submission"
+            ? component.linkedAssessmentId || null
+            : null,
+        order: idx,
+      }))
+      : [];
 
   const projectMarks =
     mode === "project_only"
       ? 40
-      : mode === "lab_exam_only"
+      : mode === "lab_exam_only" || mode === "components"
         ? 0
         : Number(advancedForm.projectMarks || 0);
 
   const labExamMarks =
-    mode === "project_only"
+    mode === "project_only" || mode === "components"
       ? 0
       : mode === "lab_exam_only"
         ? 40
         : Number(advancedForm.labExamMarks || 0);
 
   const projectComponents =
-    mode === "lab_exam_only"
+    mode === "lab_exam_only" || mode === "components"
       ? []
       : (advancedForm.projectComponents || []).map((component, idx) => ({
         key: component.key,
@@ -300,7 +344,7 @@ function buildAdvancedLabFinalPayload(advancedForm) {
       }));
 
   const examQuestions =
-    mode === "project_only"
+    mode === "project_only" || mode === "components"
       ? []
       : (advancedForm.examQuestions || []).map((q, idx) => ({
         key: q.key,
@@ -310,12 +354,16 @@ function buildAdvancedLabFinalPayload(advancedForm) {
       }));
 
   return {
-    name: (advancedForm.name || "Lab Final").trim(),
-    fullMarks: 40,
+    name: (
+      advancedForm.name || (period === "mid" ? "Lab Mid" : "Lab Final")
+    ).trim(),
+    fullMarks: totalMarks,
     structureType: "lab_final",
     labFinalConfig: {
       mode,
+      period,
       totalMarks,
+      genericComponents,
       projectMarks,
       labExamMarks,
       projectComponents,
@@ -326,13 +374,26 @@ function buildAdvancedLabFinalPayload(advancedForm) {
 
 function hydrateAdvancedFormFromAssessment(assessment) {
   const config = assessment?.labFinalConfig || {};
+  const period = getStructuredLabPeriod(config);
+  const totalMarks = getStructuredLabTotal(period);
 
   return {
-    name: assessment?.name || "Lab Final",
-    totalMarks: 40,
+    name: assessment?.name || (period === "mid" ? "Lab Mid" : "Lab Final"),
+    period,
+    totalMarks,
     mode: config.mode || "lab_exam_only",
+    genericComponents: (config.genericComponents || []).map((component, idx) => ({
+      key: component.key || createKey("component"),
+      name: component.name || `Component ${idx + 1}`,
+      marks: Number(component.marks || 0),
+      sourceType: component.sourceType || "manual",
+      linkedAssessmentId: component.linkedAssessmentId
+        ? String(component.linkedAssessmentId)
+        : "",
+      order: idx,
+    })),
     projectMarks: Number(config.projectMarks || 0),
-    labExamMarks: Number(config.labExamMarks || 40),
+    labExamMarks: Number(config.labExamMarks || (period === "final" ? 40 : 0)),
     projectComponents: (config.projectComponents || []).map((component, idx) => ({
       key: component.key || createKey("component"),
       name: component.name || `Component ${idx + 1}`,
@@ -360,14 +421,42 @@ function hydrateAdvancedFormFromAssessment(assessment) {
 
 function validateAdvancedLabFinalForm(advancedForm) {
   const name = String(advancedForm.name || "").trim();
-  if (!name) return "Please enter a name for the advanced lab final.";
+  if (!name) return "Please enter a name for the structured lab assessment.";
 
+  const period = getStructuredLabPeriod(advancedForm);
+  const totalMarks = getStructuredLabTotal(period);
   const mode = advancedForm.mode;
+  const genericComponents = advancedForm.genericComponents || [];
   const projectComponents = advancedForm.projectComponents || [];
   const examQuestions = advancedForm.examQuestions || [];
 
-  if (!["project_only", "lab_exam_only", "mixed"].includes(mode)) {
-    return "Invalid advanced lab final mode.";
+  if (!["components", "project_only", "lab_exam_only", "mixed"].includes(mode)) {
+    return "Invalid structured lab assessment mode.";
+  }
+
+  if (period === "mid" && mode !== "components") {
+    return "Lab Mid must use Component Breakdown mode.";
+  }
+
+  if (mode === "components") {
+    if (!genericComponents.length) {
+      return "Please add at least one component.";
+    }
+
+    for (const component of genericComponents) {
+      if (!String(component.name || "").trim()) {
+        return "Every component must have a name.";
+      }
+      if (Number(component.marks || 0) <= 0) {
+        return `Component "${component.name}" must have marks greater than 0.`;
+      }
+    }
+
+    if (round2(sumByMarks(genericComponents)) !== totalMarks) {
+      return `Component total must equal ${totalMarks}.`;
+    }
+
+    return null;
   }
 
   const projectMarks =
@@ -394,61 +483,34 @@ function validateAdvancedLabFinalForm(advancedForm) {
   }
 
   if (mode !== "lab_exam_only") {
-    if (!projectComponents.length) {
-      return "Please add at least one project component.";
-    }
-
-    const projectTotal = sumByMarks(projectComponents);
-    if (round2(projectTotal) !== round2(projectMarks)) {
+    if (!projectComponents.length) return "Please add at least one project component.";
+    if (round2(sumByMarks(projectComponents)) !== round2(projectMarks)) {
       return `Project component total must equal ${projectMarks}.`;
     }
 
     for (const component of projectComponents) {
-      if (!String(component.name || "").trim()) {
-        return "Every project component must have a name.";
-      }
-
-      if (Number(component.marks || 0) < 0) {
-        return `Project component "${component.name}" has invalid marks.`;
-      }
-
+      if (!String(component.name || "").trim()) return "Every project component must have a name.";
+      if (Number(component.marks || 0) < 0) return `Project component "${component.name}" has invalid marks.`;
       if (component.entryMode === "phased") {
-        if (!component.phases?.length) {
-          return `Project component "${component.name}" must have at least one phase.`;
-        }
-
-        const phaseTotal = sumByMarks(component.phases);
-
-        if (round2(phaseTotal) !== round2(component.marks)) {
+        if (!component.phases?.length) return `Project component "${component.name}" must have at least one phase.`;
+        if (round2(sumByMarks(component.phases)) !== round2(component.marks)) {
           return `Sum of phases for "${component.name}" must equal ${component.marks}.`;
         }
-
         for (const phase of component.phases) {
-          if (!String(phase.name || "").trim()) {
-            return `Each phase under "${component.name}" must have a name.`;
-          }
+          if (!String(phase.name || "").trim()) return `Each phase under "${component.name}" must have a name.`;
         }
       }
     }
   }
 
   if (mode !== "project_only") {
-    if (!examQuestions.length) {
-      return "Please add at least one lab final question.";
-    }
-
-    const examTotal = sumByMarks(examQuestions);
-    if (round2(examTotal) !== round2(labExamMarks)) {
+    if (!examQuestions.length) return "Please add at least one lab final question.";
+    if (round2(sumByMarks(examQuestions)) !== round2(labExamMarks)) {
       return `Lab final question total must equal ${labExamMarks}.`;
     }
-
     for (const q of examQuestions) {
-      if (!String(q.label || "").trim()) {
-        return "Every lab final question must have a label.";
-      }
-      if (Number(q.marks || 0) < 0) {
-        return `Question "${q.label}" has invalid marks.`;
-      }
+      if (!String(q.label || "").trim()) return "Every lab final question must have a label.";
+      if (Number(q.marks || 0) < 0) return `Question "${q.label}" has invalid marks.`;
     }
   }
 
@@ -463,6 +525,7 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [dragId, setDragId] = useState(null);
+  const [componentDragKey, setComponentDragKey] = useState(null);
   const [query, setQuery] = useState("");
 
   const [policyForm, setPolicyForm] = useState(getDefaultCtPolicy(course));
@@ -515,28 +578,71 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
 
   const orderedAssessments = useMemo(() => sortByOrder(assessments), [assessments]);
 
+  const submissionAssessments = useMemo(
+    () => orderedAssessments.filter((a) => a?.structureType === "lab_submission"),
+    [orderedAssessments]
+  );
+
+  const markEntryAssessments = useMemo(
+    () => orderedAssessments.filter((a) => a?.structureType !== "lab_submission"),
+    [orderedAssessments]
+  );
+
   const filteredAssessments = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return orderedAssessments;
+    if (!q) return markEntryAssessments;
 
-    return orderedAssessments.filter((a) => {
+    return markEntryAssessments.filter((a) => {
       const n = String(a?.name || "").toLowerCase();
       const fm = String(a?.fullMarks ?? "").toLowerCase();
       const t = classifyForBadge(a, courseType);
       const labMode = String(a?.labFinalConfig?.mode || "").toLowerCase();
-      return n.includes(q) || fm.includes(q) || t.includes(q) || labMode.includes(q);
+      const period = getStructuredLabPeriod(a);
+      return (
+        n.includes(q) ||
+        fm.includes(q) ||
+        t.includes(q) ||
+        labMode.includes(q) ||
+        period.includes(q)
+      );
     });
-  }, [orderedAssessments, query, courseType]);
+  }, [markEntryAssessments, query, courseType]);
 
   const ctAssessments = useMemo(() => {
-    return orderedAssessments.filter(
+    return markEntryAssessments.filter(
       (a) => classifyForBadge(a, courseType) === "ct"
     );
-  }, [orderedAssessments, courseType]);
+  }, [markEntryAssessments, courseType]);
 
-  const advancedLabFinalExists = useMemo(() => {
-    return orderedAssessments.some((a) => a?.structureType === "lab_final");
-  }, [orderedAssessments]);
+  const structuredPeriodExists = useMemo(() => {
+    const result = { mid: false, final: false };
+    markEntryAssessments.forEach((assessment) => {
+      if (assessment?.structureType !== "lab_final") return;
+      result[getStructuredLabPeriod(assessment)] = true;
+    });
+    return result;
+  }, [markEntryAssessments]);
+
+  const periodOccupied = useMemo(() => {
+    const result = { mid: false, final: false };
+    markEntryAssessments.forEach((assessment) => {
+      if (assessment?.structureType === "lab_final") {
+        result[getStructuredLabPeriod(assessment)] = true;
+        return;
+      }
+
+      const name = String(assessment?.name || "").toLowerCase();
+      if (name.includes("mid")) result.mid = true;
+      if (name.includes("final")) result.final = true;
+    });
+    return result;
+  }, [markEntryAssessments]);
+
+  const bothStructuredPeriodsExist = periodOccupied.mid && periodOccupied.final;
+
+  const selectedStructuredPeriod = getStructuredLabPeriod(advancedForm);
+  const selectedStructuredPeriodUnavailable =
+    !editingAssessmentId && periodOccupied[selectedStructuredPeriod];
 
   const typeOptions =
     courseType === "lab"
@@ -569,10 +675,15 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
 
   const headerHint =
     courseType === "lab"
-      ? "Lab Assessments (average → 25), Mid (30), Attendance (5), and Advanced Lab Final (40) with Project / Exam / Mixed structure."
+      ? "Lab Assessments (average → 25), Attendance (5), and reusable Structured Lab Mid (30) / Lab Final (40) breakdowns."
       : courseType === "hybrid"
         ? `${getCtPolicyLabel(policyForm)}, Theory Mid (20), Lab Mid (10), Theory Final (30), Lab Final (10), Assignment (remaining theory practice marks), Attendance (5).`
         : `${getCtPolicyLabel(policyForm)}, Mid (30), Final (40), Assignment/Presentation (10), Attendance (5).`;
+
+  const genericComponentTotal = useMemo(
+    () => sumByMarks(advancedForm.genericComponents || []),
+    [advancedForm.genericComponents]
+  );
 
   const projectComponentTotal = useMemo(
     () => sumByMarks(advancedForm.projectComponents || []),
@@ -607,7 +718,8 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
       name: "",
       fullMarks: "",
     });
-    setAdvancedForm(createDefaultAdvancedLabFinal());
+    const nextPeriod = !periodOccupied.mid ? "mid" : "final";
+    setAdvancedForm(createDefaultAdvancedLabFinal(nextPeriod));
     setAssessmentError("");
   };
 
@@ -620,8 +732,11 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
       const isEditing = !!editingAssessmentId;
 
       if (courseType === "lab" && labAssessmentMode === "advanced_lab_final") {
-        if (!isEditing && advancedLabFinalExists) {
-          setAssessmentError("An advanced lab final already exists for this course.");
+        const period = getStructuredLabPeriod(advancedForm);
+        const periodLabel = period === "mid" ? "Lab Mid" : "Lab Final";
+
+        if (!isEditing && periodOccupied[period]) {
+          setAssessmentError(`A structured ${periodLabel} already exists for this course.`);
           setCreating(false);
           return;
         }
@@ -658,10 +773,12 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
 
         Swal.fire({
           icon: "success",
-          title: isEditing ? "Advanced lab final updated" : "Advanced lab final added",
+          title: isEditing
+            ? `Structured ${periodLabel} updated`
+            : `Structured ${periodLabel} added`,
           text: isEditing
-            ? "The advanced lab final has been updated successfully."
-            : "The advanced lab final has been created successfully.",
+            ? `The structured ${periodLabel} breakdown has been updated successfully.`
+            : `The structured ${periodLabel} breakdown has been created successfully.`,
           timer: 1600,
           showConfirmButton: false,
         });
@@ -845,7 +962,7 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
     const fromId = dragId;
     if (!fromId || fromId === toId) return;
 
-    const full = orderedAssessments;
+    const full = markEntryAssessments;
     const fromIndex = full.findIndex((x) => String(x._id) === String(fromId));
     const toIndex = full.findIndex((x) => String(x._id) === String(toId));
     if (fromIndex < 0 || toIndex < 0) return;
@@ -855,7 +972,7 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
       order: i,
     }));
 
-    setAssessments(next);
+    setAssessments(sortByOrder([...next, ...submissionAssessments]));
 
     try {
       setBusyId(fromId);
@@ -926,6 +1043,144 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
     } finally {
       setSavingPolicy(false);
     }
+  };
+
+  const handleStructuredPeriodChange = (period) => {
+    setAdvancedForm((prev) => {
+      const previousPeriod = getStructuredLabPeriod(prev);
+      const previousTotal = getStructuredLabTotal(previousPeriod);
+      const nextTotal = getStructuredLabTotal(period);
+      const previousDefaultName = previousPeriod === "mid" ? "Lab Mid" : "Lab Final";
+      const nextDefaultName = period === "mid" ? "Lab Mid" : "Lab Final";
+      let genericComponents = prev.genericComponents || [];
+
+      if (
+        genericComponents.length === 1 &&
+        round2(sumByMarks(genericComponents)) === previousTotal
+      ) {
+        genericComponents = [{ ...genericComponents[0], marks: nextTotal }];
+      }
+
+      return {
+        ...prev,
+        period,
+        totalMarks: nextTotal,
+        name:
+          !String(prev.name || "").trim() || prev.name === previousDefaultName
+            ? nextDefaultName
+            : prev.name,
+        mode: period === "mid" ? "components" : prev.mode,
+        genericComponents:
+          genericComponents.length > 0
+            ? genericComponents
+            : [createGenericComponent(1, nextTotal)],
+        projectMarks: period === "final" ? prev.projectMarks : 0,
+        labExamMarks: period === "final" ? prev.labExamMarks : 0,
+      };
+    });
+  };
+
+  const handleStructuredModeChange = (mode) => {
+    setAdvancedForm((prev) => {
+      const totalMarks = getStructuredLabTotal(getStructuredLabPeriod(prev));
+      return {
+        ...prev,
+        mode,
+        genericComponents:
+          mode === "components" && !(prev.genericComponents || []).length
+            ? [createGenericComponent(1, totalMarks)]
+            : prev.genericComponents,
+        projectMarks:
+          mode === "mixed"
+            ? prev.projectMarks || 20
+            : mode === "project_only"
+              ? 40
+              : 0,
+        labExamMarks:
+          mode === "mixed"
+            ? prev.labExamMarks || 20
+            : mode === "lab_exam_only"
+              ? 40
+              : 0,
+      };
+    });
+  };
+
+  const addGenericComponent = () => {
+    setAdvancedForm((prev) => {
+      const list = prev.genericComponents || [];
+      return {
+        ...prev,
+        genericComponents: [
+          ...list,
+          createGenericComponent(list.length + 1, 0),
+        ].map((component, idx) => ({ ...component, order: idx })),
+      };
+    });
+  };
+
+  const reorderGenericComponents = (fromKey, toKey) => {
+    if (!fromKey || !toKey || fromKey === toKey) return;
+
+    setAdvancedForm((prev) => {
+      const components = [...(prev.genericComponents || [])];
+      const fromIndex = components.findIndex((item) => item.key === fromKey);
+      const toIndex = components.findIndex((item) => item.key === toKey);
+
+      if (fromIndex < 0 || toIndex < 0) return prev;
+
+      const [moved] = components.splice(fromIndex, 1);
+      components.splice(toIndex, 0, moved);
+
+      return {
+        ...prev,
+        genericComponents: components.map((item, index) => ({
+          ...item,
+          order: index,
+        })),
+      };
+    });
+  };
+
+  const moveGenericComponent = (key, direction) => {
+    setAdvancedForm((prev) => {
+      const components = [...(prev.genericComponents || [])];
+      const currentIndex = components.findIndex((item) => item.key === key);
+      const nextIndex = currentIndex + direction;
+
+      if (currentIndex < 0 || nextIndex < 0 || nextIndex >= components.length) {
+        return prev;
+      }
+
+      const [moved] = components.splice(currentIndex, 1);
+      components.splice(nextIndex, 0, moved);
+
+      return {
+        ...prev,
+        genericComponents: components.map((item, index) => ({
+          ...item,
+          order: index,
+        })),
+      };
+    });
+  };
+
+  const updateGenericComponent = (key, patch) => {
+    setAdvancedForm((prev) => ({
+      ...prev,
+      genericComponents: (prev.genericComponents || []).map((component) =>
+        component.key === key ? { ...component, ...patch } : component
+      ),
+    }));
+  };
+
+  const removeGenericComponent = (key) => {
+    setAdvancedForm((prev) => ({
+      ...prev,
+      genericComponents: (prev.genericComponents || [])
+        .filter((component) => component.key !== key)
+        .map((component, idx) => ({ ...component, order: idx })),
+    }));
   };
 
   const addProjectComponent = (kind) => {
@@ -1075,7 +1330,7 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
               </span>
 
               <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                Total: {assessments.length}
+                Total: {markEntryAssessments.length}
               </span>
             </div>
           </div>
@@ -1291,25 +1546,34 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
 
                 <button
                   type="button"
-                  onClick={() => setLabAssessmentMode("advanced_lab_final")}
-                  disabled={!isEditing && advancedLabFinalExists}
+                  onClick={() => {
+                    setLabAssessmentMode("advanced_lab_final");
+                    if (!isEditing) {
+                      const nextPeriod = !periodOccupied.mid ? "mid" : "final";
+                      setAdvancedForm(createDefaultAdvancedLabFinal(nextPeriod));
+                    }
+                  }}
+                  disabled={!isEditing && bothStructuredPeriodsExist}
                   className={`rounded-2xl border px-4 py-4 text-left transition ${labAssessmentMode === "advanced_lab_final"
                       ? "border-fuchsia-500 bg-fuchsia-50 dark:border-fuchsia-400 dark:bg-fuchsia-500/10"
                       : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950"
                     } disabled:cursor-not-allowed disabled:opacity-60`}
                 >
                   <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                    Advanced Lab Final
+                    Structured Lab Assessment
                   </div>
                   <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Project Only / Lab Final Only / Mixed
+                    Build either Lab Mid or Lab Final from reusable components
                   </div>
                 </button>
               </div>
 
-              {!isEditing && advancedLabFinalExists && (
+              {!isEditing && (structuredPeriodExists.mid || structuredPeriodExists.final) && (
                 <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
-                  One advanced lab final already exists in this course. Use Edit if you want to modify it.
+                  Existing structured setup: {[
+                    structuredPeriodExists.mid ? "Lab Mid" : null,
+                    structuredPeriodExists.final ? "Lab Final" : null,
+                  ].filter(Boolean).join(" and ")}. You can still create the other period or edit the existing one below.
                 </div>
               )}
             </div>
@@ -1318,7 +1582,31 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
           {courseType === "lab" && labAssessmentMode === "advanced_lab_final" ? (
             <form onSubmit={onCreateOrUpdate} className="space-y-6">
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-                <div className="lg:col-span-7">
+                <div className="lg:col-span-3">
+                  <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    Assessment Period
+                  </label>
+                  <select
+                    value={advancedForm.period}
+                    disabled={isEditing}
+                    onChange={(e) => handleStructuredPeriodChange(e.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/20 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  >
+                    <option value="mid" disabled={!isEditing && periodOccupied.mid}>
+                      Lab Mid (30){!isEditing && periodOccupied.mid ? " — Already created" : ""}
+                    </option>
+                    <option value="final" disabled={!isEditing && periodOccupied.final}>
+                      Lab Final (40){!isEditing && periodOccupied.final ? " — Already created" : ""}
+                    </option>
+                  </select>
+                  {isEditing && (
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      The period is locked while editing to protect existing marks.
+                    </p>
+                  )}
+                </div>
+
+                <div className="lg:col-span-5">
                   <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300">
                     Assessment Name
                   </label>
@@ -1327,42 +1615,32 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
                     onChange={(e) =>
                       setAdvancedForm((prev) => ({ ...prev, name: e.target.value }))
                     }
-                    placeholder="Lab Final"
+                    placeholder={advancedForm.period === "mid" ? "Lab Mid" : "Lab Final"}
                     className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                   />
                 </div>
 
-                <div className="lg:col-span-5">
+                <div className="lg:col-span-4">
                   <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300">
-                    Advanced Lab Final Mode
+                    Breakdown Mode
                   </label>
                   <select
                     value={advancedForm.mode}
-                    onChange={(e) => {
-                      const mode = e.target.value;
-                      setAdvancedForm((prev) => ({
-                        ...prev,
-                        mode,
-                        projectMarks:
-                          mode === "mixed"
-                            ? prev.projectMarks || 20
-                            : mode === "project_only"
-                              ? 40
-                              : 0,
-                        labExamMarks:
-                          mode === "mixed"
-                            ? prev.labExamMarks || 20
-                            : mode === "lab_exam_only"
-                              ? 40
-                              : 0,
-                      }));
-                    }}
+                    onChange={(e) => handleStructuredModeChange(e.target.value)}
                     className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                   >
-                    <option value="project_only">Project Only</option>
-                    <option value="lab_exam_only">Lab Final Only</option>
-                    <option value="mixed">Mixed</option>
+                    <option value="components">Component Breakdown</option>
+                    {advancedForm.period === "final" && (
+                      <>
+                        <option value="project_only">Legacy: Project Only</option>
+                        <option value="lab_exam_only">Legacy: Lab Final Only</option>
+                        <option value="mixed">Legacy: Project + Lab Final</option>
+                      </>
+                    )}
                   </select>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Component Breakdown supports manual marks, submissions, project, exam, and viva.
+                  </p>
                 </div>
               </div>
 
@@ -1373,12 +1651,23 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
                       Marks Allocation Summary
                     </div>
                     <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      Total advanced lab final marks is fixed at 40.
+                      Structured {advancedForm.period === "mid" ? "Lab Mid" : "Lab Final"} is fixed at {getStructuredLabTotal(advancedForm.period)} marks.
                     </div>
                   </div>
 
-                  <div className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
-                    Total: 40
+                  <div className="flex flex-wrap items-center gap-2">
+                    {advancedForm.mode === "components" && (
+                      <span className={`rounded-full border px-4 py-2 text-sm font-semibold ${
+                        round2(genericComponentTotal) === getStructuredLabTotal(advancedForm.period)
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+                          : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
+                      }`}>
+                        Allocated: {genericComponentTotal} / {getStructuredLabTotal(advancedForm.period)}
+                      </span>
+                    )}
+                    <div className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                      Total: {getStructuredLabTotal(advancedForm.period)}
+                    </div>
                   </div>
                 </div>
 
@@ -1422,7 +1711,7 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
                       />
                     </div>
                   </div>
-                ) : (
+                ) : advancedForm.mode !== "components" ? (
                   <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
                     <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
                       Project Marks:{" "}
@@ -1437,10 +1726,143 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
                       </span>
                     </div>
                   </div>
+                ) : (
+                  <div className="mt-4 rounded-2xl border border-fuchsia-200 bg-fuchsia-50/70 px-4 py-3 text-sm text-fuchsia-800 dark:border-fuchsia-500/20 dark:bg-fuchsia-500/10 dark:text-fuchsia-200">
+                    Submission-linked components are synchronized from the Submissions tab. Other components are entered from Marks Entry.
+                  </div>
                 )}
               </div>
 
-              {advancedForm.mode !== "lab_exam_only" && (
+              {advancedForm.mode === "components" && (
+                <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <div className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                        Breakdown Components
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                        Current: {genericComponentTotal} / Target: {getStructuredLabTotal(advancedForm.period)}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={addGenericComponent}
+                      className="inline-flex items-center gap-2 rounded-2xl bg-fuchsia-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-fuchsia-700"
+                    >
+                      + Add Component
+                    </button>
+                  </div>
+
+                  <div className="mt-4 space-y-4">
+                    {(advancedForm.genericComponents || []).length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                        No component added yet. Add components until the total reaches {getStructuredLabTotal(advancedForm.period)}.
+                      </div>
+                    ) : (
+                      (advancedForm.genericComponents || []).map((component, idx) => (
+                        <div
+                          key={component.key}
+                          onDragOver={(event) => event.preventDefault()}
+                          onDrop={(event) => {
+                            event.preventDefault();
+                            reorderGenericComponents(componentDragKey, component.key);
+                            setComponentDragKey(null);
+                          }}
+                          className={`rounded-2xl border bg-slate-50/70 p-4 transition dark:bg-slate-950/40 ${
+                            componentDragKey === component.key
+                              ? "border-fuchsia-400 shadow-lg shadow-fuchsia-500/10 dark:border-fuchsia-500/60"
+                              : "border-slate-200 dark:border-slate-800"
+                          }`}
+                        >
+                          <div className="mb-4 flex items-center justify-between gap-3">
+                            <button
+                              type="button"
+                              draggable
+                              onDragStart={(event) => {
+                                setComponentDragKey(component.key);
+                                event.dataTransfer.effectAllowed = "move";
+                                event.dataTransfer.setData("text/plain", component.key);
+                              }}
+                              onDragEnd={() => setComponentDragKey(null)}
+                              className="inline-flex cursor-grab items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:border-fuchsia-300 hover:text-fuchsia-700 active:cursor-grabbing dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-fuchsia-500/40 dark:hover:text-fuchsia-300"
+                              title="Drag this component to change its position"
+                            >
+                              <GripIcon />
+                              Drag to reorder
+                            </button>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => moveGenericComponent(component.key, -1)}
+                                disabled={idx === 0}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-fuchsia-300 hover:text-fuchsia-700 disabled:cursor-not-allowed disabled:opacity-35 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                                title="Move component up"
+                              >
+                                ↑
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveGenericComponent(component.key, 1)}
+                                disabled={idx === (advancedForm.genericComponents || []).length - 1}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-fuchsia-300 hover:text-fuchsia-700 disabled:cursor-not-allowed disabled:opacity-35 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                                title="Move component down"
+                              >
+                                ↓
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removeGenericComponent(component.key)}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-700 transition hover:bg-rose-100 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/20"
+                                title="Remove component"
+                              >
+                                <XIcon />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
+                            <div>
+                              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                Component Name
+                              </label>
+                              <input
+                                value={component.name}
+                                onChange={(e) =>
+                                  updateGenericComponent(component.key, { name: e.target.value })
+                                }
+                                placeholder={`Component ${idx + 1}`}
+                                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                Marks
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.5"
+                                value={component.marks}
+                                onChange={(e) =>
+                                  updateGenericComponent(component.key, {
+                                    marks: Number(e.target.value || 0),
+                                  })
+                                }
+                                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {["project_only", "mixed"].includes(advancedForm.mode) && (
                 <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
@@ -1626,7 +2048,7 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
                 </div>
               )}
 
-              {advancedForm.mode !== "project_only" && (
+              {["lab_exam_only", "mixed"].includes(advancedForm.mode) && (
                 <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
@@ -1722,7 +2144,7 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
 
                 <button
                   type="submit"
-                  disabled={creating || (!isEditing && advancedLabFinalExists)}
+                  disabled={creating || selectedStructuredPeriodUnavailable}
                   className="inline-flex items-center justify-center rounded-2xl bg-fuchsia-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-fuchsia-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {creating
@@ -1730,8 +2152,8 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
                       ? "Updating..."
                       : "Creating..."
                     : isEditing
-                      ? "Update Advanced Lab Final"
-                      : "Create Advanced Lab Final"}
+                      ? `Update Structured ${advancedForm.period === "mid" ? "Lab Mid" : "Lab Final"}`
+                      : `Create Structured ${advancedForm.period === "mid" ? "Lab Mid" : "Lab Final"}`}
                 </button>
               </div>
             </form>
@@ -1856,7 +2278,7 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
               Existing Assessments
             </div>
             <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Showing {filteredAssessments.length} of {assessments.length}
+              Showing {filteredAssessments.length} of {markEntryAssessments.length}
               {!canReorder && !isEditing && (
                 <span className="ml-2 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
                   Clear search to reorder
@@ -1950,7 +2372,7 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
 
                     <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                       {a?.structureType === "lab_final"
-                        ? "Advanced lab final with nested project/question structure"
+                        ? `${getStructuredLabPeriod(a) === "mid" ? "Lab Mid" : "Lab Final"} breakdown used in marks entry${a?.labFinalConfig?.mode === "components" ? ` • ${(a?.labFinalConfig?.genericComponents || []).length} component(s)` : ""}`
                         : "Used in marks entry table"}
                     </div>
                   </div>

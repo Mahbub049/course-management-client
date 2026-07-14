@@ -24,6 +24,25 @@ export const fetchTeacherSubmissionAssessments = async (courseId) => {
   return res.data;
 };
 
+export const fetchTeacherMarksSyncConfiguration = async (courseId) => {
+  const res = await api.get(
+    `/lab-submissions/teacher/courses/${courseId}/marks-sync`
+  );
+  return res.data;
+};
+
+export const updateTeacherMarksSyncConfiguration = async (
+  courseId,
+  assessmentId,
+  payload
+) => {
+  const res = await api.patch(
+    `/lab-submissions/teacher/courses/${courseId}/assessments/${assessmentId}/marks-sync`,
+    payload
+  );
+  return res.data;
+};
+
 export const updateTeacherSubmissionAssessment = async (
   courseId,
   assessmentId,
@@ -60,6 +79,13 @@ export const updateLabSubmissionStatus = async (submissionId, payload) => {
   const res = await api.patch(
     `/lab-submissions/teacher/submissions/${submissionId}`,
     payload
+  );
+  return res.data;
+};
+
+export const deleteTeacherLabSubmission = async (submissionId) => {
+  const res = await api.delete(
+    `/lab-submissions/teacher/submissions/${submissionId}`
   );
   return res.data;
 };
