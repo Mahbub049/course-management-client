@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import Swal from "sweetalert2";
+import SmartFileActions from "../components/SmartFileActions";
 import {
   fetchPublicSubmissionPage,
   submitPublicLabAssessmentFile,
@@ -507,14 +508,10 @@ export default function PublicSubmissionPage() {
                                 {formatDateTime(submitted.submittedAt)}
                               </div>
                               {submitted.downloadUrl ? (
-                                <a
-                                  href={submitted.downloadUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
-                                >
-                                  View Submitted File
-                                </a>
+                                <SmartFileActions
+                                  file={submitted}
+                                  compact
+                                />
                               ) : null}
                             </div>
                           ) : (

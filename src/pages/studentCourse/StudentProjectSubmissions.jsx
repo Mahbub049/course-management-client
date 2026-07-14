@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import SmartFileActions from "../../components/SmartFileActions";
 import {
   fetchStudentProjectSubmissions,
   submitStudentProjectPhase,
@@ -293,14 +294,14 @@ export default function StudentProjectSubmissions({
                     <div className="font-semibold text-slate-900 dark:text-slate-100">
                       Uploaded File
                     </div>
-                    <a
-                      href={selectedItem.submission.fileUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-1 block text-violet-600 hover:underline dark:text-violet-300"
-                    >
-                      {selectedItem.submission.fileName || "Open uploaded file"}
-                    </a>
+                    <div className="mt-1 break-words text-sm text-slate-600 dark:text-slate-300">
+                      {selectedItem.submission.fileName || "Uploaded project file"}
+                    </div>
+                    <SmartFileActions
+                      file={selectedItem.submission}
+                      className="mt-3"
+                      compact
+                    />
                   </div>
                 ) : null}
 

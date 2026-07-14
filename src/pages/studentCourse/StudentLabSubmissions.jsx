@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Swal from "sweetalert2";
+import SmartFileActions from "../../components/SmartFileActions";
 import {
   fetchStudentCourseSubmissionAssessments,
   getPublicFileUrl,
@@ -15,15 +16,27 @@ const DEFAULT_ALLOWED_EXTENSIONS = [
   "ppt",
   "pptx",
   "txt",
+  "csv",
+  "json",
+  "md",
+  "xml",
   "zip",
+  "png",
+  "jpg",
+  "jpeg",
   "c",
   "cpp",
   "java",
+  "sql",
   "py",
   "js",
   "jsx",
+  "ts",
+  "tsx",
   "html",
   "css",
+  "php",
+  "sh",
 ];
 
 const EXTENSION_PATTERN = /^[a-z0-9][a-z0-9_+-]{0,15}$/;
@@ -411,24 +424,13 @@ function SubmissionTaskCard({ item, now, uploadingId, onFileChange }) {
                 Submitted at: {formatDateTime(item.submission.submittedAt)}
               </div>
 
-              <div className="mt-2 flex flex-wrap gap-3">
-                <a
-                  href={getPublicFileUrl(item.submission.downloadUrl)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline"
-                >
-                  View
-                </a>
-
-                <a
-                  href={getPublicFileUrl(item.submission.downloadUrl)}
-                  download
-                  className="underline"
-                >
-                  Download
-                </a>
-              </div>
+              <SmartFileActions
+                file={{
+                  ...item.submission,
+                  downloadUrl: getPublicFileUrl(item.submission.downloadUrl),
+                }}
+                className="mt-3"
+              />
 
               {item.submission.teacherNote ? (
                 <div className="mt-2">

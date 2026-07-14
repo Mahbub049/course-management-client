@@ -25,15 +25,27 @@ const FILE_TYPE_OPTIONS = [
   { value: "ppt", label: "PPT" },
   { value: "pptx", label: "PPTX" },
   { value: "txt", label: "TXT" },
+  { value: "csv", label: "CSV" },
+  { value: "json", label: "JSON" },
+  { value: "md", label: "MD" },
+  { value: "xml", label: "XML" },
   { value: "zip", label: "ZIP" },
+  { value: "png", label: "PNG" },
+  { value: "jpg", label: "JPG" },
+  { value: "jpeg", label: "JPEG" },
   { value: "c", label: "C" },
   { value: "cpp", label: "CPP" },
   { value: "java", label: "JAVA" },
+  { value: "sql", label: "SQL" },
   { value: "py", label: "PY" },
   { value: "js", label: "JS" },
   { value: "jsx", label: "JSX" },
+  { value: "ts", label: "TS" },
+  { value: "tsx", label: "TSX" },
   { value: "html", label: "HTML" },
   { value: "css", label: "CSS" },
+  { value: "php", label: "PHP" },
+  { value: "sh", label: "SH" },
 ];
 
 const DEFAULT_ALLOWED_EXTENSIONS = FILE_TYPE_OPTIONS.map((item) => item.value);
@@ -41,6 +53,37 @@ const FIXED_FILE_TYPE_VALUES = new Set(DEFAULT_ALLOWED_EXTENSIONS);
 const EXTENSION_PATTERN = /^[a-z0-9][a-z0-9_+-]{0,15}$/;
 const AUTO_SAVE_DELAY = 700;
 const CREATE_REGULAR_TARGET = "__create_lab_assessment__";
+const MAX_SUBMISSION_FILE_SIZE_MB = 50;
+const MAX_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024;
+const OFFICE_PREVIEW_EXTENSIONS = new Set([
+  "doc",
+  "docx",
+  "xls",
+  "xlsx",
+  "ppt",
+  "pptx",
+]);
+const TEXT_PREVIEW_EXTENSIONS = new Set([
+  "txt",
+  "csv",
+  "json",
+  "md",
+  "xml",
+  "c",
+  "cpp",
+  "java",
+  "sql",
+  "py",
+  "js",
+  "jsx",
+  "ts",
+  "tsx",
+  "html",
+  "css",
+  "php",
+  "sh",
+]);
+const IMAGE_PREVIEW_EXTENSIONS = new Set(["png", "jpg", "jpeg"]);
 
 const initialForm = {
   name: "Lab Assessment Submission",
@@ -146,6 +189,34 @@ function formatFileSize(size = 0) {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
   return `${(size / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function getFileExtension(fileName = "") {
+  const value = String(fileName || "");
+  const dotIndex = value.lastIndexOf(".");
+  return dotIndex >= 0 ? value.slice(dotIndex + 1).toLowerCase() : "";
+}
+
+function getPreviewType(file = {}) {
+  const extension = getFileExtension(file.originalFileName);
+  const mimeType = String(file.mimeType || "").toLowerCase();
+
+  if (extension === "pdf" || mimeType === "application/pdf") return "pdf";
+  if (OFFICE_PREVIEW_EXTENSIONS.has(extension)) return "office";
+  if (IMAGE_PREVIEW_EXTENSIONS.has(extension) || mimeType.startsWith("image/")) {
+    return "image";
+  }
+  if (TEXT_PREVIEW_EXTENSIONS.has(extension) || mimeType.startsWith("text/")) {
+    return "text";
+  }
+  return "unsupported";
+}
+
+function buildOfficeViewerUrl(fileUrl = "") {
+  if (!fileUrl) return "";
+  return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(
+    fileUrl
+  )}`;
 }
 
 function normalizeAllowedExtensions(value, fallbackToDefault = true) {
@@ -294,6 +365,10 @@ export default function TeacherLabSubmissions({ courseId }) {
   const [syncDrafts, setSyncDrafts] = useState({});
   const [loadingSyncConfig, setLoadingSyncConfig] = useState(false);
   const [savingSyncId, setSavingSyncId] = useState("");
+  const [previewFile, setPreviewFile] = useState(null);
+  const [previewText, setPreviewText] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
 
   const dateInputRef = useRef(null);
   const timeInputRef = useRef(null);
@@ -353,6 +428,21 @@ export default function TeacherLabSubmissions({ courseId }) {
     clearAllSubmissionTimers();
     setAutoSaveStates({});
   }, [selectedId]);
+
+  useEffect(() => {
+    if (!previewFile) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      setPreviewFile(null);
+      setPreviewText("");
+      setPreviewLoading(false);
+      setPreviewError("");
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [previewFile]);
 
   const loadAssessments = async (preferredId = null) => {
     setLoading(true);
@@ -469,6 +559,49 @@ export default function TeacherLabSubmissions({ courseId }) {
     }
   }, [activeTab, courseId]);
 
+  const closeFilePreview = () => {
+    setPreviewFile(null);
+    setPreviewText("");
+    setPreviewLoading(false);
+    setPreviewError("");
+  };
+
+  const handlePreviewFile = async (file) => {
+    const previewType = getPreviewType(file);
+    const nextFile = { ...file, previewType };
+
+    setPreviewFile(nextFile);
+    setPreviewText("");
+    setPreviewError("");
+    setPreviewLoading(previewType === "text");
+
+    if (previewType !== "text") return;
+
+    if (Number(file.fileSize || 0) > MAX_TEXT_PREVIEW_BYTES) {
+      setPreviewLoading(false);
+      setPreviewError(
+        "Text and code preview is limited to 2 MB. Use Open in new tab or Download for this file."
+      );
+      return;
+    }
+
+    try {
+      const response = await fetch(getPublicFileUrl(file.downloadUrl));
+      if (!response.ok) {
+        throw new Error(`Preview request failed (${response.status}).`);
+      }
+
+      setPreviewText(await response.text());
+    } catch (error) {
+      console.error(error);
+      setPreviewError(
+        "The browser could not load this file preview. You can still open or download the file."
+      );
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   const resetForm = () => {
     setForm(initialForm);
     setEditingId("");
@@ -491,6 +624,20 @@ export default function TeacherLabSubmissions({ courseId }) {
       return;
     }
 
+    const maxFileSizeMB = Number(form.maxFileSizeMB || 10);
+    if (
+      !Number.isFinite(maxFileSizeMB) ||
+      maxFileSizeMB < 1 ||
+      maxFileSizeMB > MAX_SUBMISSION_FILE_SIZE_MB
+    ) {
+      Swal.fire(
+        "Invalid file-size limit",
+        `Choose a value between 1 and ${MAX_SUBMISSION_FILE_SIZE_MB} MB.`,
+        "warning"
+      );
+      return;
+    }
+
     setSavingForm(true);
 
     try {
@@ -500,7 +647,7 @@ export default function TeacherLabSubmissions({ courseId }) {
         submissionConfig: {
           instructions: form.instructions,
           dueDate: combineDateTime(form.dueDate, form.dueTime),
-          maxFileSizeMB: Number(form.maxFileSizeMB || 10),
+          maxFileSizeMB,
           allowResubmission: !!form.allowResubmission,
           resourceTitle: form.resourceTitle,
           resourceUrl: form.resourceUrl,
@@ -1187,12 +1334,13 @@ export default function TeacherLabSubmissions({ courseId }) {
 
             <Field
               label="Maximum File Size"
-              help="Enter file size in MB. Maximum allowed value is 10 MB."
+              help={`Choose 1–${MAX_SUBMISSION_FILE_SIZE_MB} MB. Supabase Storage must also be configured with an equal or higher bucket limit.`}
             >
               <input
                 type="number"
                 min="1"
-                max="10"
+                max={MAX_SUBMISSION_FILE_SIZE_MB}
+                step="1"
                 value={form.maxFileSizeMB}
                 onChange={(event) =>
                   setForm((previous) => ({
@@ -2107,14 +2255,13 @@ export default function TeacherLabSubmissions({ courseId }) {
                             {formatFileSize(row.fileSize)} · {formatDateTime(row.submittedAt)}
                           </div>
                           <div className="mt-3 grid grid-cols-2 gap-2">
-                            <a
-                              href={getPublicFileUrl(row.downloadUrl)}
-                              target="_blank"
-                              rel="noreferrer"
+                            <button
+                              type="button"
+                              onClick={() => handlePreviewFile(row)}
                               className="inline-flex items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
                             >
                               <EyeIcon /> View
-                            </a>
+                            </button>
                             <a
                               href={getPublicFileUrl(row.downloadUrl)}
                               download
@@ -2207,14 +2354,13 @@ export default function TeacherLabSubmissions({ courseId }) {
                                   {formatFileSize(row.fileSize)}
                                 </div>
                                 <div className="mt-3 flex flex-wrap gap-2">
-                                  <a
-                                    href={getPublicFileUrl(row.downloadUrl)}
-                                    target="_blank"
-                                    rel="noreferrer"
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePreviewFile(row)}
                                     className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
                                   >
                                     <EyeIcon /> View
-                                  </a>
+                                  </button>
                                   <a
                                     href={getPublicFileUrl(row.downloadUrl)}
                                     download
@@ -2289,6 +2435,146 @@ export default function TeacherLabSubmissions({ courseId }) {
           </section>
         </div>
       ) : null}
+
+      {previewFile ? (
+        <FilePreviewModal
+          file={previewFile}
+          text={previewText}
+          loading={previewLoading}
+          error={previewError}
+          onClose={closeFilePreview}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function FilePreviewModal({ file, text, loading, error, onClose }) {
+  const fileUrl = getPublicFileUrl(file?.downloadUrl);
+  const previewType = file?.previewType || getPreviewType(file);
+  const officeViewerUrl =
+    previewType === "office" ? buildOfficeViewerUrl(fileUrl) : "";
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/75 p-2 backdrop-blur-sm sm:p-5"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Preview ${file?.originalFileName || "submitted file"}`}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="flex h-[94vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl sm:rounded-3xl">
+        <div className="flex flex-col gap-3 border-b border-slate-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-bold text-white sm:text-base" title={file?.originalFileName}>
+              {file?.originalFileName || "File preview"}
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+              <span>{formatFileSize(file?.fileSize)}</span>
+              <span>•</span>
+              <span>{getFileExtension(file?.originalFileName).toUpperCase() || "FILE"}</span>
+              {previewType === "office" ? (
+                <>
+                  <span>•</span>
+                  <span>Microsoft Office Online preview</span>
+                </>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <a
+              href={fileUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-100 transition hover:bg-slate-800"
+            >
+              <ExternalLinkIcon /> Open in new tab
+            </a>
+            <a
+              href={fileUrl}
+              download
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-100 transition hover:bg-slate-800"
+            >
+              <DownloadIcon /> Download
+            </a>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-300 transition hover:bg-rose-500/20"
+              aria-label="Close preview"
+              title="Close preview"
+            >
+              <CloseIcon />
+            </button>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 bg-slate-900">
+          {previewType === "pdf" ? (
+            <iframe
+              title={file?.originalFileName || "PDF preview"}
+              src={fileUrl}
+              className="h-full w-full border-0 bg-white"
+            />
+          ) : null}
+
+          {previewType === "office" ? (
+            <iframe
+              title={file?.originalFileName || "Office file preview"}
+              src={officeViewerUrl}
+              className="h-full w-full border-0 bg-white"
+              allowFullScreen
+            />
+          ) : null}
+
+          {previewType === "image" ? (
+            <div className="flex h-full items-center justify-center overflow-auto p-4 sm:p-8">
+              <img
+                src={fileUrl}
+                alt={file?.originalFileName || "Submitted file"}
+                className="max-h-full max-w-full rounded-xl object-contain shadow-2xl"
+              />
+            </div>
+          ) : null}
+
+          {previewType === "text" ? (
+            <div className="h-full overflow-auto p-4 sm:p-6">
+              {loading ? (
+                <div className="flex h-full items-center justify-center text-sm font-semibold text-slate-300">
+                  <span className="inline-flex items-center gap-2"><SpinnerIcon /> Loading preview…</span>
+                </div>
+              ) : error ? (
+                <PreviewUnavailable message={error} />
+              ) : (
+                <pre className="min-h-full whitespace-pre-wrap break-words rounded-2xl border border-slate-700 bg-slate-950 p-4 font-mono text-xs leading-6 text-slate-100 sm:p-5 sm:text-sm">
+                  {text || "This file is empty."}
+                </pre>
+              )}
+            </div>
+          ) : null}
+
+          {previewType === "unsupported" ? (
+            <PreviewUnavailable message="This file type cannot be previewed safely inside the portal. Open it in a compatible application or download it." />
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PreviewUnavailable({ message }) {
+  return (
+    <div className="flex h-full items-center justify-center p-6">
+      <div className="max-w-lg rounded-2xl border border-slate-700 bg-slate-950 p-6 text-center shadow-xl">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-800 text-slate-300">
+          <FolderIcon />
+        </div>
+        <div className="mt-4 text-base font-bold text-white">Preview unavailable</div>
+        <p className="mt-2 text-sm leading-6 text-slate-400">{message}</p>
+      </div>
     </div>
   );
 }
@@ -2382,6 +2668,25 @@ function DownloadIcon() {
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
       <polyline points="7 10 12 15 17 10" />
       <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
+
+function ExternalLinkIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M14 3h7v7" />
+      <path d="M10 14L21 3" />
+      <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
     </svg>
   );
 }

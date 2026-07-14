@@ -22,16 +22,15 @@ export default function TeacherCourseLayout({
     type === "lab" ? "Lab" : type === "hybrid" ? "Hybrid" : "Theory";
 
   const tabs = [
-    { id: "marks", label: "Marks Entry", icon: <MarksIcon /> },
+    { id: "marks", label: "Marks", icon: <MarksIcon /> },
     { id: "assessments", label: "Assessments", icon: <ClipboardIcon /> },
     ...(isProjectMode
       ? [{ id: "projects", label: "Projects", icon: <ProjectIcon /> }]
       : []),
-    { id: "materials", label: "Materials", icon: <FolderIcon /> },
-    { id: "obe", label: "OBE / CO-PO", icon: <TargetIcon /> },
     { id: "submissions", label: "Submissions", icon: <UploadIcon /> },
+    { id: "obe", label: "OBE / CO-PO", icon: <TargetIcon /> },
     { id: "students", label: "Students", icon: <UsersIcon /> },
-    { id: "attendance", label: "Attendance", icon: <CalendarIcon /> },
+    { id: "attendance", label: "Att", icon: <CalendarIcon /> },
     { id: "settings", label: "Settings", icon: <SettingsIcon /> },
   ];
 
@@ -73,7 +72,7 @@ export default function TeacherCourseLayout({
               </div>
 
               <p className="mt-4 hidden text-sm leading-6 text-slate-500 dark:text-slate-400 sm:block">
-                Manage course marks, assessments, students, attendance, materials, and project workflow from one organized workspace.
+                Manage course marks, assessments, submissions, OBE, students, attendance, and project workflow from one organized workspace.
               </p>
             </div>
 

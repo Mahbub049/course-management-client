@@ -230,6 +230,11 @@ export default function StudentCoursePage() {
       course?.projectFeature?.mode === "project" &&
       course?.projectFeature?.visibleToStudents !== false;
 
+    if (activeTab === "materials") {
+      setActiveTab("assessment");
+      return;
+    }
+
     if (!showProjectTab && activeTab === "project") {
       setActiveTab("assessment");
     }
@@ -677,7 +682,6 @@ export default function StudentCoursePage() {
   const tabs = [
     { key: "assessment", label: "Assessment" },
     { key: "attendance", label: "Attendance" },
-    { key: "materials", label: "Materials" },
     { key: "submissions", label: "Submissions" },
     ...(showProjectTab ? [{ key: "project", label: "Project" }] : []),
     { key: "complaint", label: "Raise Complaint", mobileLabel: "Complaint" },
@@ -1182,7 +1186,6 @@ export default function StudentCoursePage() {
                                       <table className="min-w-full text-sm">
                                         <thead className="bg-slate-50 dark:bg-slate-800/70">
                                           <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                            <th className="px-4 py-3">Group</th>
                                             <th className="px-4 py-3">Item</th>
                                             <th className="px-4 py-3">Full</th>
                                             <th className="px-4 py-3">Obtained</th>
@@ -1191,9 +1194,6 @@ export default function StudentCoursePage() {
                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                           {advancedRows.map((row) => (
                                             <tr key={row.key}>
-                                              <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                                                {row.group}
-                                              </td>
                                               <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">
                                                 {row.label}
                                               </td>
@@ -1875,9 +1875,6 @@ function AssessmentCard({ assessment, courseType, advancedRows = [], onComplaint
                 <div className="min-w-0">
                   <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
                     {row.label}
-                  </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                    {row.group}
                   </div>
                 </div>
 

@@ -656,7 +656,8 @@ function advancedAssessmentItems(assessment) {
         section: sectionLabels[sourceType] || "Marks Entry",
         sourceType,
         linkedAssessmentId: component.linkedAssessmentId || null,
-        readOnly: isSubmissionSynced,
+        synced: isSubmissionSynced,
+        readOnly: false,
       });
     });
 
@@ -1064,7 +1065,7 @@ function AdvancedBreakdownModal({
                             </div>
                             <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                               Group: {item.group} • Full marks: {item.fullMarks}
-                              {item.readOnly ? " • Synced automatically" : ""}
+                              {item.synced ? " • Synced source • Manual editing allowed" : ""}
                             </div>
                           </div>
 
@@ -1082,9 +1083,13 @@ function AdvancedBreakdownModal({
                               onSubMarkChange(item.key, e.target.value, item.fullMarks)
                             }
                             onBlur={() => onSubMarkBlur(item.key, item.fullMarks)}
-                            disabled={item.readOnly}
-                            className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold text-slate-900 shadow-sm outline-none transition focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:disabled:bg-slate-800"
-                            placeholder={item.readOnly ? "Managed by Marks Sync" : "Enter marks"}
+                            title={
+                              item.synced
+                                ? "This value is connected to Marks Sync, but manual editing is allowed. Running sync again may replace the manual value."
+                                : ""
+                            }
+                            className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold text-slate-900 shadow-sm outline-none transition focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                            placeholder="Enter marks"
                           />
                         </div>
                       </div>
@@ -2860,7 +2865,7 @@ export default function TabMarks({ courseId, course }) {
                               </div>
                               {a.syncLocked && (
                                 <div className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold normal-case text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
-                                  Managed by Marks Sync
+                                  Marks Sync connected • Editable
                                 </div>
                               )}
                               <button
@@ -2933,7 +2938,7 @@ export default function TabMarks({ courseId, course }) {
                               </div>
                               {a.syncLocked && (
                                 <div className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold normal-case text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
-                                  Managed by Marks Sync
+                                  Marks Sync connected • Editable
                                 </div>
                               )}
                               {a?.structureType === "lab_final" && (
@@ -3021,13 +3026,20 @@ export default function TabMarks({ courseId, course }) {
                                   <input
                                     type="text"
                                     inputMode="decimal"
-                                    disabled={isAttendanceCol || Boolean(a.syncLocked)}
+                                    disabled={isAttendanceCol}
+                                    title={
+                                      a.syncLocked
+                                        ? "This value is connected to Marks Sync, but manual editing is allowed. Running sync again may replace the manual value."
+                                        : ""
+                                    }
                                     className={[
                                       "h-11 w-24 rounded-xl border px-3 text-sm shadow-sm transition",
                                       "focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500",
-                                      isAttendanceCol || a.syncLocked
+                                      isAttendanceCol
                                         ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
-                                        : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
+                                        : a.syncLocked
+                                          ? "border-emerald-200 bg-emerald-50/50 text-slate-900 hover:border-emerald-300 dark:border-emerald-500/30 dark:bg-emerald-500/5 dark:text-slate-100"
+                                          : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
                                     ].join(" ")}
                                     value={cell == null ? "" : getMarkDisplayValue(cell)}
                                     onChange={(e) =>
@@ -3138,13 +3150,16 @@ export default function TabMarks({ courseId, course }) {
                                 <input
                                   type="text"
                                   inputMode="decimal"
-                                  disabled={Boolean(a.syncLocked)}
-                                  title={a.syncLocked ? "Managed by Marks Sync" : ""}
+                                  title={
+                                    a.syncLocked
+                                      ? "This value is connected to Marks Sync, but manual editing is allowed. Running sync again may replace the manual value."
+                                      : ""
+                                  }
                                   className={[
                                     "h-11 w-24 rounded-xl border px-3 text-sm shadow-sm transition",
                                     "focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500",
                                     a.syncLocked
-                                      ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                                      ? "border-emerald-200 bg-emerald-50/50 text-slate-900 hover:border-emerald-300 dark:border-emerald-500/30 dark:bg-emerald-500/5 dark:text-slate-100"
                                       : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
                                   ].join(" ")}
                                   value={cell == null ? "" : getMarkDisplayValue(cell)}

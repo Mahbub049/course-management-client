@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchStudentCourses } from "../services/studentService";
 import Swal from "sweetalert2";
+import SmartFileActions from "../components/SmartFileActions";
 import {
   fetchStudentSubmissionAssessments,
   getPublicFileUrl,
@@ -546,6 +547,15 @@ function PendingSubmissionsSection({
                           Submitted at:{" "}
                           {formatDashboardDateTime(item.submission.submittedAt)}
                         </div>
+
+                        <SmartFileActions
+                          file={{
+                            ...item.submission,
+                            downloadUrl: getPublicFileUrl(item.submission.downloadUrl),
+                          }}
+                          className="mt-3"
+                          compact
+                        />
                       </div>
                     ) : null}
                   </div>
@@ -796,9 +806,6 @@ function formatRemainingTime(item, now = Date.now()) {
   return `${minutes}m ${seconds}s`;
 }
 
-function pad2(value) {
-  return String(value).padStart(2, "0");
-}
 
 function makeLocalDate(year, monthIndex, day) {
   return new Date(year, monthIndex, day, 12, 0, 0, 0);
