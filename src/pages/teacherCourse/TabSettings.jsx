@@ -3,6 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import { updateCourseRequest, fetchCourseById } from "../../services/courseService";
+import {
+  BUBT_SHIFTS,
+  getEquivalentProgramForShift,
+  getProgramsForShift,
+} from "../../constants/bubtAcademicPrograms";
 
 const SEMESTERS = ["Spring", "Summer", "Fall"];
 
@@ -19,6 +24,8 @@ export default function TabSettings({
     title: "",
     section: "",
     intake: "",
+    shift: "Day",
+    department: "",
     semester: "Spring",
     year: "",
     courseType: "theory",
@@ -39,6 +46,8 @@ export default function TabSettings({
       title: course?.title || "",
       section: course?.section || "",
       intake: course?.intake || "",
+      shift: course?.shift || "Day",
+      department: course?.department || course?.program || "",
       semester: course?.semester || "Spring",
       year: course?.year || new Date().getFullYear(),
       courseType: (course?.courseType || "theory").toLowerCase(),
@@ -59,6 +68,9 @@ export default function TabSettings({
       (form.title || "").trim() !== (localCourse.title || "").trim() ||
       (form.section || "").trim() !== (localCourse.section || "").trim() ||
       (form.intake || "").trim() !== (localCourse.intake || "").trim() ||
+      String(form.shift || "Day") !== String(localCourse.shift || "Day") ||
+      String(form.department || "") !==
+      String(localCourse.department || localCourse.program || "") ||
       String(form.semester || "") !== String(localCourse.semester || "") ||
       String(form.year || "") !== String(localCourse.year || "") ||
       String(form.courseType || "").toLowerCase() !==
@@ -76,8 +88,28 @@ export default function TabSettings({
     );
   }, [form, localCourse]);
 
+  const availablePrograms = useMemo(
+    () => getProgramsForShift(form.shift),
+    [form.shift]
+  );
+
   const handleChange = (key, value) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    setForm((prev) => {
+      if (key === "shift") {
+        const equivalentDepartment = getEquivalentProgramForShift(
+          prev.department,
+          value
+        );
+
+        return {
+          ...prev,
+          shift: value,
+          department: equivalentDepartment || "",
+        };
+      }
+
+      return { ...prev, [key]: value };
+    });
   };
 
   const handleProjectFeatureChange = (key, value) => {
@@ -98,6 +130,8 @@ export default function TabSettings({
       title: localCourse.title || "",
       section: localCourse.section || "",
       intake: localCourse.intake || "",
+      shift: localCourse.shift || "Day",
+      department: localCourse.department || localCourse.program || "",
       semester: localCourse.semester || "Spring",
       year: localCourse.year || new Date().getFullYear(),
       courseType: (localCourse.courseType || "theory").toLowerCase(),
@@ -123,6 +157,16 @@ export default function TabSettings({
       return;
     }
 
+    if (!form.department) {
+      Swal.fire({
+        icon: "warning",
+        title: "Department is required",
+        text: "Select a department/program for the chosen shift.",
+        confirmButtonColor: "#4f46e5",
+      });
+      return;
+    }
+
     const confirm = await Swal.fire({
       icon: "question",
       title: "Save changes?",
@@ -142,6 +186,8 @@ export default function TabSettings({
         title,
         section: (form.section || "").trim(),
         intake: (form.intake || "").trim(),
+        shift: form.shift,
+        department: form.department,
         semester: form.semester,
         year: Number(form.year),
         courseType: (form.courseType || "theory").toLowerCase(),
@@ -231,13 +277,18 @@ export default function TabSettings({
               </h3>
 
               <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
-                Edit essential course details such as title, section, intake, semester, year,
-                and course type.
+                Edit essential course details such as title, section, intake, shift,
+                department, semester, year, and course type.
               </p>
 
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <InfoPill label="Code" value={localCourse.code || "—"} />
                 <InfoPill label="Intake" value={localCourse.intake || "—"} />
+                <InfoPill label="Shift" value={localCourse.shift || "Day"} />
+                <InfoPill
+                  label="Department"
+                  value={localCourse.department || localCourse.program || "Not set"}
+                />
                 <InfoPill label="Semester" value={localCourse.semester || "—"} />
                 <InfoPill label="Year" value={localCourse.year || "—"} />
                 <span
@@ -316,6 +367,46 @@ export default function TabSettings({
                   <option value="theory">Theory</option>
                   <option value="lab">Lab</option>
                   <option value="hybrid">Hybrid</option>
+                </select>
+              )}
+            </Field>
+
+            <Field label="Shift">
+              {!editMode ? (
+                <DisplayValue value={localCourse.shift || "Day"} />
+              ) : (
+                <select
+                  value={form.shift}
+                  onChange={(e) => handleChange("shift", e.target.value)}
+                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                >
+                  {BUBT_SHIFTS.map((shift) => (
+                    <option key={shift} value={shift}>
+                      {shift}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </Field>
+
+            <Field label="Department">
+              {!editMode ? (
+                <DisplayValue
+                  value={localCourse.department || localCourse.program || "Not set"}
+                />
+              ) : (
+                <select
+                  value={form.department}
+                  onChange={(e) => handleChange("department", e.target.value)}
+                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  required
+                >
+                  <option value="">Select department/program</option>
+                  {availablePrograms.map((program) => (
+                    <option key={program.key} value={program.label}>
+                      {program.label}
+                    </option>
+                  ))}
                 </select>
               )}
             </Field>

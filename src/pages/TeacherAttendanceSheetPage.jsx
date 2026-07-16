@@ -390,7 +390,8 @@ export default function TeacherAttendanceSheetPage() {
                     const id = c._id || c.id;
                     return (
                       <option key={id || i} value={id}>
-                        {c.code} – {c.title} (Sec {c.section}) – {c.semester} {c.year}
+                        {c.code} – {c.title} (Sec {c.section}) – {c.shift || "Day"}
+                        {c.department ? ` – ${c.department}` : ""} – {c.semester} {c.year}
                       </option>
                     );
                   })}
@@ -429,7 +430,11 @@ export default function TeacherAttendanceSheetPage() {
                     {data.course.code} – {data.course.title}
                   </h2>
                   <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                    Section {data.course.section} • {data.course.semester} {data.course.year}
+                    Section {data.course.section} • {data.course.shift || "Day"}
+                    {data.course.department || data.course.program
+                      ? ` • ${data.course.department || data.course.program}`
+                      : ""}
+                    {` • ${data.course.semester} ${data.course.year}`}
                   </p>
                 </div>
 

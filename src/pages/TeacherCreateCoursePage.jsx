@@ -3,6 +3,11 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createCourseRequest } from "../services/courseService";
+import {
+  BUBT_SHIFTS,
+  getEquivalentProgramForShift,
+  getProgramsForShift,
+} from "../constants/bubtAcademicPrograms";
 import Swal from "sweetalert2";
 
 function TeacherCreateCoursePage() {
@@ -12,6 +17,8 @@ function TeacherCreateCoursePage() {
     code: "",
     title: "",
     section: "",
+    shift: "Day",
+    department: "B.Sc. Engg. in CSE",
     semester: "Spring",
     year: new Date().getFullYear(),
     courseType: "theory",
@@ -29,12 +36,34 @@ function TeacherCreateCoursePage() {
     return arr;
   }, []);
 
+  const availablePrograms = useMemo(
+    () => getProgramsForShift(form.shift),
+    [form.shift]
+  );
+
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setForm((prev) => ({
-      ...prev,
-      [name]: name === "year" ? Number(value) : value,
-    }));
+
+    setForm((prev) => {
+      if (name === "shift") {
+        const equivalentDepartment = getEquivalentProgramForShift(
+          prev.department,
+          value
+        );
+
+        return {
+          ...prev,
+          shift: value,
+          department:
+            equivalentDepartment || getProgramsForShift(value)[0]?.label || "",
+        };
+      }
+
+      return {
+        ...prev,
+        [name]: name === "year" ? Number(value) : value,
+      };
+    });
   };
 
   const handleSubmit = async (e) => {
@@ -48,6 +77,8 @@ function TeacherCreateCoursePage() {
         code: form.code.trim(),
         title: form.title.trim(),
         section: form.section.trim(),
+        shift: form.shift,
+        department: form.department,
         semester: form.semester,
         year: form.year,
         courseType: form.courseType,
@@ -77,6 +108,8 @@ function TeacherCreateCoursePage() {
           code: "",
           title: "",
           section: "",
+          shift: form.shift,
+          department: form.department,
           semester: form.semester,
           year: form.year,
           courseType: form.courseType,
@@ -159,6 +192,43 @@ function TeacherCreateCoursePage() {
         {/* Body */}
         <div className="p-5 sm:p-6">
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+            <Field label="Shift" hint="Department/program options change with shift">
+              <select
+                name="shift"
+                value={form.shift}
+                onChange={handleChange}
+                className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 shadow-sm outline-none transition focus:border-violet-500 focus:bg-white focus:ring-2 focus:ring-violet-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
+                required
+              >
+                {BUBT_SHIFTS.map((shift) => (
+                  <option key={shift} value={shift}>
+                    {shift}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field
+              label="Department"
+              hint="Bachelor program shown according to the selected shift"
+            >
+              <select
+                name="department"
+                value={form.department}
+                onChange={handleChange}
+                className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 shadow-sm outline-none transition focus:border-violet-500 focus:bg-white focus:ring-2 focus:ring-violet-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
+                required
+              >
+                {availablePrograms.map((program) => (
+                  <option key={program.key} value={program.label}>
+                    {program.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
             <Field label="Course Code" hint="Example: CSE-207">
               <input
                 type="text"
@@ -252,6 +322,14 @@ function TeacherCreateCoursePage() {
               </span>
               <span className="text-slate-700 dark:text-slate-200">
                 {form.title || "Course Title"}
+              </span>
+              <span className="text-slate-400 dark:text-slate-500">•</span>
+              <span className="text-slate-600 dark:text-slate-300">
+                {form.shift}
+              </span>
+              <span className="text-slate-400 dark:text-slate-500">•</span>
+              <span className="text-slate-600 dark:text-slate-300">
+                {form.department || "Department"}
               </span>
               <span className="text-slate-400 dark:text-slate-500">•</span>
               <span className="text-slate-600 dark:text-slate-300">

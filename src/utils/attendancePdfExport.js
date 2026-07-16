@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import { getDepartmentLineForProgram } from "../constants/bubtAcademicPrograms";
 
 const UNIVERSITY_NAME = "Bangladesh University of Business and Technology (BUBT)";
 const REPORT_TITLE = "Attendance Report";
@@ -19,7 +20,7 @@ const formatDate = (value) => {
 };
 
 const inferProgram = (course = {}) => {
-  const explicit = safeText(course.program);
+  const explicit = safeText(course.department || course.program);
   if (explicit) return explicit;
 
   const searchable = `${safeText(course.code)} ${safeText(course.title)}`.toUpperCase();
@@ -199,6 +200,9 @@ export const createAttendancePdf = ({ data, computed, teacherFallback = {} }) =>
   const isLandscape = orientation === "landscape";
 
   const course = data.course || {};
+  const courseDepartmentLine = getDepartmentLineForProgram(
+    course.department || course.program
+  );
   const teacher = {
     name: safeText(data.teacher?.name, safeText(teacherFallback.name, "Course Teacher")),
     shortCode: safeText(data.teacher?.shortCode, safeText(teacherFallback.shortCode)),
@@ -206,9 +210,9 @@ export const createAttendancePdf = ({ data, computed, teacherFallback = {} }) =>
       data.teacher?.designation,
       safeText(teacherFallback.designation, DEFAULT_DESIGNATION)
     ),
-    department: normalizeDepartment(
-      data.teacher?.department || teacherFallback.department
-    ),
+    department:
+      courseDepartmentLine ||
+      normalizeDepartment(data.teacher?.department || teacherFallback.department),
   };
 
   const tableX = 0.5;
