@@ -103,6 +103,24 @@ const formatReuseCourseLabel = (courseItem = {}) => {
   return `${parts.join(" · ")}${courseItem.archived ? " · Archived" : ""}`;
 };
 
+const getReuseSemesterKey = (courseItem = {}) => {
+  const semester = String(courseItem.semester || "").trim().toLowerCase();
+  const year = String(courseItem.year || "").trim();
+
+  if (!semester && !year) return "unspecified";
+  return `${semester}__${year}`;
+};
+
+const formatReuseSemesterLabel = (courseItem = {}) =>
+  [courseItem.semester, courseItem.year].filter(Boolean).join(" ") ||
+  "Semester not specified";
+
+const reuseSemesterRank = {
+  spring: 1,
+  summer: 2,
+  fall: 3,
+};
+
 export default function TabObe({ courseId, course }) {
   const [activeSubtab, setActiveSubtab] = useState("setup");
 
@@ -133,6 +151,7 @@ export default function TabObe({ courseId, course }) {
   const [reusePanelOpen, setReusePanelOpen] = useState(false);
   const [reuseCourses, setReuseCourses] = useState([]);
   const [reuseCoursesLoading, setReuseCoursesLoading] = useState(false);
+  const [reuseSemesterFilter, setReuseSemesterFilter] = useState("all");
   const [reuseSourceCourseId, setReuseSourceCourseId] = useState("");
   const [reuseCopySetup, setReuseCopySetup] = useState(true);
   const [reuseCopyBlueprints, setReuseCopyBlueprints] = useState(true);
@@ -142,6 +161,42 @@ export default function TabObe({ courseId, course }) {
   const coOptions = useMemo(
     () => (setup.courseOutcomes || []).filter((row) => row.code?.trim()),
     [setup.courseOutcomes]
+  );
+
+  const reuseSemesterOptions = useMemo(() => {
+    const uniqueSemesters = new Map();
+
+    for (const item of reuseCourses) {
+      const key = getReuseSemesterKey(item);
+      if (!uniqueSemesters.has(key)) {
+        uniqueSemesters.set(key, {
+          key,
+          label: formatReuseSemesterLabel(item),
+          semester: String(item.semester || "").trim(),
+          year: Number(item.year || 0),
+        });
+      }
+    }
+
+    return [...uniqueSemesters.values()].sort((a, b) => {
+      if (a.year !== b.year) return b.year - a.year;
+
+      const aRank = reuseSemesterRank[a.semester.toLowerCase()] || 0;
+      const bRank = reuseSemesterRank[b.semester.toLowerCase()] || 0;
+      if (aRank !== bRank) return bRank - aRank;
+
+      return a.label.localeCompare(b.label, undefined, { numeric: true });
+    });
+  }, [reuseCourses]);
+
+  const filteredReuseCourses = useMemo(
+    () =>
+      reuseSemesterFilter === "all"
+        ? reuseCourses
+        : reuseCourses.filter(
+            (item) => getReuseSemesterKey(item) === reuseSemesterFilter
+          ),
+    [reuseCourses, reuseSemesterFilter]
   );
 
   useEffect(() => {
@@ -154,7 +209,7 @@ export default function TabObe({ courseId, course }) {
   useEffect(() => {
     loadReuseCourses();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courseId, course?.code]);
+  }, [courseId, course?.code, course?.semester, course?.year]);
 
   useEffect(() => {
     if (activeSubtab === "output") {
@@ -162,6 +217,14 @@ export default function TabObe({ courseId, course }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSubtab]);
+
+  useEffect(() => {
+    setReuseSourceCourseId((previous) =>
+      filteredReuseCourses.some((item) => item.id === previous)
+        ? previous
+        : filteredReuseCourses[0]?.id || ""
+    );
+  }, [filteredReuseCourses]);
 
   const loadSetup = async () => {
     try {
@@ -296,11 +359,20 @@ export default function TabObe({ courseId, course }) {
       });
 
       setReuseCourses(candidates);
-      setReuseSourceCourseId((previous) =>
-        candidates.some((item) => item.id === previous)
-          ? previous
-          : candidates[0]?.id || ""
-      );
+      setReuseSemesterFilter((previous) => {
+        const availableSemesterKeys = new Set(
+          candidates.map((item) => getReuseSemesterKey(item))
+        );
+
+        if (previous !== "all" && availableSemesterKeys.has(previous)) {
+          return previous;
+        }
+
+        const targetSemesterKey = getReuseSemesterKey(course || {});
+        return availableSemesterKeys.has(targetSemesterKey)
+          ? targetSemesterKey
+          : "all";
+      });
     } catch (error) {
       console.error(error);
       toast(
@@ -1017,28 +1089,60 @@ const saveSetup = async () => {
 
         {reusePanelOpen && (
           <div className="mt-5 space-y-5 border-t border-indigo-200 pt-5 dark:border-indigo-500/20">
-            <FormField label="Source Course">
-              <select
-                value={reuseSourceCourseId}
-                onChange={(event) => setReuseSourceCourseId(event.target.value)}
-                disabled={reuseCoursesLoading || reuseSaving || !reuseCourses.length}
-                className={inputClass}
-              >
-                {!reuseCourses.length && (
-                  <option value="">
-                    {reuseCoursesLoading
-                      ? "Loading your courses..."
-                      : "No other course is available"}
-                  </option>
-                )}
+            <div className="grid gap-4 lg:grid-cols-[minmax(220px,0.65fr)_minmax(0,1.35fr)]">
+              <FormField label="Semester">
+                <select
+                  value={reuseSemesterFilter}
+                  onChange={(event) => setReuseSemesterFilter(event.target.value)}
+                  disabled={reuseCoursesLoading || reuseSaving || !reuseCourses.length}
+                  className={inputClass}
+                >
+                  {!reuseCourses.length ? (
+                    <option value="all">
+                      {reuseCoursesLoading
+                        ? "Loading semesters..."
+                        : "No semester is available"}
+                    </option>
+                  ) : (
+                    <>
+                      <option value="all">All Semesters</option>
+                      {reuseSemesterOptions.map((semesterOption) => (
+                        <option key={semesterOption.key} value={semesterOption.key}>
+                          {semesterOption.label}
+                        </option>
+                      ))}
+                    </>
+                  )}
+                </select>
+              </FormField>
 
-                {reuseCourses.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {formatReuseCourseLabel(item)}
-                  </option>
-                ))}
-              </select>
-            </FormField>
+              <FormField label="Source Course">
+                <select
+                  value={reuseSourceCourseId}
+                  onChange={(event) => setReuseSourceCourseId(event.target.value)}
+                  disabled={
+                    reuseCoursesLoading ||
+                    reuseSaving ||
+                    !filteredReuseCourses.length
+                  }
+                  className={inputClass}
+                >
+                  {!filteredReuseCourses.length && (
+                    <option value="">
+                      {reuseCoursesLoading
+                        ? "Loading your courses..."
+                        : "No course is available for this semester"}
+                    </option>
+                  )}
+
+                  {filteredReuseCourses.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {formatReuseCourseLabel(item)}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+            </div>
 
             <div className="grid gap-3 lg:grid-cols-2">
               <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
