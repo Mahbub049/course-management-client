@@ -3,6 +3,9 @@ const AUTH_KEYS = [
   "marksPortalRole",
   "marksPortalName",
   "marksPortalUsername",
+  "marksPortalShortCode",
+  "marksPortalDesignation",
+  "marksPortalDepartment",
   "marksPortalProfileImage",
 ];
 
@@ -49,6 +52,18 @@ export function saveAuthData(data, rememberMe) {
 
   if (data.username) {
     storage.setItem("marksPortalUsername", data.username);
+  }
+
+  if (data.shortCode) {
+    storage.setItem("marksPortalShortCode", data.shortCode);
+  }
+
+  if (data.designation) {
+    storage.setItem("marksPortalDesignation", data.designation);
+  }
+
+  if (data.department) {
+    storage.setItem("marksPortalDepartment", data.department);
   }
 
   if (data.profileImage) {

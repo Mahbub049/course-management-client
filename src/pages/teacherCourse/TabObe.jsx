@@ -18,6 +18,7 @@ import {
 
 import { exportObeWorkbook } from "../../utils/obeWorkbookExport";
 import { parseObeImportedMarkWorkbook } from "../../utils/obeWorkbookImport";
+import { getAuthItem } from "../../utils/authStorage";
 
 const defaultLevels = [
   { min: 70, max: 100, level: 4 },
@@ -675,14 +676,22 @@ const saveSetup = async () => {
       const safePart = (value, fallback) =>
         String(value || fallback)
           .trim()
-          .replace(/[\\/:*?"<>|]+/g, "-");
-      const fileName = `${safePart(payload.course?.code, "Course")}_OBE_${safePart(
-        payload.course?.section,
-        "Section"
-      )}_${safePart(payload.course?.semester, "Semester")}_${safePart(
-        payload.course?.year,
-        "Year"
-      )}.xlsm`;
+          .replace(/[\\/:*?"<>|]+/g, "-")
+          .replace(/\s+/g, "-")
+          .replace(/-+/g, "-")
+          .replace(/^[-_.]+|[-_.]+$/g, "");
+
+      const facultyShortCode =
+        payload.course?.createdBy?.shortCode ||
+        getAuthItem("marksPortalShortCode");
+
+      const fileName =
+        [
+          safePart(payload.course?.code, "Course"),
+          safePart(payload.course?.intake, "Intake"),
+          safePart(payload.course?.section, "Section"),
+          safePart(facultyShortCode, "Faculty"),
+        ].join("_") + ".xlsm";
 
       const { blob, warnings = [] } = await exportObeWorkbook(payload);
       saveAs(blob, fileName);

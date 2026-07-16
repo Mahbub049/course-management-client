@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchTeacherCourses } from "../services/courseService";
 import { fetchAttendanceSheet } from "../services/attendanceService";
 import * as XLSX from "xlsx-js-style";
+import { exportAttendancePdf } from "../utils/attendancePdfExport";
+import { getAuthItem } from "../utils/authStorage";
 
 // Sort helper: roll small -> big (numeric-safe)
 const sortByRollAsc = (a, b) => {
@@ -26,6 +28,7 @@ export default function TeacherAttendanceSheetPage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [data, setData] = useState(null);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   useEffect(() => {
     async function loadCourses() {
@@ -116,6 +119,32 @@ export default function TeacherAttendanceSheetPage() {
       avgAttendance,
     };
   }, [computed]);
+
+  const handleExportPdf = () => {
+    if (!computed || !data) return;
+
+    setErr("");
+
+    try {
+      setExportingPdf(true);
+
+      exportAttendancePdf({
+        data,
+        computed,
+        teacherFallback: {
+          name: getAuthItem("marksPortalName"),
+          shortCode: getAuthItem("marksPortalShortCode"),
+          designation: getAuthItem("marksPortalDesignation"),
+          department: getAuthItem("marksPortalDepartment"),
+        },
+      });
+    } catch (error) {
+      console.error("PDF export failed:", error);
+      setErr(error?.message || "Failed to export attendance PDF.");
+    } finally {
+      setExportingPdf(false);
+    }
+  };
 
   const exportExcel = () => {
     if (!computed || !data) return;
@@ -404,12 +433,35 @@ export default function TeacherAttendanceSheetPage() {
                   </p>
                 </div>
 
-                <button
-                  onClick={exportExcel}
-                  className="inline-flex w-full items-center justify-center rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-600/20 transition hover:bg-emerald-700 sm:w-auto"
-                >
-                  Export Excel
-                </button>
+                <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={handleExportPdf}
+                    disabled={exportingPdf}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-rose-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-rose-600/20 transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      className="h-4 w-4"
+                      aria-hidden="true"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12m0 0 4-4m-4 4-4-4" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 21h14" />
+                    </svg>
+                    {exportingPdf ? "Preparing PDF..." : "Export PDF"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={exportExcel}
+                    className="inline-flex w-full items-center justify-center rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-600/20 transition hover:bg-emerald-700 sm:w-auto"
+                  >
+                    Export Excel
+                  </button>
+                </div>
               </div>
 
               {/* Summary cards */}

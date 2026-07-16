@@ -3,6 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { teacherRegisterRequest } from "../services/authService";
 import Swal from "sweetalert2";
 
+const DESIGNATION_OPTIONS = [
+  "Lecturer",
+  "Assistant Professor",
+  "Associate Professor",
+  "Professor",
+];
+
 export default function TeacherRegisterPage() {
   const navigate = useNavigate();
 
@@ -170,16 +177,21 @@ export default function TeacherRegisterPage() {
                   <label className="block text-xs font-semibold text-slate-700">
                     Designation
                   </label>
-                  <input
-                    type="text"
+                  <select
                     name="designation"
                     value={form.designation}
                     onChange={handleChange}
                     required
-                    className="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm shadow-sm
+                    className="mt-1 h-11 w-full cursor-pointer rounded-xl border border-slate-200 bg-white px-3 text-sm shadow-sm
                                focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
-                    placeholder="Lecturer"
-                  />
+                  >
+                    <option value="">Select designation</option>
+                    {DESIGNATION_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

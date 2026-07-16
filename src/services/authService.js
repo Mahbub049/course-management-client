@@ -19,14 +19,23 @@ export const changePasswordRequest = async (currentPassword, newPassword) => {
   return res.data;
 };
 
+export const getProfileRequest = async () => {
+  const res = await api.get("/auth/profile");
+  return res.data;
+};
+
 export const updateProfileRequest = async ({
   username,
   name,
+  shortCode,
+  designation,
   profileImageBase64,
 }) => {
   const res = await api.put("/auth/profile", {
     username,
     name,
+    shortCode,
+    designation,
     profileImageBase64,
   });
 

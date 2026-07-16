@@ -1,12 +1,20 @@
 // client/src/pages/ChangePasswordPage.jsx
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   changePasswordRequest,
+  getProfileRequest,
   updateProfileRequest,
 } from "../services/authService";
 import { getAuthItem, setAuthItem } from "../utils/authStorage";
+
+const DESIGNATION_OPTIONS = [
+  "Lecturer",
+  "Assistant Professor",
+  "Associate Professor",
+  "Professor",
+];
 
 function ChangePasswordPage() {
   const navigate = useNavigate();
@@ -17,6 +25,12 @@ function ChangePasswordPage() {
   );
   const [displayName, setDisplayName] = useState(
     getAuthItem("marksPortalName") || ""
+  );
+  const [shortCode, setShortCode] = useState(
+    getAuthItem("marksPortalShortCode") || ""
+  );
+  const [designation, setDesignation] = useState(
+    getAuthItem("marksPortalDesignation") || ""
   );
 
   const [profileLoading, setProfileLoading] = useState(false);
@@ -35,6 +49,45 @@ function ChangePasswordPage() {
     getAuthItem("marksPortalProfileImage") || ""
   );
   const [profileImageBase64, setProfileImageBase64] = useState("");
+
+  useEffect(() => {
+    if (role !== "teacher") return undefined;
+
+    let active = true;
+
+    const loadProfile = async () => {
+      try {
+        const data = await getProfileRequest();
+
+        if (!active) return;
+
+        setUsername(data.username || "");
+        setDisplayName(data.name || "");
+        setShortCode(data.shortCode || "");
+        setDesignation(data.designation || "");
+        setProfileImage(data.profileImage || "");
+
+        setAuthItem("marksPortalUsername", data.username || "");
+        setAuthItem("marksPortalName", data.name || "");
+        setAuthItem("marksPortalShortCode", data.shortCode || "");
+        setAuthItem("marksPortalDesignation", data.designation || "");
+        setAuthItem("marksPortalDepartment", data.department || "");
+
+        if (data.profileImage) {
+          setAuthItem("marksPortalProfileImage", data.profileImage);
+        }
+      } catch (err) {
+        // Keep the locally stored values if the profile request is unavailable.
+        console.error("Could not refresh profile details:", err);
+      }
+    };
+
+    loadProfile();
+
+    return () => {
+      active = false;
+    };
+  }, [role]);
 
   const handleProfileImageChange = (e) => {
     const file = e.target.files?.[0];
@@ -104,12 +157,19 @@ function ChangePasswordPage() {
     setProfileError("");
     setProfileSuccess("");
 
+    if (!designation) {
+      setProfileError("Please select your designation.");
+      return;
+    }
+
     try {
       setProfileLoading(true);
 
       const data = await updateProfileRequest({
         username: username || undefined,
         name: displayName || undefined,
+        shortCode: shortCode.trim(),
+        designation,
         profileImageBase64: profileImageBase64 || undefined,
       });
 
@@ -122,6 +182,10 @@ function ChangePasswordPage() {
       if (data.name) {
         setAuthItem("marksPortalName", data.name);
       }
+
+      setAuthItem("marksPortalShortCode", data.shortCode || "");
+      setAuthItem("marksPortalDesignation", data.designation || "");
+      setAuthItem("marksPortalDepartment", data.department || "");
 
       if (data.profileImage) {
         setAuthItem("marksPortalProfileImage", data.profileImage);
@@ -156,8 +220,8 @@ function ChangePasswordPage() {
             </h1>
 
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-              Update your password securely. Teachers can also change username
-              and display name from this page.
+              Update your password securely. Teachers can also change username,
+              display name, short code, and designation from this page.
             </p>
           </div>
 
@@ -274,7 +338,7 @@ function ChangePasswordPage() {
                     Account Details
                   </h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Update your teacher username and display name.
+                    Update your teacher username, display name, short code, and designation.
                   </p>
                 </div>
               </div>
@@ -345,6 +409,20 @@ function ChangePasswordPage() {
                   />
                 </Field>
 
+                <Field
+                  label="Short Code"
+                  hint="Enter the short code used to identify you, such as initials or a faculty code."
+                >
+                  <input
+                    type="text"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
+                    value={shortCode}
+                    onChange={(e) => setShortCode(e.target.value)}
+                    placeholder="e.g. MMS"
+                    maxLength={20}
+                  />
+                </Field>
+
                 <Field label="Display Name (optional)">
                   <input
                     type="text"
@@ -353,6 +431,25 @@ function ChangePasswordPage() {
                     onChange={(e) => setDisplayName(e.target.value)}
                     placeholder="e.g. Mahbub Sarwar"
                   />
+                </Field>
+
+                <Field
+                  label="Designation"
+                  hint="This designation will be used in official reports, including the attendance PDF."
+                >
+                  <select
+                    className="w-full cursor-pointer rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
+                    value={designation}
+                    onChange={(e) => setDesignation(e.target.value)}
+                    required
+                  >
+                    <option value="">Select designation</option>
+                    {DESIGNATION_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
                 </Field>
 
                 <div className="flex justify-end pt-2">
@@ -381,8 +478,8 @@ function ChangePasswordPage() {
                   Tip
                 </div>
                 <p className="mt-1 text-xs leading-6 text-slate-600 dark:text-slate-400">
-                  If you change your display name, it will appear in the sidebar
-                  and dashboard after refresh.
+                  Your saved designation will be used automatically in official
+                  reports such as the attendance PDF.
                 </p>
               </div>
             </div>
