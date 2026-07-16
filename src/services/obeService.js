@@ -56,3 +56,8 @@ export const downloadObeCrr = async (courseId) => {
   });
   return response.data;
 };
+
+export const reuseObeData = async (courseId, payload) => {
+  const { data } = await api.post(`/courses/${courseId}/obe/reuse`, payload);
+  return data;
+};

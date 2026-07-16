@@ -14,7 +14,9 @@ import {
   getObeOutput,
   getObeExportPayload,
   downloadObeCrr,
+  reuseObeData,
 } from "../../services/obeService";
+import { fetchTeacherCourses } from "../../services/courseService";
 
 import { exportObeWorkbook } from "../../utils/obeWorkbookExport";
 import { parseObeImportedMarkWorkbook } from "../../utils/obeWorkbookImport";
@@ -89,6 +91,18 @@ const sortBlueprints = (list = []) =>
     );
   });
 
+const formatReuseCourseLabel = (courseItem = {}) => {
+  const parts = [
+    courseItem.code || "Course",
+    courseItem.intake ? `Intake ${courseItem.intake}` : "",
+    courseItem.section ? `Section ${courseItem.section}` : "",
+    [courseItem.semester, courseItem.year].filter(Boolean).join(" "),
+    courseItem.shift || "",
+  ].filter(Boolean);
+
+  return `${parts.join(" · ")}${courseItem.archived ? " · Archived" : ""}`;
+};
+
 export default function TabObe({ courseId, course }) {
   const [activeSubtab, setActiveSubtab] = useState("setup");
 
@@ -116,6 +130,15 @@ export default function TabObe({ courseId, course }) {
   const [outputData, setOutputData] = useState(null);
   const [outputLoading, setOutputLoading] = useState(false);
 
+  const [reusePanelOpen, setReusePanelOpen] = useState(false);
+  const [reuseCourses, setReuseCourses] = useState([]);
+  const [reuseCoursesLoading, setReuseCoursesLoading] = useState(false);
+  const [reuseSourceCourseId, setReuseSourceCourseId] = useState("");
+  const [reuseCopySetup, setReuseCopySetup] = useState(true);
+  const [reuseCopyBlueprints, setReuseCopyBlueprints] = useState(true);
+  const [reuseBlueprintMode, setReuseBlueprintMode] = useState("skip_duplicates");
+  const [reuseSaving, setReuseSaving] = useState(false);
+
   const coOptions = useMemo(
     () => (setup.courseOutcomes || []).filter((row) => row.code?.trim()),
     [setup.courseOutcomes]
@@ -127,6 +150,11 @@ export default function TabObe({ courseId, course }) {
     loadMarks();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [courseId]);
+
+  useEffect(() => {
+    loadReuseCourses();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courseId, course?.code]);
 
   useEffect(() => {
     if (activeSubtab === "output") {
@@ -230,6 +258,142 @@ export default function TabObe({ courseId, course }) {
       toast("error", error?.response?.data?.message || "Failed to load OBE output.");
     } finally {
       setOutputLoading(false);
+    }
+  };
+
+  const loadReuseCourses = async () => {
+    try {
+      setReuseCoursesLoading(true);
+
+      const [activeCourses, archivedCourses] = await Promise.all([
+        fetchTeacherCourses(),
+        fetchTeacherCourses({ archived: true }),
+      ]);
+
+      const uniqueCourses = new Map();
+
+      [...(activeCourses || []), ...(archivedCourses || [])].forEach((item) => {
+        const itemId = String(item?.id || item?._id || "");
+        if (!itemId || itemId === String(courseId)) return;
+        uniqueCourses.set(itemId, { ...item, id: itemId });
+      });
+
+      const targetCode = String(course?.code || "").trim().toUpperCase();
+      const candidates = [...uniqueCourses.values()].sort((a, b) => {
+        const aSameCode = String(a.code || "").trim().toUpperCase() === targetCode ? 1 : 0;
+        const bSameCode = String(b.code || "").trim().toUpperCase() === targetCode ? 1 : 0;
+
+        if (aSameCode !== bSameCode) return bSameCode - aSameCode;
+
+        const yearDifference = Number(b.year || 0) - Number(a.year || 0);
+        if (yearDifference !== 0) return yearDifference;
+
+        return formatReuseCourseLabel(a).localeCompare(
+          formatReuseCourseLabel(b),
+          undefined,
+          { numeric: true }
+        );
+      });
+
+      setReuseCourses(candidates);
+      setReuseSourceCourseId((previous) =>
+        candidates.some((item) => item.id === previous)
+          ? previous
+          : candidates[0]?.id || ""
+      );
+    } catch (error) {
+      console.error(error);
+      toast(
+        "error",
+        error?.response?.data?.message || "Failed to load courses for OBE reuse."
+      );
+    } finally {
+      setReuseCoursesLoading(false);
+    }
+  };
+
+  const handleReuseObeData = async () => {
+    if (!reuseSourceCourseId) {
+      toast("error", "Please select a source course.");
+      return;
+    }
+
+    if (!reuseCopySetup && !reuseCopyBlueprints) {
+      toast("error", "Select OBE setup, assessment blueprints, or both.");
+      return;
+    }
+
+    const sourceCourse = reuseCourses.find(
+      (item) => String(item.id) === String(reuseSourceCourseId)
+    );
+
+    const selectedParts = [
+      reuseCopySetup ? "OBE setup" : "",
+      reuseCopyBlueprints ? "assessment blueprints" : "",
+    ].filter(Boolean);
+
+    const replacementWarning =
+      reuseCopyBlueprints && reuseBlueprintMode === "replace"
+        ? " Existing target blueprints and all current OBE marks will be cleared first."
+        : " Existing blueprint names will be kept and matching names will be skipped.";
+
+    const confirmation = await Swal.fire({
+      title: "Reuse OBE data?",
+      text: `Copy ${selectedParts.join(" and ")} from ${
+        sourceCourse ? formatReuseCourseLabel(sourceCourse) : "the selected course"
+      }.${reuseCopyBlueprints ? replacementWarning : " The current setup will be replaced."}`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Copy selected data",
+      confirmButtonColor: "#4f46e5",
+    });
+
+    if (!confirmation.isConfirmed) return;
+
+    try {
+      setReuseSaving(true);
+
+      const response = await reuseObeData(courseId, {
+        sourceCourseId: reuseSourceCourseId,
+        copySetup: reuseCopySetup,
+        copyBlueprints: reuseCopyBlueprints,
+        blueprintMode: reuseBlueprintMode,
+      });
+
+      const result = response?.result || {};
+      const summary = [];
+
+      if (result.copiedSetup) summary.push("OBE setup copied.");
+      if (reuseCopyBlueprints) {
+        summary.push(`${result.copiedBlueprintCount || 0} blueprint(s) copied.`);
+      }
+      if (result.skippedBlueprintCount) {
+        summary.push(`${result.skippedBlueprintCount} duplicate blueprint(s) skipped.`);
+      }
+      if (result.clearedMarkCount) {
+        summary.push(`${result.clearedMarkCount} old OBE mark record(s) cleared.`);
+      }
+
+      await Promise.all([loadSetup(), loadBlueprints(), loadMarks()]);
+      setOutputData(null);
+      setEditingBlueprintId(null);
+      setBlueprintForm({ ...emptyBlueprint, items: [...emptyBlueprint.items] });
+      setReusePanelOpen(false);
+
+      Swal.fire(
+        "OBE data reused",
+        summary.join(" ") || "Selected OBE data copied successfully.",
+        "success"
+      );
+    } catch (error) {
+      console.error(error);
+      Swal.fire(
+        "Unable to reuse OBE data",
+        error?.response?.data?.message || "Failed to copy the selected OBE data.",
+        "error"
+      );
+    } finally {
+      setReuseSaving(false);
     }
   };
 
@@ -829,6 +993,162 @@ const saveSetup = async () => {
             ))}
           </div>
         </div>
+      </div>
+
+      <div className="rounded-3xl border border-indigo-200 bg-indigo-50/70 p-5 shadow-sm dark:border-indigo-500/20 dark:bg-indigo-500/5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h4 className="text-base font-bold text-slate-900 dark:text-slate-100">
+              Reuse OBE Data from Another Course
+            </h4>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+              Copy a previously saved setup, assessment breakdowns, or both. Marks from the source course are never copied.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setReusePanelOpen((previous) => !previous)}
+            className={secondaryButtonClass}
+          >
+            {reusePanelOpen ? "Close" : "Reuse Data"}
+          </button>
+        </div>
+
+        {reusePanelOpen && (
+          <div className="mt-5 space-y-5 border-t border-indigo-200 pt-5 dark:border-indigo-500/20">
+            <FormField label="Source Course">
+              <select
+                value={reuseSourceCourseId}
+                onChange={(event) => setReuseSourceCourseId(event.target.value)}
+                disabled={reuseCoursesLoading || reuseSaving || !reuseCourses.length}
+                className={inputClass}
+              >
+                {!reuseCourses.length && (
+                  <option value="">
+                    {reuseCoursesLoading
+                      ? "Loading your courses..."
+                      : "No other course is available"}
+                  </option>
+                )}
+
+                {reuseCourses.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {formatReuseCourseLabel(item)}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+
+            <div className="grid gap-3 lg:grid-cols-2">
+              <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+                <input
+                  type="checkbox"
+                  checked={reuseCopySetup}
+                  onChange={(event) => setReuseCopySetup(event.target.checked)}
+                  disabled={reuseSaving}
+                  className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span>
+                  <span className="block text-sm font-bold text-slate-900 dark:text-slate-100">
+                    Copy OBE Setup
+                  </span>
+                  <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400">
+                    Replaces COs, POs, CO-PO mappings, threshold, attainment rules, and setup notes.
+                  </span>
+                </span>
+              </label>
+
+              <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+                <input
+                  type="checkbox"
+                  checked={reuseCopyBlueprints}
+                  onChange={(event) => setReuseCopyBlueprints(event.target.checked)}
+                  disabled={reuseSaving}
+                  className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span>
+                  <span className="block text-sm font-bold text-slate-900 dark:text-slate-100">
+                    Copy Assessment Blueprints
+                  </span>
+                  <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400">
+                    Copies assessment names, types, total marks, question items, and their CO mappings.
+                  </span>
+                </span>
+              </label>
+            </div>
+
+            {reuseCopyBlueprints && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+                <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                  Existing Blueprint Handling
+                </div>
+
+                <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                  <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                    <input
+                      type="radio"
+                      name="reuse-blueprint-mode"
+                      value="skip_duplicates"
+                      checked={reuseBlueprintMode === "skip_duplicates"}
+                      onChange={(event) => setReuseBlueprintMode(event.target.value)}
+                      disabled={reuseSaving}
+                      className="mt-1 h-4 w-4 border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span>
+                      <span className="block text-sm font-semibold text-slate-800 dark:text-slate-200">
+                        Keep current blueprints
+                      </span>
+                      <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
+                        Copy only new assessment names and skip duplicates. This is the safer option.
+                      </span>
+                    </span>
+                  </label>
+
+                  <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-rose-200 p-3 dark:border-rose-500/30">
+                    <input
+                      type="radio"
+                      name="reuse-blueprint-mode"
+                      value="replace"
+                      checked={reuseBlueprintMode === "replace"}
+                      onChange={(event) => setReuseBlueprintMode(event.target.value)}
+                      disabled={reuseSaving}
+                      className="mt-1 h-4 w-4 border-slate-300 text-rose-600 focus:ring-rose-500"
+                    />
+                    <span>
+                      <span className="block text-sm font-semibold text-rose-700 dark:text-rose-300">
+                        Replace all target blueprints
+                      </span>
+                      <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
+                        Clears existing target blueprints and their OBE mark records before copying.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-col gap-3 rounded-2xl bg-slate-100 p-4 text-xs leading-5 text-slate-600 dark:bg-slate-800/70 dark:text-slate-300 sm:flex-row sm:items-center sm:justify-between">
+              <span>
+                Only OBE structure is reused. Enrolled students, regular assessment marks, and OBE marks are not copied from the source course.
+              </span>
+
+              <button
+                type="button"
+                onClick={handleReuseObeData}
+                disabled={
+                  reuseSaving ||
+                  reuseCoursesLoading ||
+                  !reuseSourceCourseId ||
+                  (!reuseCopySetup && !reuseCopyBlueprints)
+                }
+                className={`${primaryButtonClass} shrink-0`}
+              >
+                {reuseSaving ? "Copying..." : "Copy Selected Data"}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {activeSubtab === "setup" && (
