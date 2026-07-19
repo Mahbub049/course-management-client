@@ -63,6 +63,13 @@ function round2(num) {
   return Math.round(Number(num || 0) * 100) / 100;
 }
 
+function isAssessmentMarkHidden(assessment) {
+  return (
+    assessment?.markHidden === true ||
+    assessment?.showMarksToStudents === false
+  );
+}
+
 function buildSubMarksMap(subMarks = []) {
   const map = {};
   (subMarks || []).forEach((item) => {
@@ -81,6 +88,7 @@ function getStructuredLabPeriod(assessment) {
 }
 
 function buildAdvancedBreakdown(assessment) {
+  if (isAssessmentMarkHidden(assessment)) return [];
   if (assessment?.structureType !== "lab_final") return [];
 
   const config = assessment?.labFinalConfig || {};
@@ -438,37 +446,58 @@ export default function StudentCoursePage() {
 
       if (!theory && !lab) return null;
 
+      const toPart = (assessment, fallbackKey, partLabel, fallbackFullMarks) => {
+        if (!assessment) return null;
+
+        const markHidden = isAssessmentMarkHidden(assessment);
+        const hasRecordedMark =
+          assessment?.hasRecordedMark === true ||
+          (!markHidden && assessment?.obtainedMarks != null);
+
+        return {
+          key: assessment.id || assessment._id || fallbackKey,
+          label: partLabel,
+          fullMarks: safeNum(assessment.fullMarks, fallbackFullMarks),
+          obtainedMarks: assessment.obtainedMarks,
+          markHidden,
+          hasRecordedMark,
+        };
+      };
+
       const parts = [
-        theory
-          ? {
-              key: theory.id || theory._id || `${key}-theory`,
-              label: `Theory ${label}`,
-              fullMarks: safeNum(theory.fullMarks, exam === "mid" ? 20 : 30),
-              obtainedMarks: theory.obtainedMarks,
-            }
-          : null,
-        lab
-          ? {
-              key: lab.id || lab._id || `${key}-lab`,
-              label: `Lab ${label}`,
-              fullMarks: safeNum(lab.fullMarks, 10),
-              obtainedMarks: lab.obtainedMarks,
-            }
-          : null,
+        toPart(
+          theory,
+          `${key}-theory`,
+          `Theory ${label}`,
+          exam === "mid" ? 20 : 30
+        ),
+        toPart(lab, `${key}-lab`, `Lab ${label}`, 10),
       ].filter(Boolean);
 
-      const publishedParts = parts.filter((part) => part.obtainedMarks != null);
-      const obtainedMarks = publishedParts.reduce(
-        (sum, part) => sum + safeNum(part.obtainedMarks, 0),
+      const visibleObtained = parts.reduce(
+        (sum, part) =>
+          part.markHidden || part.obtainedMarks == null
+            ? sum
+            : sum + safeNum(part.obtainedMarks, 0),
         0
       );
+
+      const summaryTotal =
+        exam === "mid"
+          ? summary?.hybridMidTotal
+          : summary?.hybridFinalTotal;
+
+      const obtainedMarks = Number.isFinite(Number(summaryTotal))
+        ? Number(summaryTotal)
+        : visibleObtained;
 
       return {
         key,
         label: `${label} Total`,
         fullMarks,
         obtainedMarks,
-        isComplete: publishedParts.length === parts.length && parts.length === 2,
+        isComplete:
+          parts.length === 2 && parts.every((part) => part.hasRecordedMark),
         parts,
       };
     };
@@ -477,7 +506,7 @@ export default function StudentCoursePage() {
       buildGroup("hybrid-mid-total", "Mid", "mid", 30),
       buildGroup("hybrid-final-total", "Final", "final", 40),
     ].filter(Boolean);
-  }, [assessments, courseType]);
+  }, [assessments, courseType, summary]);
 
   const breakdownMap = useMemo(() => {
     const map = {};
@@ -901,6 +930,7 @@ export default function StudentCoursePage() {
                     {courseType !== "lab" &&
                       ctAssessments.map((a) => {
                         const key = a.id || a._id;
+                        const markHidden = isAssessmentMarkHidden(a);
                         const missing = a.obtainedMarks == null;
 
                         return (
@@ -922,7 +952,11 @@ export default function StudentCoursePage() {
                             </td>
 
                             <td className="px-6 py-5">
-                              {missing ? (
+                              {markHidden ? (
+                                <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+                                  Hidden by teacher
+                                </span>
+                              ) : missing ? (
                                 <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                                   Not published
                                 </span>
@@ -1002,7 +1036,11 @@ export default function StudentCoursePage() {
                                     {part.label}
                                   </span>
                                   <span className="shrink-0 text-sm font-bold text-slate-900 dark:text-white">
-                                    {part.obtainedMarks == null ? "Not published" : round2(part.obtainedMarks)}
+                                    {part.markHidden
+                                      ? "Hidden by teacher"
+                                      : part.obtainedMarks == null
+                                        ? "Not published"
+                                        : round2(part.obtainedMarks)}
                                     <span className="ml-1 text-xs font-semibold text-slate-400">
                                       / {part.fullMarks}
                                     </span>
@@ -1067,6 +1105,7 @@ export default function StudentCoursePage() {
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                   {regularLabAssessments.map((a) => {
                                     const key = a.id || a._id;
+                                    const markHidden = isAssessmentMarkHidden(a);
                                     const missing = a.obtainedMarks == null;
 
                                     return (
@@ -1083,7 +1122,11 @@ export default function StudentCoursePage() {
                                           {a.fullMarks}
                                         </td>
                                         <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">
-                                          {missing ? "—" : a.obtainedMarks}
+                                          {markHidden
+                                            ? "Hidden by teacher"
+                                            : missing
+                                              ? "—"
+                                              : a.obtainedMarks}
                                         </td>
                                         <td className="px-4 py-3 text-right">
                                           <button
@@ -1114,6 +1157,7 @@ export default function StudentCoursePage() {
 
                     {visibleNonCtAssessments.map((a) => {
                       const key = a.id || a._id;
+                      const markHidden = isAssessmentMarkHidden(a);
                       const missing = a.obtainedMarks == null;
                       const advancedRows = breakdownMap[key] || [];
 
@@ -1134,7 +1178,11 @@ export default function StudentCoursePage() {
                             </td>
 
                             <td className="px-6 py-5">
-                              {missing ? (
+                              {markHidden ? (
+                                <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+                                  Hidden by teacher
+                                </span>
+                              ) : missing ? (
                                 <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                                   Not published
                                 </span>
@@ -1328,7 +1376,11 @@ export default function StudentCoursePage() {
                               {part.label}
                             </div>
                             <div className="mt-1 font-bold text-slate-900 dark:text-white">
-                              {part.obtainedMarks == null ? "Not published" : round2(part.obtainedMarks)}
+                              {part.markHidden
+                                ? "Hidden by teacher"
+                                : part.obtainedMarks == null
+                                  ? "Not published"
+                                  : round2(part.obtainedMarks)}
                               <span className="ml-1 text-xs text-slate-400">/{part.fullMarks}</span>
                             </div>
                           </div>
@@ -1820,6 +1872,7 @@ function ResultMiniCard({ label, value, valueClassName = "" }) {
 }
 
 function AssessmentCard({ assessment, courseType, advancedRows = [], onComplaint }) {
+  const markHidden = isAssessmentMarkHidden(assessment);
   const missing = assessment?.obtainedMarks == null;
   const hint = getAssessmentHint(assessment, courseType);
 
@@ -1845,8 +1898,16 @@ function AssessmentCard({ assessment, courseType, advancedRows = [], onComplaint
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
             Your Marks
           </div>
-          <div className="mt-1 text-2xl font-black text-slate-900 dark:text-white">
-            {missing ? "—" : round2(assessment.obtainedMarks)}
+          <div className="mt-1">
+            {markHidden ? (
+              <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+                Hidden by teacher
+              </span>
+            ) : (
+              <div className="text-2xl font-black text-slate-900 dark:text-white">
+                {missing ? "—" : round2(assessment.obtainedMarks)}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1860,7 +1921,9 @@ function AssessmentCard({ assessment, courseType, advancedRows = [], onComplaint
         </button>
       </div>
 
-      {assessment?.structureType === "lab_final" && advancedRows.length > 0 && (
+      {!markHidden &&
+        assessment?.structureType === "lab_final" &&
+        advancedRows.length > 0 && (
         <div className="mt-4 rounded-2xl border border-fuchsia-200 bg-fuchsia-50/40 p-4 dark:border-fuchsia-500/20 dark:bg-fuchsia-500/10">
           <div className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">
             Breakdown

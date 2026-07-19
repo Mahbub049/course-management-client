@@ -35,3 +35,25 @@ export const publishAssessmentRequest = async (courseId, assessmentId) => {
   );
   return res.data;
 };
+
+// unpublish assessment
+export const unpublishAssessmentRequest = async (courseId, assessmentId) => {
+  const res = await api.post(
+    `/courses/${courseId}/assessments/${assessmentId}/unpublish`
+  );
+  return res.data;
+};
+
+// show/hide an individual assessment mark at the student end
+export const updateAssessmentStudentVisibilityRequest = async (
+  courseId,
+  assessmentId,
+  showMarksToStudents
+) => {
+  const res = await api.patch(
+    `/courses/${courseId}/assessments/${assessmentId}/student-visibility`,
+    { showMarksToStudents }
+  );
+  return res.data;
+};
+

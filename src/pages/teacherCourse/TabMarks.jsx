@@ -14,6 +14,8 @@ import {
 import {
   fetchAssessmentsForCourse,
   publishAssessmentRequest,
+  unpublishAssessmentRequest,
+  updateAssessmentStudentVisibilityRequest,
 } from "../../services/assessmentService";
 import { fetchAttendanceSummary } from "../../services/attendanceSummaryService";
 
@@ -1126,6 +1128,100 @@ function AdvancedBreakdownModal({
   );
 }
 
+function AssessmentPublishingControls({
+  assessment,
+  publishingAssessmentId,
+  unpublishingAssessmentId,
+  visibilityAssessmentId,
+  onPublish,
+  onUnpublish,
+  onToggleVisibility,
+}) {
+  const assessmentId = String(assessment?._id || "");
+  const isPublished = Boolean(assessment?.isPublished);
+  const showMarksToStudents = assessment?.showMarksToStudents !== false;
+  const isPublishing = String(publishingAssessmentId || "") === assessmentId;
+  const isUnpublishing =
+    String(unpublishingAssessmentId || "") === assessmentId;
+  const isUpdatingVisibility =
+    String(visibilityAssessmentId || "") === assessmentId;
+  const isBusy = isPublishing || isUnpublishing || isUpdatingVisibility;
+
+  return (
+    <div className="space-y-1.5 normal-case">
+      <div
+        className={[
+          "rounded-full border px-2 py-1 text-[10px] font-semibold leading-tight",
+          !isPublished
+            ? "border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+            : showMarksToStudents
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+              : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300",
+        ].join(" ")}
+      >
+        {!isPublished
+          ? "Not visible to students"
+          : showMarksToStudents
+            ? "Individual mark visible"
+            : "Mark hidden • Total & grade visible"}
+      </div>
+
+      <div className="flex flex-wrap justify-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => onPublish(assessment)}
+          disabled={isBusy}
+          className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300"
+        >
+          {isPublishing
+            ? isPublished
+              ? "Republishing..."
+              : "Publishing..."
+            : isPublished
+              ? "Republish"
+              : "Publish"}
+        </button>
+
+        {isPublished && (
+          <button
+            type="button"
+            onClick={() => onUnpublish(assessment)}
+            disabled={isBusy}
+            className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300"
+          >
+            {isUnpublishing ? "Unpublishing..." : "Unpublish"}
+          </button>
+        )}
+      </div>
+
+      {isPublished && (
+        <button
+          type="button"
+          onClick={() => onToggleVisibility(assessment)}
+          disabled={isBusy}
+          className={[
+            "rounded-full border px-2.5 py-1 text-[11px] font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60",
+            showMarksToStudents
+              ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
+              : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300",
+          ].join(" ")}
+          title={
+            showMarksToStudents
+              ? "Hide only this assessment mark. The total and grade will remain visible."
+              : "Show this assessment mark to students again."
+          }
+        >
+          {isUpdatingVisibility
+            ? "Updating..."
+            : showMarksToStudents
+              ? "Hide Exam Mark"
+              : "Show Exam Mark"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function TabMarks({ courseId, course }) {
   const [students, setStudents] = useState([]);
   const [assessments, setAssessments] = useState([]);
@@ -1137,6 +1233,8 @@ export default function TabMarks({ courseId, course }) {
   const [saving, setSaving] = useState(false);
   const [syncingObeMarks, setSyncingObeMarks] = useState(false);
   const [publishingAssessmentId, setPublishingAssessmentId] = useState(null);
+  const [unpublishingAssessmentId, setUnpublishingAssessmentId] = useState(null);
+  const [visibilityAssessmentId, setVisibilityAssessmentId] = useState(null);
 
   const [tabMode, setTabMode] = useState("row");
   const [sortMode, setSortMode] = useState("entered");
@@ -2100,7 +2198,12 @@ export default function TabMarks({ courseId, course }) {
       setAssessments((prev) =>
         prev.map((a) =>
           String(a._id) === String(assessmentId)
-            ? { ...a, isPublished: true, publishedAt: new Date().toISOString() }
+            ? {
+                ...a,
+                isPublished: true,
+                publishedAt: new Date().toISOString(),
+                showMarksToStudents: a.showMarksToStudents !== false,
+              }
             : a
         )
       );
@@ -2123,6 +2226,95 @@ export default function TabMarks({ courseId, course }) {
       });
     } finally {
       setPublishingAssessmentId(null);
+    }
+  };
+
+  const handleUnpublish = async (assessment) => {
+    const assessmentId = assessment?._id;
+
+    const confirmation = await Swal.fire({
+      icon: "warning",
+      title: "Unpublish this assessment?",
+      text: "Students will no longer see this assessment, and it will be excluded from their displayed total and grade until you publish it again.",
+      showCancelButton: true,
+      confirmButtonText: "Yes, unpublish",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#e11d48",
+    });
+
+    if (!confirmation.isConfirmed) return;
+
+    try {
+      setUnpublishingAssessmentId(assessmentId);
+      await unpublishAssessmentRequest(courseId, assessmentId);
+
+      setAssessments((prev) =>
+        prev.map((a) =>
+          String(a._id) === String(assessmentId)
+            ? { ...a, isPublished: false, publishedAt: null }
+            : a
+        )
+      );
+
+      Swal.fire({
+        icon: "success",
+        title: "Unpublished",
+        text: "The assessment is no longer visible at the student end.",
+        timer: 1500,
+        showConfirmButton: false,
+      });
+    } catch (e) {
+      console.error(e);
+      Swal.fire({
+        icon: "error",
+        title: "Unpublish failed",
+        text: e?.response?.data?.message || "Failed to unpublish assessment",
+      });
+    } finally {
+      setUnpublishingAssessmentId(null);
+    }
+  };
+
+  const handleToggleStudentMarkVisibility = async (assessment) => {
+    const assessmentId = assessment?._id;
+    const showMarksToStudents = assessment?.showMarksToStudents === false;
+
+    try {
+      setVisibilityAssessmentId(assessmentId);
+      await updateAssessmentStudentVisibilityRequest(
+        courseId,
+        assessmentId,
+        showMarksToStudents
+      );
+
+      setAssessments((prev) =>
+        prev.map((a) =>
+          String(a._id) === String(assessmentId)
+            ? { ...a, showMarksToStudents }
+            : a
+        )
+      );
+
+      Swal.fire({
+        icon: "success",
+        title: showMarksToStudents ? "Exam mark visible" : "Exam mark hidden",
+        text: showMarksToStudents
+          ? "Students can see this individual assessment mark again."
+          : "This individual mark is hidden, but it still contributes to the student's total and grade.",
+        timer: 1800,
+        showConfirmButton: false,
+      });
+    } catch (e) {
+      console.error(e);
+      Swal.fire({
+        icon: "error",
+        title: "Visibility update failed",
+        text:
+          e?.response?.data?.message ||
+          "Failed to update the assessment visibility",
+      });
+    } finally {
+      setVisibilityAssessmentId(null);
     }
   };
 
@@ -2868,19 +3060,15 @@ export default function TabMarks({ courseId, course }) {
                                   Marks Sync connected • Editable
                                 </div>
                               )}
-                              <button
-                                onClick={() => handlePublish(a)}
-                                disabled={publishingAssessmentId === a._id}
-                                className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-                              >
-                                {publishingAssessmentId === a._id
-                                  ? a.isPublished
-                                    ? "Republishing..."
-                                    : "Publishing..."
-                                  : a.isPublished
-                                    ? "Republish"
-                                    : "Publish"}
-                              </button>
+                              <AssessmentPublishingControls
+                                assessment={a}
+                                publishingAssessmentId={publishingAssessmentId}
+                                unpublishingAssessmentId={unpublishingAssessmentId}
+                                visibilityAssessmentId={visibilityAssessmentId}
+                                onPublish={handlePublish}
+                                onUnpublish={handleUnpublish}
+                                onToggleVisibility={handleToggleStudentMarkVisibility}
+                              />
                             </div>
                           </th>
                         )
@@ -2946,19 +3134,15 @@ export default function TabMarks({ courseId, course }) {
                                   Breakdown entry enabled
                                 </div>
                               )}
-                              <button
-                                onClick={() => handlePublish(a)}
-                                disabled={publishingAssessmentId === a._id}
-                                className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-                              >
-                                {publishingAssessmentId === a._id
-                                  ? a.isPublished
-                                    ? "Republishing..."
-                                    : "Publishing..."
-                                  : a.isPublished
-                                    ? "Republish"
-                                    : "Publish"}
-                              </button>
+                              <AssessmentPublishingControls
+                                assessment={a}
+                                publishingAssessmentId={publishingAssessmentId}
+                                unpublishingAssessmentId={unpublishingAssessmentId}
+                                visibilityAssessmentId={visibilityAssessmentId}
+                                onPublish={handlePublish}
+                                onUnpublish={handleUnpublish}
+                                onToggleVisibility={handleToggleStudentMarkVisibility}
+                              />
                             </div>
                           </th>
                         );
