@@ -91,93 +91,26 @@ select.form-control::-ms-expand {
   }
 }
 
-.notebook-rich-editor {
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+/* Keep native select menus readable in both themes. */
+.routine-select {
+  color-scheme: light;
 }
 
-.notebook-rich-editor > * {
-  max-width: 100%;
+html.dark .routine-select,
+.dark .routine-select {
+  color-scheme: dark;
 }
 
-.notebook-rich-editor p {
-  margin: 0.45rem 0;
+html.dark select option,
+html.dark select optgroup,
+.dark select option,
+.dark select optgroup {
+  background: rgb(15 23 42);
+  color: rgb(241 245 249);
 }
 
-.notebook-rich-editor h1 {
-  margin: 0.75rem 0 0.5rem;
-  font-size: 1.75rem;
-  line-height: 1.2;
-  font-weight: 800;
-}
-
-.notebook-rich-editor h2 {
-  margin: 0.7rem 0 0.45rem;
-  font-size: 1.35rem;
-  line-height: 1.3;
-  font-weight: 800;
-}
-
-.notebook-rich-editor a {
-  color: rgb(109 40 217);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-html.dark .notebook-rich-editor a {
-  color: rgb(196 181 253);
-}
-
-.notebook-rich-editor img,
-.notebook-rich-editor video,
-.notebook-rich-editor iframe {
-  max-width: 100%;
-  height: auto;
-}
-
-.notebook-rich-editor table {
-  display: block;
-  max-width: 100%;
-  overflow-x: auto;
-  border-collapse: collapse;
-}
-
-.notebook-rich-editor pre,
-.notebook-rich-editor code {
-  max-width: 100%;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-/* Global server-action feedback: blocks accidental repeated clicks while an API request is pending. */
-button[data-api-pending="true"],
-input[type="submit"][data-api-pending="true"],
-input[type="button"][data-api-pending="true"] {
-  pointer-events: none !important;
-  cursor: wait !important;
-  opacity: 0.78 !important;
-}
-
-button[data-api-pending="true"] {
-  position: relative !important;
-  color: transparent !important;
-}
-
-button[data-api-pending="true"] > * {
-  opacity: 0 !important;
-}
-
-button[data-api-pending="true"]::after {
-  content: attr(data-api-pending-label);
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: inherit;
-  color: var(--api-pending-color, #ffffff);
-  font: inherit;
-  letter-spacing: inherit;
-  white-space: nowrap;
+html.dark select:disabled,
+.dark select:disabled {
+  color: rgb(148 163 184);
+  opacity: 0.72;
 }

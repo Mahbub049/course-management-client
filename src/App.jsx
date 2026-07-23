@@ -19,6 +19,7 @@ import AcademicCalendarPage from "./pages/AcademicCalendarPage.jsx";
 import AcademicCalendarManagePage from "./pages/AcademicCalendarManagePage.jsx";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage.jsx";
 import PublicSubmissionPage from "./pages/PublicSubmissionPage.jsx";
+import PublicRoutineReferencePage from "./pages/PublicRoutineReferencePage.jsx";
 import TeacherNotebookPage from "./pages/TeacherNotebookPage.jsx";
 import StudentCounsellingPage from "./pages/StudentCounsellingPage.jsx";
 import TeacherCounsellingPage from "./pages/TeacherCounsellingPage.jsx";
@@ -35,6 +36,7 @@ function App() {
       <Route path="/login" element={<LoginPage />} />
 
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/routine-reference" element={<PublicRoutineReferencePage />} />
       <Route path="/:token" element={<PublicSubmissionPage />} />
       <Route path="/public-submission/:token" element={<PublicSubmissionPage />} />
 

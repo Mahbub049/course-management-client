@@ -2,6 +2,8 @@ const AUTH_KEYS = [
   "marksPortalToken",
   "marksPortalRole",
   "marksPortalName",
+  "marksPortalEmail",
+  "marksPortalPhone",
   "marksPortalUsername",
   "marksPortalShortCode",
   "marksPortalDesignation",
@@ -52,6 +54,14 @@ export function saveAuthData(data, rememberMe) {
 
   if (data.username) {
     storage.setItem("marksPortalUsername", data.username);
+  }
+
+  if (data.email) {
+    storage.setItem("marksPortalEmail", data.email);
+  }
+
+  if (data.phone) {
+    storage.setItem("marksPortalPhone", data.phone);
   }
 
   if (data.shortCode) {

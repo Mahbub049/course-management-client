@@ -26,6 +26,12 @@ function ChangePasswordPage() {
   const [displayName, setDisplayName] = useState(
     getAuthItem("marksPortalName") || ""
   );
+  const [email, setEmail] = useState(
+    getAuthItem("marksPortalEmail") || ""
+  );
+  const [phone, setPhone] = useState(
+    getAuthItem("marksPortalPhone") || ""
+  );
   const [shortCode, setShortCode] = useState(
     getAuthItem("marksPortalShortCode") || ""
   );
@@ -63,12 +69,16 @@ function ChangePasswordPage() {
 
         setUsername(data.username || "");
         setDisplayName(data.name || "");
+        setEmail(data.email || "");
+        setPhone(data.phone || "");
         setShortCode(data.shortCode || "");
         setDesignation(data.designation || "");
         setProfileImage(data.profileImage || "");
 
         setAuthItem("marksPortalUsername", data.username || "");
         setAuthItem("marksPortalName", data.name || "");
+        setAuthItem("marksPortalEmail", data.email || "");
+        setAuthItem("marksPortalPhone", data.phone || "");
         setAuthItem("marksPortalShortCode", data.shortCode || "");
         setAuthItem("marksPortalDesignation", data.designation || "");
         setAuthItem("marksPortalDepartment", data.department || "");
@@ -162,12 +172,19 @@ function ChangePasswordPage() {
       return;
     }
 
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setProfileError("Please enter a valid email address.");
+      return;
+    }
+
     try {
       setProfileLoading(true);
 
       const data = await updateProfileRequest({
         username: username || undefined,
         name: displayName || undefined,
+        email: email.trim(),
+        phone: phone.trim(),
         shortCode: shortCode.trim(),
         designation,
         profileImageBase64: profileImageBase64 || undefined,
@@ -183,6 +200,8 @@ function ChangePasswordPage() {
         setAuthItem("marksPortalName", data.name);
       }
 
+      setAuthItem("marksPortalEmail", data.email || "");
+      setAuthItem("marksPortalPhone", data.phone || "");
       setAuthItem("marksPortalShortCode", data.shortCode || "");
       setAuthItem("marksPortalDesignation", data.designation || "");
       setAuthItem("marksPortalDepartment", data.department || "");
@@ -221,7 +240,7 @@ function ChangePasswordPage() {
 
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
               Update your password securely. Teachers can also change username,
-              display name, short code, and designation from this page.
+              display name, email, phone, short code, and designation from this page.
             </p>
           </div>
 
@@ -338,7 +357,7 @@ function ChangePasswordPage() {
                     Account Details
                   </h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Update your teacher username, display name, short code, and designation.
+                    Update your teacher username, contact details, display name, short code, and designation.
                   </p>
                 </div>
               </div>
@@ -434,11 +453,39 @@ function ChangePasswordPage() {
                 </Field>
 
                 <Field
+                  label="Email Address"
+                  hint="Used in routine documents, faculty records, and account recovery."
+                >
+                  <input
+                    type="email"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@bubt.edu.bd"
+                    required
+                  />
+                </Field>
+
+                <Field
+                  label="Phone Number"
+                  hint="Used in the faculty routine and nameplate documents."
+                >
+                  <input
+                    type="tel"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="+8801XXXXXXXXX"
+                    maxLength={30}
+                  />
+                </Field>
+
+                <Field
                   label="Designation"
                   hint="This designation will be used in official reports, including the attendance PDF."
                 >
                   <select
-                    className="w-full cursor-pointer rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
+                    className="routine-select w-full cursor-pointer rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     value={designation}
                     onChange={(e) => setDesignation(e.target.value)}
                     required

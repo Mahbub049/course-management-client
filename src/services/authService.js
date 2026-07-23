@@ -27,6 +27,8 @@ export const getProfileRequest = async () => {
 export const updateProfileRequest = async ({
   username,
   name,
+  email,
+  phone,
   shortCode,
   designation,
   profileImageBase64,
@@ -34,6 +36,8 @@ export const updateProfileRequest = async ({
   const res = await api.put("/auth/profile", {
     username,
     name,
+    email,
+    phone,
     shortCode,
     designation,
     profileImageBase64,
