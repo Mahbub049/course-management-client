@@ -96,6 +96,60 @@ if (role !== "teacher") return;
 
   return (
     <div className="space-y-5 sm:space-y-6">
+      <section className="space-y-4 md:hidden">
+        <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-br from-white via-violet-50/70 to-sky-50/70 p-4 shadow-sm dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-slate-950">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-600 dark:text-violet-300">
+            {greeting}
+          </p>
+          <h1 className="mt-2 break-words text-xl font-bold tracking-tight text-slate-950 dark:text-white">
+            {teacherName}
+          </h1>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <MobileCountCard
+            title="Pending Complaints"
+            value={statsLoading ? "..." : String(pendingComplaintsCount)}
+            icon={<AlertIcon />}
+            accent="amber"
+          />
+          <MobileCountCard
+            title="Counselling"
+            value={statsLoading ? "..." : String(pendingCounsellingCount)}
+            icon={<MessageIcon />}
+            accent="emerald"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <MobileActionButton
+            title="Attendance"
+            icon={<CheckIcon />}
+            onClick={() => navigate("/teacher/attendance")}
+            accent="emerald"
+          />
+          <MobileActionButton
+            title="Notebook"
+            icon={<SheetIcon />}
+            onClick={() => navigate("/teacher/notebook")}
+            accent="violet"
+          />
+          <MobileActionButton
+            title="Counselling"
+            icon={<MessageIcon />}
+            onClick={() => navigate("/teacher/counselling")}
+            accent="sky"
+          />
+          <MobileActionButton
+            title="Courses"
+            icon={<BookIcon />}
+            onClick={() => navigate("/teacher/courses")}
+            accent="indigo"
+          />
+        </div>
+      </section>
+
+      <div className="hidden space-y-5 md:block md:space-y-6">
       {/* Top intro + quick actions */}
       <section className="rounded-[28px] border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/85 sm:p-6">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
@@ -301,7 +355,48 @@ if (role !== "teacher") return;
           accent="from-emerald-500/10 via-teal-500/10 to-cyan-500/10 dark:from-emerald-500/10 dark:via-teal-500/5 dark:to-cyan-500/10"
         />
       </section>
+      </div>
     </div>
+  );
+}
+
+function MobileCountCard({ title, value, icon, accent = "violet" }) {
+  const accentMap = {
+    violet: "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300",
+    amber: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300",
+    emerald: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300",
+  };
+
+  return (
+    <div className="min-w-0 rounded-3xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className={`inline-flex rounded-2xl border p-2.5 ${accentMap[accent] || accentMap.violet}`}>
+        {icon}
+      </div>
+      <div className="mt-3 text-2xl font-bold text-slate-950 dark:text-white">{value}</div>
+      <div className="mt-1 break-words text-[11px] font-semibold leading-4 text-slate-500 dark:text-slate-400">
+        {title}
+      </div>
+    </div>
+  );
+}
+
+function MobileActionButton({ title, icon, onClick, accent = "violet" }) {
+  const accentMap = {
+    violet: "bg-violet-600 hover:bg-violet-700",
+    emerald: "bg-emerald-600 hover:bg-emerald-700",
+    sky: "bg-sky-600 hover:bg-sky-700",
+    indigo: "bg-indigo-600 hover:bg-indigo-700",
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex min-h-24 flex-col items-center justify-center gap-2 rounded-3xl px-3 py-4 text-sm font-bold text-white shadow-sm transition ${accentMap[accent] || accentMap.violet}`}
+    >
+      <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/15">{icon}</span>
+      <span>{title}</span>
+    </button>
   );
 }
 

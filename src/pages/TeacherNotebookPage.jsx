@@ -280,6 +280,11 @@ const timeInput = () => {
 };
 
 const getNoteId = (note) => note?._id || note?.id;
+const getCourseId = (course) => {
+  if (!course) return "";
+  if (typeof course === "string") return course;
+  return String(course._id || course.id || "");
+};
 
 const formatCourseLabel = (course) => {
   if (!course) return "No course selected";
@@ -330,6 +335,7 @@ export default function TeacherNotebookPage() {
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [courseFilter, setCourseFilter] = useState("all");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [saveStatus, setSaveStatus] = useState("Saved");
   const [refreshingStudents, setRefreshingStudents] = useState(false);
@@ -392,11 +398,37 @@ export default function TeacherNotebookPage() {
     };
   }, [selectedNote]);
 
+  const courseFilterOptions = useMemo(() => {
+    const byId = new Map();
+
+    [...courses, ...notes.map((note) => note.course).filter(Boolean)].forEach(
+      (course) => {
+        const id = getCourseId(course);
+        if (!id || byId.has(id)) return;
+        byId.set(id, course);
+      }
+    );
+
+    return [...byId.values()].sort((a, b) =>
+      formatCourseLabel(a).localeCompare(formatCourseLabel(b), undefined, {
+        numeric: true,
+        sensitivity: "base",
+      })
+    );
+  }, [courses, notes]);
+
   const filteredNotes = useMemo(() => {
     const q = query.trim().toLowerCase();
     return notes.filter((note) => {
       const type = note.type || "simple";
+      const noteCourseId = getCourseId(note.course || note.courseId);
       const matchesType = typeFilter === "all" ? true : type === typeFilter;
+      const matchesCourse =
+        courseFilter === "all"
+          ? true
+          : courseFilter === "unassigned"
+            ? !noteCourseId
+            : noteCourseId === courseFilter;
       const courseLabel = formatCourseLabel(note.course).toLowerCase();
       const matchesQuery =
         !q ||
@@ -404,9 +436,9 @@ export default function TeacherNotebookPage() {
         (TYPE_LABELS[type] || type).toLowerCase().includes(q) ||
         courseLabel.includes(q) ||
         (note.date || "").toLowerCase().includes(q);
-      return matchesType && matchesQuery;
+      return matchesType && matchesCourse && matchesQuery;
     });
-  }, [notes, query, typeFilter]);
+  }, [notes, query, typeFilter, courseFilter]);
 
   const openNote = async (note) => {
     const noteId = getNoteId(note);
@@ -535,7 +567,7 @@ export default function TeacherNotebookPage() {
   };
 
   return (
-    <div className="space-y-5 text-slate-900 dark:text-slate-100">
+    <div className="min-w-0 max-w-full space-y-5 overflow-hidden text-slate-900 dark:text-slate-100">
       <section className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-br from-white via-slate-50 to-indigo-50 p-5 shadow-sm dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900 sm:p-6">
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute -left-20 top-8 h-44 w-44 rounded-full bg-violet-200/40 blur-3xl dark:bg-violet-500/10" />
@@ -579,7 +611,7 @@ export default function TeacherNotebookPage() {
           refreshingStudents={refreshingStudents}
         />
       ) : (
-        <section className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
+        <section className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
           <div className="border-b border-slate-200 p-4 dark:border-slate-800 sm:p-5">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
@@ -589,8 +621,8 @@ export default function TeacherNotebookPage() {
                 </p>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-[1fr_180px] lg:w-[620px]">
-                <div className="relative">
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:w-[900px] lg:grid-cols-[minmax(0,1fr)_180px_260px]">
+                <div className="relative min-w-0 sm:col-span-2 lg:col-span-1">
                   <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
                     <SearchIcon />
                   </span>
@@ -604,11 +636,28 @@ export default function TeacherNotebookPage() {
                 <select
                   value={typeFilter}
                   onChange={(e) => setTypeFilter(e.target.value)}
-                  className="h-11 rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none transition focus:border-violet-400 focus:bg-white dark:border-slate-800 dark:bg-slate-900 dark:text-white dark:focus:border-violet-500"
+                  className="h-11 min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none transition focus:border-violet-400 focus:bg-white dark:border-slate-800 dark:bg-slate-900 dark:text-white dark:focus:border-violet-500"
                 >
                   <option value="all">All Templates</option>
                   <option value="evaluation">Evaluation</option>
                   <option value="simple">Simple Notes</option>
+                </select>
+
+                <select
+                  value={courseFilter}
+                  onChange={(e) => setCourseFilter(e.target.value)}
+                  className="h-11 min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none transition focus:border-violet-400 focus:bg-white dark:border-slate-800 dark:bg-slate-900 dark:text-white dark:focus:border-violet-500"
+                >
+                  <option value="all">All Courses</option>
+                  <option value="unassigned">Without Course</option>
+                  {courseFilterOptions.map((course) => {
+                    const id = getCourseId(course);
+                    return (
+                      <option key={id} value={id}>
+                        {formatCourseLabel(course)}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             </div>
@@ -648,7 +697,7 @@ export default function TeacherNotebookPage() {
                 </table>
               </div>
 
-              <div className="grid gap-3 p-4 lg:hidden">
+              <div className="grid min-w-0 max-w-full gap-3 p-4 lg:hidden">
                 {filteredNotes.map((note) => (
                   <NoteCard
                     key={getNoteId(note)}
@@ -743,21 +792,23 @@ function NoteCard({ note, openingId, onOpen, onDelete }) {
           onOpen();
         }
       }}
-      className="cursor-pointer rounded-3xl border border-slate-200 bg-slate-50 p-4 transition hover:border-violet-200 hover:bg-white focus:border-violet-300 focus:bg-white focus:outline-none dark:border-slate-800 dark:bg-slate-900/70 dark:hover:border-violet-500/40 dark:hover:bg-slate-900 dark:focus:border-violet-500/40 dark:focus:bg-slate-900"
+      className="w-full min-w-0 max-w-full cursor-pointer overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 p-4 transition hover:border-violet-200 hover:bg-white focus:border-violet-300 focus:bg-white focus:outline-none dark:border-slate-800 dark:bg-slate-900/70 dark:hover:border-violet-500/40 dark:hover:bg-slate-900 dark:focus:border-violet-500/40 dark:focus:bg-slate-900"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate text-sm font-black text-slate-950 dark:text-white">{note.title || "Untitled"}</h3>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{formatCourseLabel(note.course)}</p>
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h3 className="line-clamp-2 break-words text-sm font-black text-slate-950 dark:text-white">{note.title || "Untitled"}</h3>
+          <p className="mt-1 line-clamp-2 break-words text-xs leading-5 text-slate-500 dark:text-slate-400">{formatCourseLabel(note.course)}</p>
         </div>
-        <TypeBadge type={note.type} />
+        <span className="max-w-[46%] shrink-0">
+          <TypeBadge type={note.type} />
+        </span>
       </div>
-      <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+      <div className="mt-3 flex min-w-0 flex-wrap gap-2 break-words text-xs text-slate-500 dark:text-slate-400">
         <span>{note.date || "No date"}</span>
         <span>•</span>
         <span>{formatDateTime(note.updatedAt)}</span>
       </div>
-      <div className="mt-4 flex gap-2">
+      <div className="mt-4 flex min-w-0 gap-2">
         <button
           type="button"
           onClick={(e) => {
@@ -1286,51 +1337,76 @@ function NotebookEditor({ note, courses, saveStatus, onBack, onChange, onDelete,
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{formatCourseLabel(selectedCourse)}</p>
           </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row xl:items-center">
-            <input
-              type="date"
-              value={note.date || todayInput()}
-              onClick={openNativePicker}
-              onFocus={openNativePicker}
-              onChange={(e) => onChange({ date: e.target.value })}
-              className="input-soft sm:w-40"
-            />
-            <input
-              type="time"
-              value={note.time || timeInput()}
-              onClick={openNativePicker}
-              onFocus={openNativePicker}
-              onChange={(e) => onChange({ time: e.target.value })}
-              className="input-soft sm:w-32"
-            />
-            {type === "evaluation" ? (
-              <>
-                <button
-                  type="button"
-                  onClick={onRefreshStudents}
-                  disabled={refreshingStudents}
-                  className="btn-soft disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {refreshingStudents ? "Refreshing..." : "Refresh Students"}
-                </button>
-                <button type="button" onClick={() => exportEvaluationExcel(note)} className="btn-soft">
-                  Excel
-                </button>
-                <button type="button" onClick={() => exportEvaluationPdf(note)} className="btn-soft">
-                  PDF
-                </button>
-                <button type="button" onClick={() => printEvaluationPdf(note)} className="btn-soft">
-                  Print
-                </button>
-              </>
-            ) : (
-              <button type="button" onClick={() => exportSimplePdf(note)} className="btn-soft">
-                Export PDF
-              </button>
-            )}
-            <button type="button" onClick={onDelete} className="btn-danger">
-              Delete
-            </button>
+          <div className="w-full min-w-0 space-y-2 xl:w-auto">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+              <input
+                type="date"
+                value={note.date || todayInput()}
+                onClick={openNativePicker}
+                onFocus={openNativePicker}
+                onChange={(e) => onChange({ date: e.target.value })}
+                className="input-soft min-w-0 sm:w-40"
+              />
+              <input
+                type="time"
+                value={note.time || timeInput()}
+                onClick={openNativePicker}
+                onFocus={openNativePicker}
+                onChange={(e) => onChange({ time: e.target.value })}
+                className="input-soft min-w-0 sm:w-32"
+              />
+            </div>
+
+            <div className="flex min-w-0 flex-wrap gap-2 sm:justify-end">
+              {type === "evaluation" ? (
+                <>
+                  <EditorActionButton
+                    label={refreshingStudents ? "Refreshing" : "Refresh Students"}
+                    title="Refresh students"
+                    icon={<RefreshIcon spinning={refreshingStudents} />}
+                    onClick={onRefreshStudents}
+                    disabled={refreshingStudents}
+                    tone="sky"
+                  />
+                  <EditorActionButton
+                    label="Excel"
+                    title="Export Excel"
+                    icon={<SpreadsheetIcon />}
+                    onClick={() => exportEvaluationExcel(note)}
+                    tone="emerald"
+                  />
+                  <EditorActionButton
+                    label="PDF"
+                    title="Export PDF"
+                    icon={<PdfIcon />}
+                    onClick={() => exportEvaluationPdf(note)}
+                    tone="rose"
+                  />
+                  <EditorActionButton
+                    label="Print"
+                    title="Print"
+                    icon={<PrintIcon />}
+                    onClick={() => printEvaluationPdf(note)}
+                    tone="violet"
+                  />
+                </>
+              ) : (
+                <EditorActionButton
+                  label="Export PDF"
+                  title="Export PDF"
+                  icon={<PdfIcon />}
+                  onClick={() => exportSimplePdf(note)}
+                  tone="rose"
+                />
+              )}
+              <EditorActionButton
+                label="Delete"
+                title="Delete note"
+                icon={<TrashIcon />}
+                onClick={onDelete}
+                tone="red"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -2477,15 +2553,65 @@ function SimpleNoteEditor({ note, onChange }) {
     syncContent();
   };
 
+  const insertLink = async () => {
+    saveSelection();
+    const result = await Swal.fire({
+      title: "Insert link",
+      input: "url",
+      inputLabel: "Web address",
+      inputPlaceholder: "https://example.com",
+      showCancelButton: true,
+      confirmButtonText: "Add Link",
+      confirmButtonColor: "#7c3aed",
+      inputValidator: (value) => (!String(value || "").trim() ? "Enter a web address." : undefined),
+    });
+
+    if (!result.isConfirmed) return;
+
+    const rawUrl = String(result.value || "").trim();
+    const url = /^(https?:|mailto:|tel:)/i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+    editorRef.current?.focus();
+    restoreSelection();
+    document.execCommand("createLink", false, url);
+    editorRef.current?.querySelectorAll("a").forEach((link) => {
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+    });
+    saveSelection();
+    syncContent();
+  };
+
   return (
-    <div className="space-y-4 p-4 sm:p-5">
-      <div className="flex flex-wrap gap-2 rounded-3xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/60">
-        <ToolbarButton onClick={() => runCommand("bold")}>Bold</ToolbarButton>
-        <ToolbarButton onClick={() => runCommand("insertUnorderedList")}>Bullets</ToolbarButton>
-        <ToolbarButton onClick={() => runCommand("insertOrderedList")}>Numbers</ToolbarButton>
-        <ToolbarButton onClick={() => setFontSize("small")}>Small</ToolbarButton>
-        <ToolbarButton onClick={() => setFontSize("medium")}>Medium</ToolbarButton>
-        <ToolbarButton onClick={() => setFontSize("large")}>Large</ToolbarButton>
+    <div className="min-w-0 max-w-full space-y-4 p-4 sm:p-5">
+      <div className="max-w-full overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-900/60">
+        <div className="flex min-w-max items-center gap-1.5">
+          <ToolbarButton title="Undo" onClick={() => runCommand("undo")}>↶</ToolbarButton>
+          <ToolbarButton title="Redo" onClick={() => runCommand("redo")}>↷</ToolbarButton>
+          <ToolbarDivider />
+          <ToolbarButton title="Normal paragraph" onClick={() => runCommand("formatBlock", "P")}>P</ToolbarButton>
+          <ToolbarButton title="Heading 1" onClick={() => runCommand("formatBlock", "H1")}>H1</ToolbarButton>
+          <ToolbarButton title="Heading 2" onClick={() => runCommand("formatBlock", "H2")}>H2</ToolbarButton>
+          <ToolbarDivider />
+          <ToolbarButton title="Bold" onClick={() => runCommand("bold")}><strong>B</strong></ToolbarButton>
+          <ToolbarButton title="Italic" onClick={() => runCommand("italic")}><em>I</em></ToolbarButton>
+          <ToolbarButton title="Underline" onClick={() => runCommand("underline")}><span className="underline">U</span></ToolbarButton>
+          <ToolbarButton title="Strikethrough" onClick={() => runCommand("strikeThrough")}><span className="line-through">S</span></ToolbarButton>
+          <ToolbarDivider />
+          <ToolbarButton title="Bulleted list" onClick={() => runCommand("insertUnorderedList")}>• List</ToolbarButton>
+          <ToolbarButton title="Numbered list" onClick={() => runCommand("insertOrderedList")}>1. List</ToolbarButton>
+          <ToolbarDivider />
+          <ToolbarButton title="Align left" onClick={() => runCommand("justifyLeft")}>≡</ToolbarButton>
+          <ToolbarButton title="Align center" onClick={() => runCommand("justifyCenter")}>≣</ToolbarButton>
+          <ToolbarButton title="Align right" onClick={() => runCommand("justifyRight")}>≡</ToolbarButton>
+          <ToolbarDivider />
+          <ToolbarButton title="Small text" onClick={() => setFontSize("small")}>A−</ToolbarButton>
+          <ToolbarButton title="Normal text" onClick={() => setFontSize("medium")}>A</ToolbarButton>
+          <ToolbarButton title="Large text" onClick={() => setFontSize("large")}>A+</ToolbarButton>
+          <ToolbarDivider />
+          <ToolbarButton title="Insert link" onClick={insertLink}>Link</ToolbarButton>
+          <ToolbarButton title="Remove link" onClick={() => runCommand("unlink")}>Unlink</ToolbarButton>
+          <ToolbarButton title="Clear formatting" onClick={() => runCommand("removeFormat")}>Clear</ToolbarButton>
+        </div>
       </div>
 
       <div
@@ -2500,7 +2626,7 @@ function SimpleNoteEditor({ note, onChange }) {
         onMouseUp={saveSelection}
         onKeyUp={saveSelection}
         onBlur={saveSelection}
-        className="notebook-rich-editor min-h-[420px] rounded-3xl border border-slate-200 bg-white p-5 text-base leading-7 text-slate-800 outline-none transition focus:border-violet-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-violet-500"
+        className="notebook-rich-editor min-h-[420px] w-full min-w-0 max-w-full overflow-x-auto rounded-3xl border border-slate-200 bg-white p-4 text-base leading-7 text-slate-800 outline-none transition focus:border-violet-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-violet-500 sm:p-5"
         data-placeholder="Start writing your note here..."
       />
     </div>
@@ -2789,7 +2915,7 @@ function TypeBadge({ type }) {
   return (
     <span
       className={[
-        "inline-flex items-center rounded-full px-3 py-1 text-[11px] font-black",
+        "inline-flex max-w-full items-center justify-center rounded-full px-3 py-1 text-center text-[11px] font-black leading-4",
         isEvaluation
           ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
           : "bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300",
@@ -2800,16 +2926,107 @@ function TypeBadge({ type }) {
   );
 }
 
-function ToolbarButton({ children, onClick }) {
+function EditorActionButton({
+  label,
+  title,
+  icon,
+  onClick,
+  disabled = false,
+  tone = "slate",
+}) {
+  const toneMap = {
+    slate:
+      "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700",
+    sky:
+      "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300 dark:hover:bg-sky-500/20",
+    emerald:
+      "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300 dark:hover:bg-emerald-500/20",
+    rose:
+      "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/20",
+    violet:
+      "border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300 dark:hover:bg-violet-500/20",
+    red:
+      "border-red-200 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-500/20",
+  };
+
   return (
     <button
       type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title || label}
+      aria-label={title || label}
+      className={`inline-flex h-11 min-w-11 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${toneMap[tone] || toneMap.slate}`}
+    >
+      {icon}
+      <span className="hidden sm:inline">{label}</span>
+    </button>
+  );
+}
+
+function ToolbarButton({ children, onClick, title }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
-      className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 transition hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800"
+      className="inline-flex h-9 min-w-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-black text-slate-700 transition hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-violet-500/40 dark:hover:bg-violet-500/10 dark:hover:text-violet-300"
     >
       {children}
     </button>
+  );
+}
+
+function ToolbarDivider() {
+  return <span className="mx-0.5 h-6 w-px shrink-0 bg-slate-200 dark:bg-slate-700" aria-hidden="true" />;
+}
+
+function RefreshIcon({ spinning = false }) {
+  return (
+    <svg className={`h-4 w-4 ${spinning ? "animate-spin" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M20 11a8 8 0 1 0 2 5" />
+      <path d="M20 4v7h-7" />
+    </svg>
+  );
+}
+
+function SpreadsheetIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M5 3h11l3 3v15H5z" />
+      <path d="M8 10h8M8 14h8M11 8v10" />
+    </svg>
+  );
+}
+
+function PdfIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M6 2h9l5 5v15H6z" />
+      <path d="M14 2v6h6" />
+      <path d="M9 16h6M9 12h4" />
+    </svg>
+  );
+}
+
+function PrintIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M6 9V3h12v6" />
+      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+      <path d="M6 14h12v7H6z" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M3 6h18M8 6V3h8v3M6 6l1 15h10l1-15" />
+      <path d="M10 11v6M14 11v6" />
+    </svg>
   );
 }
 

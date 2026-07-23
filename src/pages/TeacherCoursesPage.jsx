@@ -7,6 +7,11 @@ import {
   archiveCourseRequest,
   unarchiveCourseRequest,
 } from "../services/courseService";
+import {
+  BUBT_SHIFTS,
+  getEquivalentProgramForShift,
+  getProgramsForShift,
+} from "../constants/bubtAcademicPrograms";
 import Swal from "sweetalert2";
 
 export default function TeacherCoursesPage() {
@@ -257,10 +262,27 @@ export default function TeacherCoursesPage() {
 
   const handleCreateFormChange = (e) => {
     const { name, value } = e.target;
-    setCreateForm((prev) => ({
-      ...prev,
-      [name]: name === "year" ? Number(value) : value,
-    }));
+
+    setCreateForm((prev) => {
+      if (name === "shift") {
+        const equivalentDepartment = getEquivalentProgramForShift(
+          prev.department,
+          value
+        );
+
+        return {
+          ...prev,
+          shift: value,
+          department:
+            equivalentDepartment || getProgramsForShift(value)[0]?.label || "",
+        };
+      }
+
+      return {
+        ...prev,
+        [name]: name === "year" ? Number(value) : value,
+      };
+    });
   };
 
   const resetCreateForm = (keepAcademicTerm = true) => {
@@ -269,6 +291,10 @@ export default function TeacherCoursesPage() {
       semester: keepAcademicTerm ? prev.semester : "Spring",
       year: keepAcademicTerm ? prev.year : new Date().getFullYear(),
       courseType: keepAcademicTerm ? prev.courseType : "theory",
+      shift: keepAcademicTerm ? prev.shift : "Day",
+      department: keepAcademicTerm
+        ? prev.department
+        : getProgramsForShift("Day")[0]?.label || "",
     }));
   };
 
@@ -281,13 +307,25 @@ export default function TeacherCoursesPage() {
       title: createForm.title.trim(),
       section: createForm.section.trim(),
       intake: createForm.intake.trim(),
+      shift: createForm.shift,
+      department: createForm.department,
       semester: createForm.semester,
       year: Number(createForm.year),
       courseType: createForm.courseType,
     };
 
-    if (!payload.code || !payload.title || !payload.section || !payload.semester || !payload.year) {
-      setCreateError("Please fill in course code, title, section, semester, and year.");
+    if (
+      !payload.code ||
+      !payload.title ||
+      !payload.section ||
+      !payload.shift ||
+      !payload.department ||
+      !payload.semester ||
+      !payload.year
+    ) {
+      setCreateError(
+        "Please fill in shift, department, course code, title, section, semester, and year."
+      );
       return;
     }
 
@@ -639,6 +677,8 @@ function getInitialCourseForm() {
     semester: "Spring",
     year: new Date().getFullYear(),
     courseType: "theory",
+    shift: "Day",
+    department: getProgramsForShift("Day")[0]?.label || "",
   };
 }
 
@@ -652,6 +692,8 @@ function CreateCourseModal({
   onClose,
   onReset,
 }) {
+  const availablePrograms = getProgramsForShift(form.shift);
+
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-5">
       <button
@@ -715,6 +757,43 @@ function CreateCourseModal({
 
             <div className="p-4 sm:p-5">
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <ModalField label="Shift" hint="Department options change with shift">
+                  <select
+                    name="shift"
+                    value={form.shift}
+                    onChange={onChange}
+                    className={modalInputClass}
+                    required
+                  >
+                    {BUBT_SHIFTS.map((shift) => (
+                      <option key={shift} value={shift}>
+                        {shift}
+                      </option>
+                    ))}
+                  </select>
+                </ModalField>
+
+                <ModalField
+                  label="Department"
+                  hint="Bachelor program shown according to the selected shift"
+                >
+                  <select
+                    name="department"
+                    value={form.department}
+                    onChange={onChange}
+                    className={modalInputClass}
+                    required
+                  >
+                    {availablePrograms.map((program) => (
+                      <option key={program.key} value={program.label}>
+                        {program.label}
+                      </option>
+                    ))}
+                  </select>
+                </ModalField>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <ModalField label="Course Code" hint="Example: CSE-207">
                   <input
                     type="text"
@@ -818,6 +897,14 @@ function CreateCourseModal({
                   </span>
                   <span className="text-slate-700 dark:text-slate-200">
                     {form.title || "Course Title"}
+                  </span>
+                  <span className="text-slate-400 dark:text-slate-500">•</span>
+                  <span className="text-slate-600 dark:text-slate-300">
+                    {form.shift || "Shift"}
+                  </span>
+                  <span className="text-slate-400 dark:text-slate-500">•</span>
+                  <span className="text-slate-600 dark:text-slate-300">
+                    {form.department || "Department"}
                   </span>
                   <span className="text-slate-400 dark:text-slate-500">•</span>
                   <span className="text-slate-600 dark:text-slate-300">

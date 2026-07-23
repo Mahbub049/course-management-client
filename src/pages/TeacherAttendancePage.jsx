@@ -365,7 +365,7 @@ export default function TeacherAttendancePage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="hidden grid-cols-2 gap-3 sm:grid sm:grid-cols-4">
               <div className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/80">
                 <div className="text-xs text-slate-500 dark:text-slate-400">
                   Courses
@@ -404,27 +404,29 @@ export default function TeacherAttendancePage() {
 
         <div className="p-4 sm:p-6 lg:p-8">
           {/* Mode Toggle */}
-          <div className="mb-6 flex flex-wrap gap-3">
+          <div className="mb-6 grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:gap-3">
             <button
               type="button"
               onClick={() => setMode("create")}
-              className={`inline-flex items-center rounded-2xl px-5 py-2.5 text-sm font-semibold transition ${mode === "create"
+              className={`inline-flex min-w-0 items-center justify-center rounded-2xl px-2 py-2.5 text-xs font-semibold transition sm:px-5 sm:text-sm ${mode === "create"
                 ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20"
                 : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                 }`}
             >
-              Create Attendance
+              <span className="sm:hidden">Create</span>
+              <span className="hidden sm:inline">Create Attendance</span>
             </button>
 
             <button
               type="button"
               onClick={() => setMode("update")}
-              className={`inline-flex items-center rounded-2xl px-5 py-2.5 text-sm font-semibold transition ${mode === "update"
+              className={`inline-flex min-w-0 items-center justify-center rounded-2xl px-2 py-2.5 text-xs font-semibold transition sm:px-5 sm:text-sm ${mode === "update"
                 ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20"
                 : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                 }`}
             >
-              Update Attendance
+              <span className="sm:hidden">Update</span>
+              <span className="hidden sm:inline">Update Attendance</span>
             </button>
 
             <button
@@ -436,12 +438,13 @@ export default function TeacherAttendancePage() {
                 setAttendance({});
                 setStudentsError("");
               }}
-              className={`inline-flex items-center rounded-2xl px-5 py-2.5 text-sm font-semibold transition ${mode === "delete"
+              className={`inline-flex min-w-0 items-center justify-center rounded-2xl px-2 py-2.5 text-xs font-semibold transition sm:px-5 sm:text-sm ${mode === "delete"
                 ? "bg-rose-600 text-white shadow-lg shadow-rose-600/20"
                 : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                 }`}
             >
-              Delete Attendance
+              <span className="sm:hidden">Delete</span>
+              <span className="hidden sm:inline">Delete Attendance</span>
             </button>
           </div>
 

@@ -340,7 +340,7 @@ export default function TeacherAttendanceSheetPage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="hidden grid-cols-2 gap-3 sm:grid sm:grid-cols-4">
               <div className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/80">
                 <div className="text-xs text-slate-500 dark:text-slate-400">Courses</div>
                 <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
@@ -470,7 +470,7 @@ export default function TeacherAttendanceSheetPage() {
               </div>
 
               {/* Summary cards */}
-              <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <div className="mb-5 hidden grid-cols-2 gap-3 sm:grid lg:grid-cols-4">
                 <div className="rounded-2xl border border-slate-200 bg-blue-50 px-4 py-4 dark:border-blue-500/20 dark:bg-blue-500/10">
                   <div className="text-xs text-blue-700 dark:text-blue-300">Students</div>
                   <div className="mt-1 text-2xl font-bold text-blue-800 dark:text-blue-200">
@@ -502,13 +502,17 @@ export default function TeacherAttendanceSheetPage() {
                 </div>
               </div>
 
+              <p className="mb-2 text-xs font-semibold text-slate-500 dark:text-slate-400 md:hidden">
+                Swipe horizontally to view all attendance columns.
+              </p>
+
               {/* Table wrapper */}
-              <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="min-w-0 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 {/* Top horizontal scrollbar */}
                 <div
                   ref={topScrollRef}
                   onScroll={syncTopToTable}
-                  className="overflow-x-auto overflow-y-hidden border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950/60"
+                  className="touch-pan-x overflow-x-auto overflow-y-hidden overscroll-x-contain border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950/60"
                 >
                   <div ref={innerWidthRef} className="h-4" />
                 </div>
@@ -517,7 +521,7 @@ export default function TeacherAttendanceSheetPage() {
                 <div
                   ref={tableScrollRef}
                   onScroll={syncTableToTop}
-                  className="overflow-x-auto overflow-y-visible"
+                  className="touch-pan-x overflow-x-auto overflow-y-visible overscroll-x-contain [-webkit-overflow-scrolling:touch]"
                 >
                   <table
                     className="w-full border-separate border-spacing-0 text-sm"
@@ -530,10 +534,10 @@ export default function TeacherAttendanceSheetPage() {
                   >
                     <thead className="bg-slate-50 dark:bg-slate-950/60">
                       <tr>
-                        <th className="sticky left-0 z-30 min-w-[120px] border-b border-slate-200 bg-slate-50 px-4 py-3 text-left font-semibold text-slate-700 shadow-[6px_0_12px_-8px_rgba(0,0,0,0.35)] dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
+                        <th className="md:sticky md:left-0 md:z-30 min-w-[120px] border-b border-slate-200 bg-slate-50 px-4 py-3 text-left font-semibold text-slate-700 md:shadow-[6px_0_12px_-8px_rgba(0,0,0,0.35)] dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
                           Roll
                         </th>
-                        <th className="sticky left-[120px] z-30 min-w-[240px] border-b border-slate-200 bg-slate-50 px-4 py-3 text-left font-semibold text-slate-700 shadow-[6px_0_12px_-8px_rgba(0,0,0,0.35)] dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
+                        <th className="md:sticky md:left-[120px] md:z-30 min-w-[240px] border-b border-slate-200 bg-slate-50 px-4 py-3 text-left font-semibold text-slate-700 md:shadow-[6px_0_12px_-8px_rgba(0,0,0,0.35)] dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
                           Name
                         </th>
 
@@ -549,13 +553,13 @@ export default function TeacherAttendanceSheetPage() {
                           </th>
                         ))}
 
-                        <th className="sticky right-[210px] z-30 min-w-[120px] whitespace-nowrap border-b border-slate-200 bg-slate-50 px-4 py-3 text-center font-semibold text-slate-700 shadow-[-6px_0_12px_-8px_rgba(0,0,0,0.35)] dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
+                        <th className="md:sticky md:right-[210px] md:z-30 min-w-[120px] whitespace-nowrap border-b border-slate-200 bg-slate-50 px-4 py-3 text-center font-semibold text-slate-700 md:shadow-[-6px_0_12px_-8px_rgba(0,0,0,0.35)] dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
                           Total Present
                         </th>
-                        <th className="sticky right-[95px] z-30 min-w-[115px] whitespace-nowrap border-b border-slate-200 bg-slate-50 px-4 py-3 text-center font-semibold text-slate-700 shadow-[-6px_0_12px_-8px_rgba(0,0,0,0.35)] dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
+                        <th className="md:sticky md:right-[95px] md:z-30 min-w-[115px] whitespace-nowrap border-b border-slate-200 bg-slate-50 px-4 py-3 text-center font-semibold text-slate-700 md:shadow-[-6px_0_12px_-8px_rgba(0,0,0,0.35)] dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
                           Total Classes
                         </th>
-                        <th className="sticky right-0 z-30 min-w-[95px] whitespace-nowrap border-b border-slate-200 bg-slate-50 px-4 py-3 text-center font-semibold text-slate-700 shadow-[-6px_0_12px_-8px_rgba(0,0,0,0.35)] dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
+                        <th className="md:sticky md:right-0 md:z-30 min-w-[95px] whitespace-nowrap border-b border-slate-200 bg-slate-50 px-4 py-3 text-center font-semibold text-slate-700 md:shadow-[-6px_0_12px_-8px_rgba(0,0,0,0.35)] dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
                           %
                         </th>
                       </tr>
@@ -574,7 +578,7 @@ export default function TeacherAttendanceSheetPage() {
                               } hover:bg-slate-100 dark:hover:bg-slate-800/80`}
                           >
                             <td
-                              className={`sticky left-0 z-20 min-w-[120px] border-b border-slate-200 px-4 py-3 font-semibold text-slate-800 shadow-[6px_0_12px_-8px_rgba(0,0,0,0.35)] dark:border-slate-800 dark:text-slate-100 ${index % 2 === 0
+                              className={`md:sticky md:left-0 md:z-20 min-w-[120px] border-b border-slate-200 px-4 py-3 font-semibold text-slate-800 md:shadow-[6px_0_12px_-8px_rgba(0,0,0,0.35)] dark:border-slate-800 dark:text-slate-100 ${index % 2 === 0
                                 ? "bg-white dark:bg-slate-900"
                                 : "bg-slate-50 dark:bg-slate-800"
                                 }`}
@@ -583,7 +587,7 @@ export default function TeacherAttendanceSheetPage() {
                             </td>
 
                             <td
-                              className={`sticky left-[120px] z-20 min-w-[240px] whitespace-nowrap border-b border-slate-200 px-4 py-3 text-slate-800 shadow-[6px_0_12px_-8px_rgba(0,0,0,0.35)] dark:border-slate-800 dark:text-slate-100 ${index % 2 === 0
+                              className={`md:sticky md:left-[120px] md:z-20 min-w-[240px] whitespace-nowrap border-b border-slate-200 px-4 py-3 text-slate-800 md:shadow-[6px_0_12px_-8px_rgba(0,0,0,0.35)] dark:border-slate-800 dark:text-slate-100 ${index % 2 === 0
                                 ? "bg-white dark:bg-slate-900"
                                 : "bg-slate-50 dark:bg-slate-800"
                                 }`}
@@ -611,7 +615,7 @@ export default function TeacherAttendanceSheetPage() {
                               );
                             })}
                             <td
-                              className={`sticky right-[210px] z-20 whitespace-nowrap border-b border-slate-200 px-4 py-3 text-center font-semibold text-slate-800 shadow-[-6px_0_12px_-8px_rgba(0,0,0,0.35)] dark:border-slate-800 dark:text-slate-100 ${index % 2 === 0
+                              className={`md:sticky md:right-[210px] md:z-20 whitespace-nowrap border-b border-slate-200 px-4 py-3 text-center font-semibold text-slate-800 md:shadow-[-6px_0_12px_-8px_rgba(0,0,0,0.35)] dark:border-slate-800 dark:text-slate-100 ${index % 2 === 0
                                 ? "bg-white dark:bg-slate-900"
                                 : "bg-slate-50 dark:bg-slate-800"
                                 }`}
@@ -619,7 +623,7 @@ export default function TeacherAttendanceSheetPage() {
                               {meta?.presentCount ?? 0}
                             </td>
                             <td
-                              className={`sticky right-[95px] z-20 whitespace-nowrap border-b border-slate-200 px-4 py-3 text-center font-semibold text-slate-800 shadow-[-6px_0_12px_-8px_rgba(0,0,0,0.35)] dark:border-slate-800 dark:text-slate-100 ${index % 2 === 0
+                              className={`md:sticky md:right-[95px] md:z-20 whitespace-nowrap border-b border-slate-200 px-4 py-3 text-center font-semibold text-slate-800 md:shadow-[-6px_0_12px_-8px_rgba(0,0,0,0.35)] dark:border-slate-800 dark:text-slate-100 ${index % 2 === 0
                                 ? "bg-white dark:bg-slate-900"
                                 : "bg-slate-50 dark:bg-slate-800"
                                 }`}
@@ -627,7 +631,7 @@ export default function TeacherAttendanceSheetPage() {
                               {meta?.totalClasses ?? 0}
                             </td>
                             <td
-                              className={`sticky right-0 z-20 whitespace-nowrap border-b border-slate-200 px-4 py-3 text-center font-semibold text-slate-800 shadow-[-6px_0_12px_-8px_rgba(0,0,0,0.35)] dark:border-slate-800 dark:text-slate-100 ${index % 2 === 0
+                              className={`md:sticky md:right-0 md:z-20 whitespace-nowrap border-b border-slate-200 px-4 py-3 text-center font-semibold text-slate-800 md:shadow-[-6px_0_12px_-8px_rgba(0,0,0,0.35)] dark:border-slate-800 dark:text-slate-100 ${index % 2 === 0
                                 ? "bg-white dark:bg-slate-900"
                                 : "bg-slate-50 dark:bg-slate-800"
                                 }`}
