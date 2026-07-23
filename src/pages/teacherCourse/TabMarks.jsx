@@ -2048,7 +2048,9 @@ export default function TabMarks({ courseId, course }) {
       icon: "question",
       title: "Fetch marks from OBE/CO-PO?",
       text:
-        "Question-wise OBE totals will be copied into matching marksheet fields. Existing values in matched fields will be replaced, and unsaved marksheet edits will be reloaded.",
+        courseType === "lab"
+          ? "Lab Mid and Lab Final totals from OBE/CO-PO will be copied into the matching lab marksheet fields. Existing values in those fields will be replaced, and unsaved marksheet edits will be reloaded."
+          : "Question-wise OBE totals will be copied into matching marksheet fields. Existing values in matched fields will be replaced, and unsaved marksheet edits will be reloaded.",
       showCancelButton: true,
       confirmButtonText: "Fetch marks",
       cancelButtonText: "Cancel",
@@ -2964,17 +2966,23 @@ export default function TabMarks({ courseId, course }) {
             </h4>
             <div className="flex flex-wrap items-center gap-2">
 
-              {courseType === "theory" && (
+              {["theory", "lab"].includes(courseType) && (
                 <button
                   type="button"
                   onClick={handleFetchFromObe}
                   disabled={loading || saving || syncingObeMarks}
                   className="inline-flex items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
-                  title="Copy saved OBE assessment totals into matching marksheet fields"
+                  title={
+                    courseType === "lab"
+                      ? "Copy saved Lab Mid and Lab Final OBE totals into the matching lab marksheet fields"
+                      : "Copy saved OBE assessment totals into matching marksheet fields"
+                  }
                 >
                   {syncingObeMarks
                     ? "Fetching OBE marks..."
-                    : "Fetch from OBE/CO-PO"}
+                    : courseType === "lab"
+                      ? "Fetch Lab Mid/Final from OBE"
+                      : "Fetch from OBE/CO-PO"}
                 </button>
               )}
               <div

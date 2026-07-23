@@ -61,6 +61,14 @@ const toast = (icon, title) =>
 
 const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
+
+const getCourseType = (course = {}) => {
+  const type = String(course.courseType || course.type || "").toLowerCase();
+  if (type === "hybrid") return "hybrid";
+  if (type.includes("lab")) return "lab";
+  return "theory";
+};
+
 const assessmentTypeOrder = {
   ct: 1,
   assignment: 2,
@@ -75,6 +83,43 @@ const assessmentTypeLabel = {
   mid: "Mid Term",
   final: "Final",
   attendance: "Attendance",
+};
+
+
+const labAssessmentTypeLabel = {
+  mid: "Lab Mid",
+  final: "Lab Final",
+};
+
+const getAssessmentTypeLabel = (type, isLabCourse = false) =>
+  (isLabCourse ? labAssessmentTypeLabel[type] : null) ||
+  assessmentTypeLabel[type] ||
+  String(type || "").toUpperCase();
+
+const getExpectedLabAssessmentMarks = (type) => {
+  if (type === "mid") return 30;
+  if (type === "final") return 40;
+  return 0;
+};
+
+const createEmptyBlueprintForm = (isLabCourse, coCode = "") => {
+  const assessmentType = isLabCourse ? "mid" : "ct";
+  const totalMarks = isLabCourse
+    ? getExpectedLabAssessmentMarks(assessmentType)
+    : 0;
+
+  return {
+    ...emptyBlueprint,
+    assessmentType,
+    totalMarks,
+    items: [
+      {
+        ...emptyBlueprint.items[0],
+        marks: totalMarks,
+        coCode,
+      },
+    ],
+  };
 };
 
 const sortBlueprints = (list = []) =>
@@ -122,6 +167,12 @@ const reuseSemesterRank = {
 };
 
 export default function TabObe({ courseId, course }) {
+  const courseType = getCourseType(course);
+  const isLabCourse = courseType === "lab";
+  const availableAssessmentTypes = isLabCourse
+    ? ["mid", "final"]
+    : ["ct", "assignment", "mid", "final", "attendance"];
+
   const [activeSubtab, setActiveSubtab] = useState("setup");
 
   const [setup, setSetup] = useState(emptySetup);
@@ -130,7 +181,9 @@ export default function TabObe({ courseId, course }) {
 
   const [blueprints, setBlueprints] = useState([]);
   const [blueprintsLoading, setBlueprintsLoading] = useState(true);
-  const [blueprintForm, setBlueprintForm] = useState(emptyBlueprint);
+  const [blueprintForm, setBlueprintForm] = useState(() =>
+    createEmptyBlueprintForm(isLabCourse)
+  );
   const [editingBlueprintId, setEditingBlueprintId] = useState(null);
   const [blueprintSaving, setBlueprintSaving] = useState(false);
 
@@ -198,6 +251,11 @@ export default function TabObe({ courseId, course }) {
           ),
     [reuseCourses, reuseSemesterFilter]
   );
+
+  useEffect(() => {
+    setEditingBlueprintId(null);
+    setBlueprintForm(createEmptyBlueprintForm(isLabCourse));
+  }, [courseId, isLabCourse]);
 
   useEffect(() => {
     loadSetup();
@@ -449,7 +507,7 @@ export default function TabObe({ courseId, course }) {
       await Promise.all([loadSetup(), loadBlueprints(), loadMarks()]);
       setOutputData(null);
       setEditingBlueprintId(null);
-      setBlueprintForm({ ...emptyBlueprint, items: [...emptyBlueprint.items] });
+      setBlueprintForm(createEmptyBlueprintForm(isLabCourse));
       setReusePanelOpen(false);
 
       Swal.fire(
@@ -604,18 +662,9 @@ const saveSetup = async () => {
 
   const resetBlueprintForm = () => {
     setEditingBlueprintId(null);
-    setBlueprintForm({
-      ...emptyBlueprint,
-      items: [
-        {
-          key: "q1",
-          label: "Q1",
-          marks: 0,
-          coCode: coOptions[0]?.code || "",
-          order: 0,
-        },
-      ],
-    });
+    setBlueprintForm(
+      createEmptyBlueprintForm(isLabCourse, coOptions[0]?.code || "")
+    );
   };
 
   const saveBlueprint = async () => {
@@ -641,20 +690,31 @@ const saveSetup = async () => {
   };
 
   const startEditBlueprint = (blueprint) => {
+    const expectedLabMarks = isLabCourse
+      ? getExpectedLabAssessmentMarks(blueprint.assessmentType)
+      : 0;
+    const blueprintItems = (blueprint.items || []).map((item, index) => ({
+      key: item.key,
+      label: item.label,
+      marks:
+        isLabCourse &&
+        expectedLabMarks &&
+        (blueprint.items || []).length === 1 &&
+        Number(item.marks || 0) === Number(blueprint.totalMarks || 0)
+          ? expectedLabMarks
+          : item.marks,
+      coCode: item.coCode,
+      order: item.order ?? index,
+    }));
+
     setEditingBlueprintId(blueprint._id);
     setBlueprintForm({
       assessmentName: blueprint.assessmentName,
       assessmentType: blueprint.assessmentType,
-      totalMarks: blueprint.totalMarks,
+      totalMarks: expectedLabMarks || blueprint.totalMarks,
       // order: blueprint.order || 0,
       notes: blueprint.notes || "",
-      items: (blueprint.items || []).map((item, index) => ({
-        key: item.key,
-        label: item.label,
-        marks: item.marks,
-        coCode: item.coCode,
-        order: item.order ?? index,
-      })),
+      items: blueprintItems,
     });
     setActiveSubtab("blueprint");
   };
@@ -1011,7 +1071,7 @@ const saveSetup = async () => {
 
     sortBlueprints(blueprints).forEach((blueprint) => {
       const type = blueprint.assessmentType || "custom";
-      const label = assessmentTypeLabel[type] || type.toUpperCase();
+      const label = getAssessmentTypeLabel(type, isLabCourse);
 
       if (!groups[type]) {
         groups[type] = {
@@ -1026,7 +1086,7 @@ const saveSetup = async () => {
     return Object.entries(groups).sort(([typeA], [typeB]) => {
       return (assessmentTypeOrder[typeA] || 999) - (assessmentTypeOrder[typeB] || 999);
     });
-  }, [blueprints]);
+  }, [blueprints, isLabCourse]);
 
   return (
     <div className="space-y-6">
@@ -1538,9 +1598,19 @@ const saveSetup = async () => {
       {activeSubtab === "blueprint" && (
         <div className="space-y-6">
           <SectionCard
-            title="Assessment Blueprint"
-            subtitle="Create assessment-wise question/item mapping with Course Outcomes."
+            title={isLabCourse ? "Lab Mid and Lab Final Blueprint" : "Assessment Blueprint"}
+            subtitle={
+              isLabCourse
+                ? "Create CO-mapped question/item breakdowns for Lab Mid and Lab Final. Attendance and Lab Evaluation are fetched automatically."
+                : "Create assessment-wise question/item mapping with Course Outcomes."
+            }
           >
+            {isLabCourse && (
+              <div className="mb-5 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200">
+                <strong>Automatic Continuous Evaluation:</strong> AT (5) is taken from this lab course attendance, and Lab E (25) is taken from the normal marksheet’s Lab Assessment (Main). Only Lab Mid (30) and Lab Final (40) need CO–PO blueprints and mark entry here.
+              </div>
+            )}
+
             <div className="grid gap-4 lg:grid-cols-2">
               <FormField label="Assessment Name">
                 <input
@@ -1552,30 +1622,61 @@ const saveSetup = async () => {
                     }))
                   }
                   className={inputClass}
-                  placeholder="CT 1 / Mid / Final"
+                  placeholder={isLabCourse ? "Lab Mid / Lab Final" : "CT 1 / Mid / Final"}
                 />
               </FormField>
 
               <FormField label="Assessment Type">
                 <select
                   value={blueprintForm.assessmentType}
-                  onChange={(e) =>
-                    setBlueprintForm((prev) => ({
-                      ...prev,
-                      assessmentType: e.target.value,
-                    }))
-                  }
+                  onChange={(e) => {
+                    const assessmentType = e.target.value;
+                    const expectedMarks = isLabCourse
+                      ? getExpectedLabAssessmentMarks(assessmentType)
+                      : 0;
+
+                    setBlueprintForm((prev) => {
+                      const previousExpectedMarks = isLabCourse
+                        ? getExpectedLabAssessmentMarks(prev.assessmentType)
+                        : 0;
+                      const shouldUpdateSingleItem =
+                        isLabCourse &&
+                        prev.items.length === 1 &&
+                        [0, previousExpectedMarks].includes(
+                          Number(prev.items[0]?.marks || 0)
+                        );
+
+                      return {
+                        ...prev,
+                        assessmentType,
+                        totalMarks: isLabCourse
+                          ? expectedMarks
+                          : prev.totalMarks,
+                        items: shouldUpdateSingleItem
+                          ? [{ ...prev.items[0], marks: expectedMarks }]
+                          : prev.items,
+                      };
+                    });
+                  }}
                   className={inputClass}
                 >
-                  {["ct", "assignment", "mid", "final", "attendance"].map((type) => (
+                  {availableAssessmentTypes.map((type) => (
                     <option key={type} value={type}>
-                      {assessmentTypeLabel[type]}
+                      {getAssessmentTypeLabel(type, isLabCourse)}
                     </option>
                   ))}
                 </select>
               </FormField>
 
-              <FormField label="Total Marks">
+              <FormField
+                label={
+                  isLabCourse
+                    ? `Total Marks (${
+                        blueprintForm.assessmentType === "final" ? 40 : 30
+                      } required)`
+                    : "Total Marks"
+                }
+              >
                 <input
                   type="number"
                   value={blueprintForm.totalMarks}
@@ -1585,7 +1686,12 @@ const saveSetup = async () => {
                       totalMarks: e.target.value,
                     }))
                   }
-                  className={inputClass}
+                  readOnly={isLabCourse}
+                  className={`${inputClass} ${
+                    isLabCourse
+                      ? "cursor-not-allowed bg-slate-100 dark:bg-slate-800"
+                      : ""
+                  }`}
                 />
               </FormField>
 
@@ -2073,6 +2179,17 @@ const saveSetup = async () => {
                         <tr>
                           <HeaderCell>Roll</HeaderCell>
                           <HeaderCell>Name</HeaderCell>
+                          {isLabCourse &&
+                            (outputData.continuousAssessment?.headers || []).map(
+                              (header) => (
+                                <HeaderCell
+                                  key={`continuous-${header.key}`}
+                                  className="text-center"
+                                >
+                                  {header.label} ({header.maxMarks})
+                                </HeaderCell>
+                              )
+                            )}
                           <HeaderCell>Total</HeaderCell>
                           <HeaderCell>%</HeaderCell>
                           <HeaderCell>Grade</HeaderCell>
@@ -2101,6 +2218,17 @@ const saveSetup = async () => {
                             <BodyCell className="min-w-[180px] font-medium">
                               {student.name}
                             </BodyCell>
+                            {isLabCourse &&
+                              (outputData.continuousAssessment?.headers || []).map(
+                                (header) => (
+                                  <BodyCell
+                                    key={`${student.studentId}-continuous-${header.key}`}
+                                    className="text-center"
+                                  >
+                                    {student.continuousAssessment?.[header.key] ?? 0}
+                                  </BodyCell>
+                                )
+                              )}
                             <BodyCell>{student.courseObtained} / {student.courseMaxMarks}</BodyCell>
                             <BodyCell>{student.totalPercent}</BodyCell>
                             <BodyCell>

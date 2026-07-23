@@ -55,6 +55,29 @@ const normalizeLabel = (value, fallback) =>
     .replace(/\s+/g, " ")
     .slice(0, 12);
 
+const normalizeFixedContinuousAssessmentSlots = (headers = []) => {
+  const normalized = (Array.isArray(headers) ? headers : [])
+    .filter((header) => header && header.key)
+    .slice(0, OBE_TEMPLATE_LIMITS.continuousAssessmentSlots)
+    .map((header) => ({
+      continuousKey: safeText(header.key, ""),
+      label: normalizeLabel(header.label, safeText(header.key, "")),
+      marks: toNumber(header.maxMarks ?? header.marks),
+      isPlaceholder: false,
+    }));
+
+  while (normalized.length < OBE_TEMPLATE_LIMITS.continuousAssessmentSlots) {
+    normalized.push({
+      continuousKey: `reserved_${normalized.length + 1}`,
+      label: "",
+      marks: 0,
+      isPlaceholder: true,
+    });
+  }
+
+  return normalized;
+};
+
 const isQuizBlueprint = (blueprintName = "") => {
   const normalized = safeText(blueprintName).toLowerCase();
   return /(^|\s)(quiz|qt)(\s|$)/.test(normalized);
@@ -232,7 +255,15 @@ export const buildObeTemplateLayout = (blueprints = [], options = {}) => {
   });
 
   if (useFixedContinuousAssessment) {
-    slots.ca = OBE_FIXED_CONTINUOUS_ASSESSMENT.map((slot) => ({
+    const fixedContinuousAssessmentSlots =
+      Array.isArray(options?.fixedContinuousAssessmentSlots) &&
+      options.fixedContinuousAssessmentSlots.length
+        ? normalizeFixedContinuousAssessmentSlots(
+            options.fixedContinuousAssessmentSlots
+          )
+        : OBE_FIXED_CONTINUOUS_ASSESSMENT;
+
+    slots.ca = fixedContinuousAssessmentSlots.map((slot) => ({
       ...slot,
       group: "ca",
       source: slot.isPlaceholder

@@ -1122,11 +1122,14 @@ export const exportObeWorkbook = async (payload = {}) => {
     payload.course?.courseType || payload.course?.type,
     "theory"
   ).toLowerCase();
-  const needsFixedContinuousAssessment = courseType !== "lab";
+  const needsFixedContinuousAssessment = ["theory", "hybrid", "lab"].includes(
+    courseType
+  );
   const useFixedContinuousAssessment =
     continuousAssessment?.enabled === true;
   const layout = buildObeTemplateLayout(blueprints, {
     useFixedContinuousAssessment,
+    fixedContinuousAssessmentSlots: continuousAssessment?.headers || [],
   });
 
   const errors = [...layout.errors];
@@ -1136,7 +1139,9 @@ export const exportObeWorkbook = async (payload = {}) => {
 
   if (needsFixedContinuousAssessment && !useFixedContinuousAssessment) {
     errors.push(
-      "Continuous-assessment data is missing from the export response. Update the supplied server files so AT (5), CT (15), and ASM (10) can be fetched from the course marks."
+      courseType === "lab"
+        ? "Continuous-assessment data is missing from the export response. Update the supplied server files so AT (5) and Lab E (25) can be fetched from the lab attendance and normal marksheet."
+        : "Continuous-assessment data is missing from the export response. Update the supplied server files so AT (5), CT (15), and ASM (10) can be fetched from the course marks."
     );
   }
 
