@@ -82,8 +82,10 @@ export default function TeacherComplaintsPage() {
   const [courses, setCourses] = useState([]);
   const [courseSettingsLoading, setCourseSettingsLoading] = useState(true);
   const [togglingCourseId, setTogglingCourseId] = useState("");
+  const [showCourseControls, setShowCourseControls] = useState(false);
 
   const [statusFilter, setStatusFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [courseFilter, setCourseFilter] = useState("all");
   const [search, setSearch] = useState("");
 
@@ -230,6 +232,9 @@ export default function TeacherComplaintsPage() {
   const filteredComplaints = useMemo(() => {
     return complaints.filter((c) => {
       if (statusFilter !== "all" && c.status !== statusFilter) return false;
+      if (categoryFilter !== "all" && (c.category || "marks") !== categoryFilter) {
+        return false;
+      }
 
       if (courseFilter !== "all" && c.course) {
         const key = c.course._id || c.course.code;
@@ -266,7 +271,18 @@ export default function TeacherComplaintsPage() {
 
       return true;
     });
-  }, [complaints, statusFilter, courseFilter, search]);
+  }, [complaints, statusFilter, categoryFilter, courseFilter, search]);
+
+  const courseSubmissionStats = useMemo(() => {
+    const open = courses.filter(
+      (course) => course?.complaintSettings?.allowStudentComplaints !== false
+    ).length;
+
+    return {
+      open,
+      closed: Math.max(0, courses.length - open),
+    };
+  }, [courses]);
 
   const stats = useMemo(() => {
     const total = complaints.length;
@@ -416,83 +432,116 @@ export default function TeacherComplaintsPage() {
         </div>
       </div>
 
-      <section className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex flex-col gap-2 border-b border-slate-100 px-5 py-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div
+          className={`flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between ${
+            showCourseControls ? "border-b border-slate-100 dark:border-slate-800" : ""
+          }`}
+        >
           <div>
             <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
               Student Complaint Submission
             </div>
-            <div className="text-xs text-slate-500 dark:text-slate-400">
-              Turn complaints on or off course-wise. Closed courses will reject new student complaints.
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+              <span>Course-wise access is hidden until needed.</span>
+              {!courseSettingsLoading && courses.length > 0 && (
+                <>
+                  <span className="hidden text-slate-300 sm:inline dark:text-slate-700">•</span>
+                  <span className="font-semibold text-emerald-700 dark:text-emerald-300">
+                    {courseSubmissionStats.open} open
+                  </span>
+                  <span className="font-semibold text-rose-700 dark:text-rose-300">
+                    {courseSubmissionStats.closed} closed
+                  </span>
+                </>
+              )}
             </div>
           </div>
 
-          <span className="inline-flex w-fit rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-            Course-wise control
-          </span>
+          <button
+            type="button"
+            onClick={() => setShowCourseControls((current) => !current)}
+            className="inline-flex w-fit items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
+            aria-expanded={showCourseControls}
+          >
+            <ControlsIcon />
+            {showCourseControls ? "Hide Access Controls" : "Manage Complaint Access"}
+            <span className={`transition-transform ${showCourseControls ? "rotate-180" : ""}`}>
+              <ChevronDownIcon />
+            </span>
+          </button>
         </div>
 
-        <div className="p-5">
-          {courseSettingsLoading ? (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
-              Loading course complaint settings...
-            </div>
-          ) : courses.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-200 px-5 py-6 text-center text-sm text-slate-400 dark:border-slate-700 dark:text-slate-500">
-              No active courses found.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-              {courses.map((course) => {
-                const id = course._id || course.id;
-                const isOpen = course?.complaintSettings?.allowStudentComplaints !== false;
-                const isToggling = togglingCourseId === id;
+        {showCourseControls && (
+          <div className="p-5">
+            {courseSettingsLoading ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                Loading course complaint settings...
+              </div>
+            ) : courses.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 px-5 py-6 text-center text-sm text-slate-400 dark:border-slate-700 dark:text-slate-500">
+                No active courses found.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                {courses.map((course) => {
+                  const id = course._id || course.id;
+                  const isOpen = course?.complaintSettings?.allowStudentComplaints !== false;
+                  const isToggling = togglingCourseId === id;
 
-                return (
-                  <div
-                    key={id}
-                    className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/40 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">
-                        {course.code} – {course.title}
+                  return (
+                    <div
+                      key={id}
+                      className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/40 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">
+                          {course.code} – {course.title}
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          Section {course.section || "—"} • {course.semester || "—"} {course.year || ""}
+                        </div>
+                        <div
+                          className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                            isOpen
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+                              : "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300"
+                          }`}
+                        >
+                          {isOpen ? "Complaints Open" : "Complaints Closed"}
+                        </div>
                       </div>
-                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Section {course.section || "—"} • {course.semester || "—"} {course.year || ""}
-                      </div>
-                      <div
-                        className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
+
+                      <button
+                        type="button"
+                        onClick={() => handleToggleComplaintSubmission(course, !isOpen)}
+                        disabled={isToggling}
+                        data-pending-label="Updating…"
+                        className={`inline-flex min-w-[145px] items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60 ${
                           isOpen
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
-                            : "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300"
+                            ? "border border-rose-200 bg-white text-rose-700 hover:bg-rose-50 dark:border-rose-500/20 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                            : "border border-emerald-200 bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-500/20"
                         }`}
                       >
-                        {isOpen ? "Complaints Open" : "Complaints Closed"}
-                      </div>
+                        {isToggling ? (
+                          <>
+                            <SpinnerIcon />
+                            Updating...
+                          </>
+                        ) : (
+                          <>
+                            <PowerIcon />
+                            {isOpen ? "Turn Off" : "Turn On"}
+                          </>
+                        )}
+                      </button>
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleToggleComplaintSubmission(course, !isOpen)}
-                      disabled={isToggling}
-                      className={`inline-flex min-w-[170px] items-center justify-center rounded-2xl px-4 py-2.5 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                        isOpen
-                          ? "border border-rose-200 bg-white text-rose-700 hover:bg-rose-50 dark:border-rose-500/20 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-500/10"
-                          : "border border-emerald-200 bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-500/20"
-                      }`}
-                    >
-                      {isToggling
-                        ? "Updating..."
-                        : isOpen
-                        ? "Turn Off Complaints"
-                        : "Turn On Complaints"}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       <div className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -500,7 +549,7 @@ export default function TeacherComplaintsPage() {
           <div>
             <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Filters</div>
             <div className="text-xs text-slate-500 dark:text-slate-400">
-              Narrow down by status, course, or keywords
+              Narrow down by type, status, course, or keywords
             </div>
           </div>
 
@@ -508,6 +557,7 @@ export default function TeacherComplaintsPage() {
             type="button"
             onClick={() => {
               setStatusFilter("all");
+              setCategoryFilter("all");
               setCourseFilter("all");
               setSearch("");
             }}
@@ -519,6 +569,22 @@ export default function TeacherComplaintsPage() {
 
         <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-12">
           <div className="md:col-span-3">
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+              Type
+            </label>
+            <select
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+            >
+              <option value="all">All types</option>
+              <option value="attendance">Attendance</option>
+              <option value="marks">Marks</option>
+              <option value="general">General</option>
+            </select>
+          </div>
+
+          <div className="md:col-span-2">
             <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300">
               Status
             </label>
@@ -535,7 +601,7 @@ export default function TeacherComplaintsPage() {
             </select>
           </div>
 
-          <div className="md:col-span-4">
+          <div className="md:col-span-3">
             <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300">
               Course
             </label>
@@ -553,7 +619,7 @@ export default function TeacherComplaintsPage() {
             </select>
           </div>
 
-          <div className="md:col-span-5">
+          <div className="md:col-span-4">
             <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300">
               Search
             </label>
@@ -807,6 +873,7 @@ export default function TeacherComplaintsPage() {
                   <button
                     onClick={handleSaveReplyOnly}
                     disabled={saving}
+                    data-pending-label="Saving…"
                     className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {saving ? (
@@ -826,6 +893,7 @@ export default function TeacherComplaintsPage() {
                     <button
                       onClick={() => handleUpdateStatus("in_review")}
                       disabled={saving || selected.status === "in_review"}
+                      data-pending-label="Updating…"
                       className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500/20"
                     >
                       <EyeIcon />
@@ -836,6 +904,7 @@ export default function TeacherComplaintsPage() {
                       <button
                         onClick={handleResolveAttendance}
                         disabled={saving || selected.status === "resolved"}
+                        data-pending-label="Updating Attendance…"
                         className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300 dark:hover:bg-emerald-500/20"
                       >
                         <CheckIcon />
@@ -845,6 +914,7 @@ export default function TeacherComplaintsPage() {
                       <button
                         onClick={confirmResolve}
                         disabled={saving || selected.status === "resolved"}
+                        data-pending-label="Resolving…"
                         className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300 dark:hover:bg-emerald-500/20"
                       >
                         <CheckIcon />
@@ -866,6 +936,7 @@ export default function TeacherComplaintsPage() {
                   <button
                     onClick={confirmReject}
                     disabled={saving || selected.status === "rejected"}
+                    data-pending-label="Rejecting…"
                     className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                   >
                     ✕ Reject Complaint
@@ -943,6 +1014,36 @@ function ChevronIcon() {
   return (
     <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M9 18l6-6-6-6" />
+    </svg>
+  );
+}
+
+function ControlsIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M4 7h10" />
+      <path d="M18 7h2" />
+      <path d="M14 5v4" />
+      <path d="M4 17h2" />
+      <path d="M10 17h10" />
+      <path d="M8 15v4" />
+    </svg>
+  );
+}
+
+function ChevronDownIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}
+
+function PowerIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 2v10" />
+      <path d="M18.4 6.6a9 9 0 1 1-12.8 0" />
     </svg>
   );
 }

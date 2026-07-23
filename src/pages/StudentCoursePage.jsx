@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { fetchStudentCourseMarks } from "../services/studentService";
-import { createStudentComplaint } from "../services/complaintService";
+import {
+  createStudentComplaint,
+  fetchStudentComplaints,
+} from "../services/complaintService";
 import { fetchStudentAttendanceSheet } from "../services/attendanceService";
 import { fetchStudentCourseMaterials } from "../services/materialService";
 import StudentProjectGroups from "./studentCourse/StudentProjectGroups";
@@ -61,6 +64,12 @@ function getMainComponentFullMarks(course, courseType) {
 
 function round2(num) {
   return Math.round(Number(num || 0) * 100) / 100;
+}
+
+function getAttendanceComplaintKey(courseId, date, period) {
+  return `${String(courseId || "").trim()}::${String(date || "").trim()}::${Number(
+    period || 0
+  )}`;
 }
 
 function isAssessmentMarkHidden(assessment) {
@@ -216,6 +225,9 @@ export default function StudentCoursePage() {
   const [complaintLoading, setComplaintLoading] = useState(false);
   const [complaintError, setComplaintError] = useState("");
   const [complaintSuccess, setComplaintSuccess] = useState("");
+  const [submittedAttendanceKeys, setSubmittedAttendanceKeys] = useState(
+    () => new Set()
+  );
 
   const [complaintCategory, setComplaintCategory] = useState("marks");
   const [relatedTo, setRelatedTo] = useState("overall");
@@ -264,11 +276,13 @@ export default function StudentCoursePage() {
       setAttData(null);
 
       try {
-        const [marksRes, attendanceRes, materialsRes] = await Promise.allSettled([
-          fetchStudentCourseMarks(courseId),
-          fetchStudentAttendanceSheet(courseId),
-          fetchStudentCourseMaterials(courseId),
-        ]);
+        const [marksRes, attendanceRes, materialsRes, complaintsRes] =
+          await Promise.allSettled([
+            fetchStudentCourseMarks(courseId),
+            fetchStudentAttendanceSheet(courseId),
+            fetchStudentCourseMaterials(courseId),
+            fetchStudentComplaints(),
+          ]);
 
         if (marksRes.status === "fulfilled") {
           const data = marksRes.value;
@@ -308,6 +322,28 @@ export default function StudentCoursePage() {
             "Course materials are not available yet."
           );
         }
+
+        if (complaintsRes.status === "fulfilled") {
+          const attendanceKeys = new Set(
+            (Array.isArray(complaintsRes.value) ? complaintsRes.value : [])
+              .filter(
+                (complaint) =>
+                  complaint?.category === "attendance" &&
+                  complaint?.course &&
+                  complaint?.attendanceRef?.date &&
+                  complaint?.attendanceRef?.period != null
+              )
+              .map((complaint) =>
+                getAttendanceComplaintKey(
+                  complaint.course?._id || complaint.course,
+                  complaint.attendanceRef.date,
+                  complaint.attendanceRef.period
+                )
+              )
+          );
+
+          setSubmittedAttendanceKeys(attendanceKeys);
+        }
       } catch (err) {
         console.error(err);
         const msg =
@@ -332,6 +368,14 @@ export default function StudentCoursePage() {
   const complaintClosedMessage =
     course?.complaintSettings?.closedMessage ||
     "Complaint submission is currently closed by the course teacher.";
+
+  const duplicateAttendanceComplaint =
+    complaintCategory === "attendance" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(complaintAttDate) &&
+    Number(complaintAttPeriod) >= 1 &&
+    submittedAttendanceKeys.has(
+      getAttendanceComplaintKey(courseId, complaintAttDate, complaintAttPeriod)
+    );
 
   const {
     displayTotal,
@@ -566,9 +610,35 @@ export default function StudentCoursePage() {
           date: complaintAttDate,
           period: p,
         };
+
+        if (
+          submittedAttendanceKeys.has(
+            getAttendanceComplaintKey(courseId, complaintAttDate, p)
+          )
+        ) {
+          setComplaintError(
+            "You have already submitted an attendance complaint for this date and period."
+          );
+          setComplaintLoading(false);
+          return;
+        }
       }
 
       await createStudentComplaint(payload);
+
+      if (complaintCategory === "attendance") {
+        const complaintKey = getAttendanceComplaintKey(
+          courseId,
+          complaintAttDate,
+          complaintAttPeriod
+        );
+
+        setSubmittedAttendanceKeys((current) => {
+          const next = new Set(current);
+          next.add(complaintKey);
+          return next;
+        });
+      }
 
       setComplaintSuccess("Your complaint has been submitted.");
       setMessage("");
@@ -578,6 +648,24 @@ export default function StudentCoursePage() {
       setComplaintCategory("marks");
     } catch (err) {
       console.error(err);
+
+      if (
+        complaintCategory === "attendance" &&
+        err?.response?.data?.code === "DUPLICATE_ATTENDANCE_COMPLAINT"
+      ) {
+        const complaintKey = getAttendanceComplaintKey(
+          courseId,
+          complaintAttDate,
+          complaintAttPeriod
+        );
+
+        setSubmittedAttendanceKeys((current) => {
+          const next = new Set(current);
+          next.add(complaintKey);
+          return next;
+        });
+      }
+
       const msg = err?.response?.data?.message || "Failed to submit complaint.";
       setComplaintError(msg);
     } finally {
@@ -1537,6 +1625,12 @@ export default function StudentCoursePage() {
               </div>
             )}
 
+            {duplicateAttendanceComplaint && (
+              <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+                An attendance complaint has already been submitted for this date and period.
+              </div>
+            )}
+
             {!complaintsOpen ? (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-5 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
                 <div className="font-semibold">Complaint submission is closed</div>
@@ -1662,7 +1756,8 @@ export default function StudentCoursePage() {
 
                   <button
                     type="submit"
-                    disabled={complaintLoading}
+                    disabled={complaintLoading || duplicateAttendanceComplaint}
+                    data-pending-label="Submitting…"
                     className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:opacity-60 sm:w-auto sm:min-w-[210px]"
                   >
                     {complaintLoading ? (

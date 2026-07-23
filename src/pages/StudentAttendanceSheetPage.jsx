@@ -2,7 +2,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchStudentCourses } from "../services/studentCourseService";
 import { fetchStudentAttendanceSheet } from "../services/attendanceService";
-import { createStudentComplaint } from "../services/complaintService";
+import {
+  createStudentComplaint,
+  fetchStudentComplaints,
+} from "../services/complaintService";
 
 export default function StudentAttendanceSheetPage() {
   const [courses, setCourses] = useState([]);
@@ -19,6 +22,9 @@ export default function StudentAttendanceSheetPage() {
   const [issueMessage, setIssueMessage] = useState("");
   const [submittingIssue, setSubmittingIssue] = useState(false);
   const [issueSuccess, setIssueSuccess] = useState("");
+  const [submittedAttendanceKeys, setSubmittedAttendanceKeys] = useState(
+    () => new Set()
+  );
 
   useEffect(() => {
     (async () => {
@@ -37,6 +43,44 @@ export default function StudentAttendanceSheetPage() {
         setLoadingCourses(false);
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        const complaintList = await fetchStudentComplaints();
+        if (!active) return;
+
+        const keys = new Set(
+          (Array.isArray(complaintList) ? complaintList : [])
+            .filter(
+              (complaint) =>
+                complaint?.category === "attendance" &&
+                complaint?.course &&
+                complaint?.attendanceRef?.date &&
+                complaint?.attendanceRef?.period != null
+            )
+            .map((complaint) =>
+              getAttendanceComplaintKey(
+                complaint.course?._id || complaint.course,
+                complaint.attendanceRef.date,
+                complaint.attendanceRef.period
+              )
+            )
+        );
+
+        setSubmittedAttendanceKeys(keys);
+      } catch (error) {
+        // The server still enforces duplicate prevention if this optional lookup fails.
+        console.error("Failed to load existing attendance complaints", error);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const handleView = async () => {
@@ -80,12 +124,29 @@ export default function StudentAttendanceSheetPage() {
     selectedCourse?.complaintSettings?.closedMessage ||
     "Complaint submission is currently closed by the course teacher.";
 
+  const hasAttendanceComplaint = (row) => {
+    if (!row || !courseId) return false;
+
+    return submittedAttendanceKeys.has(
+      getAttendanceComplaintKey(courseId, row.date, row.period)
+    );
+  };
+
+  const issueAlreadyReported = hasAttendanceComplaint(issueRow);
+
   const openIssueModal = (row) => {
     setIssueSuccess("");
     setErr("");
 
     if (!complaintsOpen) {
       setErr(complaintClosedMessage);
+      return;
+    }
+
+    if (hasAttendanceComplaint(row)) {
+      setErr(
+        "You have already submitted an attendance complaint for this date and period."
+      );
       return;
     }
 
@@ -108,6 +169,11 @@ export default function StudentAttendanceSheetPage() {
     if (!issueRow) return setErr("Please select an attendance row");
     if (!issueMessage.trim()) return setErr("Please write your issue message");
     if (!complaintsOpen) return setErr(complaintClosedMessage);
+    if (hasAttendanceComplaint(issueRow)) {
+      return setErr(
+        "You have already submitted an attendance complaint for this date and period."
+      );
+    }
 
     setSubmittingIssue(true);
     setErr("");
@@ -124,8 +190,36 @@ export default function StudentAttendanceSheetPage() {
         message: issueMessage.trim(),
       });
 
-      setIssueSuccess("Attendance issue submitted successfully.");
+      const complaintKey = getAttendanceComplaintKey(
+        courseId,
+        issueRow.date,
+        issueRow.period
+      );
+
+      setSubmittedAttendanceKeys((current) => {
+        const next = new Set(current);
+        next.add(complaintKey);
+        return next;
+      });
+
+      setIssueSuccess(
+        "Attendance issue submitted successfully. Another complaint cannot be submitted for this same class."
+      );
     } catch (e) {
+      if (e?.response?.data?.code === "DUPLICATE_ATTENDANCE_COMPLAINT") {
+        const complaintKey = getAttendanceComplaintKey(
+          courseId,
+          issueRow.date,
+          issueRow.period
+        );
+
+        setSubmittedAttendanceKeys((current) => {
+          const next = new Set(current);
+          next.add(complaintKey);
+          return next;
+        });
+      }
+
       setErr(e?.response?.data?.message || "Failed to submit attendance issue");
     } finally {
       setSubmittingIssue(false);
@@ -295,11 +389,16 @@ export default function StudentAttendanceSheetPage() {
                             <button
                               type="button"
                               onClick={() => openIssueModal(r)}
-                              disabled={!complaintsOpen}
+                              disabled={!complaintsOpen || hasAttendanceComplaint(r)}
                               className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                              title={
+                                hasAttendanceComplaint(r)
+                                  ? "An attendance complaint has already been submitted for this class."
+                                  : undefined
+                              }
                             >
-                              <FlagIcon />
-                              Report Issue
+                              {hasAttendanceComplaint(r) ? <CheckSmallIcon /> : <FlagIcon />}
+                              {hasAttendanceComplaint(r) ? "Already Reported" : "Report Issue"}
                             </button>
                           </td>
                         </tr>
@@ -335,11 +434,11 @@ export default function StudentAttendanceSheetPage() {
                       <button
                         type="button"
                         onClick={() => openIssueModal(r)}
-                        disabled={!complaintsOpen}
+                        disabled={!complaintsOpen || hasAttendanceComplaint(r)}
                         className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                       >
-                        <FlagIcon />
-                        Report Issue
+                        {hasAttendanceComplaint(r) ? <CheckSmallIcon /> : <FlagIcon />}
+                        {hasAttendanceComplaint(r) ? "Already Reported" : "Report Issue"}
                       </button>
                     </div>
                   ))}
@@ -434,10 +533,15 @@ export default function StudentAttendanceSheetPage() {
               <button
                 type="button"
                 onClick={handleSubmitIssue}
-                disabled={submittingIssue}
-                className="rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-60"
+                disabled={submittingIssue || issueAlreadyReported || Boolean(issueSuccess)}
+                data-pending-label="Submitting…"
+                className="rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {submittingIssue ? "Submitting..." : "Submit Issue"}
+                {submittingIssue
+                  ? "Submitting..."
+                  : issueAlreadyReported || issueSuccess
+                  ? "Already Submitted"
+                  : "Submit Issue"}
               </button>
             </div>
           </div>
@@ -445,6 +549,12 @@ export default function StudentAttendanceSheetPage() {
       )}
     </div>
   );
+}
+
+function getAttendanceComplaintKey(courseId, date, period) {
+  return `${String(courseId || "").trim()}::${String(date || "").trim()}::${Number(
+    period || 0
+  )}`;
 }
 
 function getAttendanceSortTime(row) {
@@ -527,6 +637,14 @@ function EmptyIcon() {
       <path d="M3 10h18" />
       <path d="M5 6h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" />
       <path d="M9 14h6" />
+    </svg>
+  );
+}
+
+function CheckSmallIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M20 6L9 17l-5-5" />
     </svg>
   );
 }

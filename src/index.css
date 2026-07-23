@@ -149,3 +149,35 @@ html.dark .notebook-rich-editor a {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* Global server-action feedback: blocks accidental repeated clicks while an API request is pending. */
+button[data-api-pending="true"],
+input[type="submit"][data-api-pending="true"],
+input[type="button"][data-api-pending="true"] {
+  pointer-events: none !important;
+  cursor: wait !important;
+  opacity: 0.78 !important;
+}
+
+button[data-api-pending="true"] {
+  position: relative !important;
+  color: transparent !important;
+}
+
+button[data-api-pending="true"] > * {
+  opacity: 0 !important;
+}
+
+button[data-api-pending="true"]::after {
+  content: attr(data-api-pending-label);
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: inherit;
+  color: var(--api-pending-color, #ffffff);
+  font: inherit;
+  letter-spacing: inherit;
+  white-space: nowrap;
+}

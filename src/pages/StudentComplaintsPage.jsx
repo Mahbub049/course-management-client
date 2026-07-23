@@ -21,8 +21,18 @@ const STATUS_BADGE_CLASSES = {
 };
 
 const CATEGORY_BADGE_CLASSES = {
+  marks:
+    "border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300",
+  attendance:
+    "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300",
   general:
     "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300",
+};
+
+const CATEGORY_LABEL = {
+  marks: "Marks",
+  attendance: "Attendance",
+  general: "General",
 };
 
 function formatDateGB(iso) {
@@ -55,6 +65,7 @@ export default function StudentComplaintsPage() {
   const [submitSuccess, setSubmitSuccess] = useState("");
 
   const [statusFilter, setStatusFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
 
@@ -140,6 +151,9 @@ export default function StudentComplaintsPage() {
   const filtered = useMemo(() => {
     return complaints.filter((c) => {
       if (statusFilter !== "all" && c.status !== statusFilter) return false;
+      if (categoryFilter !== "all" && (c.category || "marks") !== categoryFilter) {
+        return false;
+      }
 
       if (search.trim()) {
         const q = search.toLowerCase();
@@ -160,7 +174,7 @@ export default function StudentComplaintsPage() {
 
       return true;
     });
-  }, [complaints, statusFilter, search]);
+  }, [complaints, statusFilter, categoryFilter, search]);
 
   const selectedCourse = useMemo(() => {
     return courses.find((c) => (c._id || c.id) === formCourseId) || null;
@@ -369,6 +383,7 @@ export default function StudentComplaintsPage() {
             <div className="flex justify-end">
               <button
                 type="submit"
+                data-pending-label="Submitting…"
                 disabled={
                   submitLoading ||
                   coursesLoading ||
@@ -411,7 +426,23 @@ export default function StudentComplaintsPage() {
 
       <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
-          <div className="w-full lg:w-56">
+          <div className="w-full lg:w-52">
+            <label className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-400">
+              Type
+            </label>
+            <select
+              className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-800 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+            >
+              <option value="all">All types</option>
+              <option value="attendance">Attendance</option>
+              <option value="marks">Marks</option>
+              <option value="general">General</option>
+            </select>
+          </div>
+
+          <div className="w-full lg:w-52">
             <label className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-400">
               Status
             </label>
@@ -526,9 +557,12 @@ export default function StudentComplaintsPage() {
 
                           <td className="px-5 py-4">
                             <span
-                              className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${CATEGORY_BADGE_CLASSES.general}`}
+                              className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                                CATEGORY_BADGE_CLASSES[c.category || "marks"] ||
+                                CATEGORY_BADGE_CLASSES.general
+                              }`}
                             >
-                              General
+                              {CATEGORY_LABEL[c.category || "marks"] || "Marks"}
                             </span>
                           </td>
 
@@ -594,9 +628,12 @@ export default function StudentComplaintsPage() {
 
                       <div className="mt-3 flex items-center justify-between">
                         <span
-                          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${CATEGORY_BADGE_CLASSES.general}`}
+                          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                            CATEGORY_BADGE_CLASSES[c.category || "marks"] ||
+                            CATEGORY_BADGE_CLASSES.general
+                          }`}
                         >
-                          General
+                          {CATEGORY_LABEL[c.category || "marks"] || "Marks"}
                         </span>
                         <span className="inline-flex items-center gap-2 text-xs font-semibold text-indigo-700 dark:text-indigo-300">
                           View details
@@ -638,9 +675,12 @@ export default function StudentComplaintsPage() {
 
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <span
-                        className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${CATEGORY_BADGE_CLASSES.general}`}
+                        className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                          CATEGORY_BADGE_CLASSES[selected.category || "marks"] ||
+                          CATEGORY_BADGE_CLASSES.general
+                        }`}
                       >
-                        General
+                        {CATEGORY_LABEL[selected.category || "marks"] || "Marks"}
                       </span>
 
                       <span
