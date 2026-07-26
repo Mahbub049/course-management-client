@@ -12,7 +12,122 @@ import {
   exportCourseStudentsRequest,
   sendPasswordsByEmailRequest,
   removeAllStudentsFromCourseRequest,
+  copyStudentsFromCourseRequest,
+  updateCourseStudentRequest,
 } from "../../services/enrollmentService";
+import { fetchTeacherCourses } from "../../services/courseService";
+
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+const STATUS_WORDS = new Set([
+  "regular",
+  "irregular",
+  "retake",
+  "improvement",
+  "repeat",
+  "withdrawn",
+  "inactive",
+  "active",
+]);
+
+const cleanCell = (value) =>
+  String(value ?? "")
+    .replace(/\u200B/g, "")
+    .replace(/\u00A0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const looksLikeRoll = (value) => /^\d{6,20}$/.test(cleanCell(value));
+
+// Accepts copied Excel/portal rows such as:
+// 20255203042<TAB>Md. Rakib<TAB>Regular
+// Extra blank columns and status columns are ignored. An email is used only when
+// a cell actually looks like an email address.
+const parseBulkStudentText = (text) => {
+  const rows = [];
+  const invalidLines = [];
+  const duplicateRolls = [];
+  const seen = new Set();
+
+  String(text || "")
+    .split(/\r?\n/)
+    .forEach((rawLine, index) => {
+      const line = rawLine.replace(/\u200B/g, "").trim();
+      if (!line) return;
+
+      let cells;
+      if (rawLine.includes("\t")) {
+        cells = rawLine.split("\t").map(cleanCell).filter(Boolean);
+      } else if (rawLine.includes(",")) {
+        cells = rawLine.split(",").map(cleanCell).filter(Boolean);
+      } else {
+        const match = line.match(/^(\d{6,20})\s+(.+)$/);
+        if (!match) {
+          invalidLines.push({ line: index + 1, value: line });
+          return;
+        }
+
+        const roll = cleanCell(match[1]);
+        let remainder = cleanCell(match[2]);
+        const statusMatch = remainder.match(/\s+(Regular|Irregular|Retake|Improvement|Repeat|Active|Inactive)$/i);
+        if (statusMatch) remainder = cleanCell(remainder.slice(0, statusMatch.index));
+        cells = [roll, remainder];
+      }
+
+      // Ignore common header rows.
+      const lowerCells = cells.map((cell) => cell.toLowerCase());
+      if (
+        lowerCells.some((cell) => cell === "roll" || cell === "student id" || cell === "student id/roll") &&
+        lowerCells.some((cell) => cell.includes("name"))
+      ) {
+        return;
+      }
+
+      const rollIndex = cells.findIndex(looksLikeRoll);
+      if (rollIndex < 0) {
+        invalidLines.push({ line: index + 1, value: line });
+        return;
+      }
+
+      const roll = cleanCell(cells[rollIndex]);
+      const afterRoll = cells.slice(rollIndex + 1);
+      const name = cleanCell(
+        afterRoll.find((cell) => {
+          const lower = cell.toLowerCase();
+          return cell && !EMAIL_RE.test(cell) && !STATUS_WORDS.has(lower);
+        }) || ""
+      );
+      const email = cleanCell(afterRoll.find((cell) => EMAIL_RE.test(cell)) || "");
+
+      if (!roll || !name) {
+        invalidLines.push({ line: index + 1, value: line });
+        return;
+      }
+
+      if (seen.has(roll)) {
+        duplicateRolls.push(roll);
+        return;
+      }
+      seen.add(roll);
+      rows.push({ roll, name, email });
+    });
+
+  return {
+    students: rows,
+    invalidLines,
+    duplicateRolls,
+  };
+};
+
+const semesterLabel = (course) =>
+  `${cleanCell(course?.semester) || "Semester"} ${course?.year || ""}`.trim();
+
+const semesterSortValue = (label) => {
+  const match = String(label).match(/(Spring|Summer|Fall)?\s*(\d{4})/i);
+  if (!match) return 0;
+  const termRank = { spring: 1, summer: 2, fall: 3 };
+  return Number(match[2]) * 10 + (termRank[String(match[1] || "").toLowerCase()] || 0);
+};
 
 export default function TabStudents({ courseId }) {
   const [students, setStudents] = useState([]);
@@ -37,6 +152,21 @@ export default function TabStudents({ courseId }) {
   const [removingAll, setRemovingAll] = useState(false);
   const [query, setQuery] = useState("");
   const [emailLoading, setEmailLoading] = useState(false);
+
+  const [copyModalOpen, setCopyModalOpen] = useState(false);
+  const [copyCourses, setCopyCourses] = useState([]);
+  const [copyCoursesLoading, setCopyCoursesLoading] = useState(false);
+  const [copySemester, setCopySemester] = useState("");
+  const [copySourceCourseId, setCopySourceCourseId] = useState("");
+  const [copySourceCount, setCopySourceCount] = useState(null);
+  const [copySourceLoading, setCopySourceLoading] = useState(false);
+  const [copyLoading, setCopyLoading] = useState(false);
+  const [copyError, setCopyError] = useState("");
+
+  const [editStudent, setEditStudent] = useState(null);
+  const [editForm, setEditForm] = useState({ roll: "", name: "", email: "" });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -110,35 +240,142 @@ export default function TabStudents({ courseId }) {
     }
   };
 
-  const parseBulkText = (text) => {
-    const lines = text
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
+  const bulkPreview = useMemo(() => parseBulkStudentText(bulkText), [bulkText]);
 
-    return lines.map((line) => {
-      const parts = line.split(/,|\t/).map((p) => p.trim());
-      return {
-        roll: parts[0] || "",
-        name: parts[1] || "",
-        email: parts[2] || "",
-      };
-    });
+  const copySemesterOptions = useMemo(() => {
+    return [...new Set(copyCourses.map(semesterLabel).filter(Boolean))].sort(
+      (a, b) => semesterSortValue(b) - semesterSortValue(a)
+    );
+  }, [copyCourses]);
+
+  const coursesForSelectedSemester = useMemo(() => {
+    if (!copySemester) return [];
+    return copyCourses
+      .filter((course) => semesterLabel(course) === copySemester)
+      .sort((a, b) => {
+        const codeCompare = String(a.code || "").localeCompare(String(b.code || ""));
+        if (codeCompare !== 0) return codeCompare;
+        return String(a.section || "").localeCompare(String(b.section || ""));
+      });
+  }, [copyCourses, copySemester]);
+
+  const openCopyStudentsModal = async () => {
+    setCopyModalOpen(true);
+    setCopyError("");
+    setCopySourceCount(null);
+    setCopyCoursesLoading(true);
+
+    try {
+      const [activeCourses, archivedCourses] = await Promise.all([
+        fetchTeacherCourses({ archived: false }),
+        fetchTeacherCourses({ archived: true }),
+      ]);
+
+      const byId = new Map();
+      [...(activeCourses || []), ...(archivedCourses || [])].forEach((course) => {
+        if (!course?.id || String(course.id) === String(courseId)) return;
+        byId.set(String(course.id), course);
+      });
+
+      const courses = [...byId.values()];
+      setCopyCourses(courses);
+
+      const semesters = [...new Set(courses.map(semesterLabel).filter(Boolean))].sort(
+        (a, b) => semesterSortValue(b) - semesterSortValue(a)
+      );
+      const firstSemester = semesters[0] || "";
+      setCopySemester(firstSemester);
+
+      const firstCourse = courses
+        .filter((course) => semesterLabel(course) === firstSemester)
+        .sort((a, b) => String(a.code || "").localeCompare(String(b.code || "")))[0];
+      setCopySourceCourseId(firstCourse?.id ? String(firstCourse.id) : "");
+    } catch (err) {
+      console.error(err);
+      setCopyError(err?.response?.data?.message || "Failed to load your courses.");
+    } finally {
+      setCopyCoursesLoading(false);
+    }
+  };
+
+  const closeCopyStudentsModal = () => {
+    if (copyLoading) return;
+    setCopyModalOpen(false);
+    setCopyError("");
+    setCopySourceCount(null);
+  };
+
+  useEffect(() => {
+    if (!copyModalOpen || !copySourceCourseId) {
+      setCopySourceCount(null);
+      return;
+    }
+
+    let cancelled = false;
+    const loadCount = async () => {
+      setCopySourceLoading(true);
+      setCopyError("");
+      try {
+        const sourceStudents = await getCourseStudents(copySourceCourseId);
+        if (!cancelled) setCopySourceCount((sourceStudents || []).length);
+      } catch (err) {
+        console.error(err);
+        if (!cancelled) {
+          setCopySourceCount(null);
+          setCopyError(err?.response?.data?.message || "Failed to load source students.");
+        }
+      } finally {
+        if (!cancelled) setCopySourceLoading(false);
+      }
+    };
+    loadCount();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [copyModalOpen, copySourceCourseId]);
+
+  const handleCopyStudents = async () => {
+    if (!copySourceCourseId) {
+      setCopyError("Select a source course first.");
+      return;
+    }
+
+    setCopyLoading(true);
+    setCopyError("");
+    try {
+      const result = await copyStudentsFromCourseRequest(courseId, copySourceCourseId);
+      const fresh = await getCourseStudents(courseId);
+      setStudents(fresh || []);
+      setCopyModalOpen(false);
+
+      await Swal.fire({
+        icon: "success",
+        title: "Students copied",
+        html: `
+          <div style="text-align:left">
+            <p>Source students: <b>${result.sourceCount || 0}</b></p>
+            <p>Newly enrolled here: <b>${result.copiedCount || 0}</b></p>
+            <p>Already enrolled: <b>${result.alreadyEnrolledCount || 0}</b></p>
+            <p style="margin-top:8px;color:#64748b;font-size:12px">Only student enrollments were copied. Marks, attendance, OBE data and passwords were not copied.</p>
+          </div>
+        `,
+      });
+    } catch (err) {
+      console.error(err);
+      setCopyError(err?.response?.data?.message || "Failed to copy students.");
+    } finally {
+      setCopyLoading(false);
+    }
   };
 
   const handleBulkAddStudents = async () => {
     setBulkError("");
     setBulkResult(null);
 
-    const parsed = parseBulkText(bulkText);
+    const parsed = bulkPreview.students;
     if (parsed.length === 0) {
-      setBulkError("Please paste at least one line with Roll and Name.");
-      return;
-    }
-
-    const invalid = parsed.find((s) => !s.roll || !s.name);
-    if (invalid) {
-      setBulkError('Each line must have at least "roll, name". Example: 20254101401, Mahbub Sarwar');
+      setBulkError("No valid student rows were detected. Paste rows containing a student roll and name.");
       return;
     }
 
@@ -151,18 +388,112 @@ export default function TabStudents({ courseId }) {
       const fresh = await getCourseStudents(courseId);
       setStudents(fresh || []);
 
+      const created = results.filter((item) => item.status === "created").length;
+      const enrolled = results.filter((item) => item.status === "existing").length;
+      const already = results.filter((item) => item.status === "already_enrolled").length;
+      const failed = results.filter((item) => item.status === "error").length;
+
       await Swal.fire({
-        icon: "success",
-        title: "Bulk add completed",
-        text: "Student list has been updated.",
-        timer: 1400,
-        showConfirmButton: false,
+        icon: failed ? "warning" : "success",
+        title: "Student import completed",
+        html: `
+          <div style="text-align:left">
+            <p>New accounts created: <b>${created}</b></p>
+            <p>Existing accounts enrolled: <b>${enrolled}</b></p>
+            <p>Already enrolled: <b>${already}</b></p>
+            ${bulkPreview.duplicateRolls.length ? `<p>Duplicate pasted rolls ignored: <b>${bulkPreview.duplicateRolls.length}</b></p>` : ""}
+            ${bulkPreview.invalidLines.length ? `<p>Unreadable pasted rows ignored: <b>${bulkPreview.invalidLines.length}</b></p>` : ""}
+            ${failed ? `<p>Rows failed on server: <b>${failed}</b></p>` : ""}
+          </div>
+        `,
       });
     } catch (err) {
       console.error(err);
       setBulkError(err?.response?.data?.message || "Failed to bulk add students");
     } finally {
       setBulkLoading(false);
+    }
+  };
+
+  const openEditStudent = (student) => {
+    setEditStudent(student);
+    setEditForm({
+      roll: student?.roll || "",
+      name: student?.name || "",
+      email: student?.email || "",
+    });
+    setEditError("");
+  };
+
+  const closeEditStudent = () => {
+    if (editSaving) return;
+    setEditStudent(null);
+    setEditError("");
+  };
+
+  const handleEditStudent = async (e) => {
+    e.preventDefault();
+    if (!editStudent?.id) return;
+
+    const payload = {
+      roll: editForm.roll.trim(),
+      name: editForm.name.trim(),
+      email: editForm.email.trim(),
+    };
+
+    if (!payload.roll || !payload.name) {
+      setEditError("Roll and name are required.");
+      return;
+    }
+
+    const rollChanged = payload.roll !== String(editStudent.roll || "").trim();
+    if (rollChanged) {
+      const confirm = await Swal.fire({
+        icon: "warning",
+        title: "Change student roll?",
+        html: `<div style="text-align:left"><p>The roll is also this student's login username.</p><p style="margin-top:8px">Changing <b>${editStudent.roll}</b> to <b>${payload.roll}</b> will update the student's login and linked attendance records.</p></div>`,
+        showCancelButton: true,
+        confirmButtonText: "Change Roll",
+        cancelButtonText: "Cancel",
+        confirmButtonColor: "#4f46e5",
+      });
+      if (!confirm.isConfirmed) return;
+    }
+
+    setEditSaving(true);
+    setEditError("");
+    try {
+      const result = await updateCourseStudentRequest(courseId, editStudent.id, payload);
+      const updated = result.student;
+
+      setStudents((prev) =>
+        prev.map((item) =>
+          String(item.id) === String(updated.id)
+            ? {
+                ...item,
+                roll: updated.roll,
+                name: updated.name,
+                email: updated.email,
+              }
+            : item
+        )
+      );
+      setEditStudent(null);
+
+      await Swal.fire({
+        icon: "success",
+        title: "Student updated",
+        text: rollChanged
+          ? "Student information and login roll were updated successfully."
+          : "Student information was updated successfully.",
+        timer: 1500,
+        showConfirmButton: false,
+      });
+    } catch (err) {
+      console.error(err);
+      setEditError(err?.response?.data?.message || "Failed to update student details.");
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -486,7 +817,7 @@ export default function TabStudents({ courseId }) {
                 Bulk Add Students
               </h4>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                One per line: <span className="font-mono">Roll, Name, Email(optional)</span>
+                Paste from Excel/portal: <span className="font-mono">Roll · Name · Status/Email</span>
               </p>
             </div>
           </div>
@@ -497,8 +828,23 @@ export default function TabStudents({ courseId }) {
               className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
               value={bulkText}
               onChange={(e) => setBulkText(e.target.value)}
-              placeholder={"20254101401, Mahbub Sarwar\n20254101402, Mirza, mirza@example.com"}
+              placeholder={"20255203042\tMd. Rakib\tRegular\n20255203043\tMd. Sabbir Hossain\tRegular"}
             />
+
+            {bulkText.trim() && (
+              <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                <PreviewChip tone="success" label="Detected" value={bulkPreview.students.length} />
+                {bulkPreview.duplicateRolls.length > 0 && (
+                  <PreviewChip tone="warning" label="Duplicate rolls ignored" value={bulkPreview.duplicateRolls.length} />
+                )}
+                {bulkPreview.invalidLines.length > 0 && (
+                  <PreviewChip tone="danger" label="Unreadable rows" value={bulkPreview.invalidLines.length} />
+                )}
+                <span className="self-center text-slate-500 dark:text-slate-400">
+                  Columns such as Regular/Retake are ignored automatically.
+                </span>
+              </div>
+            )}
 
             {bulkError && <Alert tone="danger" title="Invalid input" message={bulkError} />}
 
@@ -755,6 +1101,16 @@ export default function TabStudents({ courseId }) {
               </button> */}
 
               <button
+                type="button"
+                onClick={openCopyStudentsModal}
+                className="inline-flex items-center gap-2 rounded-2xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700"
+                title="Enroll the same students from one of your other courses"
+              >
+                <CopyUsersIcon />
+                Copy from Course
+              </button>
+
+              <button
                 onClick={handleRegenerateAll}
                 disabled={regenAllLoading || students.length === 0}
                 className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-60"
@@ -866,6 +1222,16 @@ export default function TabStudents({ courseId }) {
                       <td className="px-4 py-3 text-right">
                         <div className="inline-flex flex-wrap justify-end gap-2">
                           <button
+                            type="button"
+                            onClick={() => openEditStudent(s)}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-sky-200 bg-white text-sky-700 transition hover:bg-sky-50 dark:border-sky-500/20 dark:bg-slate-900 dark:text-sky-300 dark:hover:bg-sky-500/10"
+                            title="Edit student details"
+                            aria-label={`Edit ${s.name}`}
+                          >
+                            <EditIcon />
+                          </button>
+
+                          <button
                             onClick={() => handleRegenerate(s.id, s.enrollmentId)}
                             disabled={regenLoadingId === s.enrollmentId}
                             className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-50 disabled:opacity-60 dark:border-indigo-500/20 dark:bg-slate-900 dark:text-indigo-300 dark:hover:bg-indigo-500/10"
@@ -902,6 +1268,220 @@ export default function TabStudents({ courseId }) {
           )}
         </div>
       </div>
+
+      {editStudent && (
+        <div
+          className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeEditStudent();
+          }}
+        >
+          <form
+            onSubmit={handleEditStudent}
+            className="w-full max-w-lg overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+          >
+            <div className="flex items-start justify-between border-b border-slate-100 bg-gradient-to-r from-sky-50 via-white to-indigo-50 px-6 py-5 dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/30">
+              <div className="flex gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-100 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
+                  <EditIcon />
+                </div>
+                <div>
+                  <h4 className="text-base font-bold text-slate-900 dark:text-slate-100">Edit Student</h4>
+                  <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                    Update the student account used across enrolled courses.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeEditStudent}
+                className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                aria-label="Close"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+
+            <div className="space-y-4 p-6">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Roll / Login Username">
+                  <input
+                    value={editForm.roll}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, roll: e.target.value }))}
+                    inputMode="numeric"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                    required
+                  />
+                </Field>
+                <Field label="Student Name">
+                  <input
+                    value={editForm.name}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                    required
+                  />
+                </Field>
+              </div>
+
+              <Field label="Email (optional)">
+                <input
+                  type="email"
+                  value={editForm.email}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, email: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                />
+              </Field>
+
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+                Changing the roll also changes this student's portal login username. Existing attendance roll snapshots are updated automatically.
+              </div>
+
+              {editError && <Alert title="Could not update student" message={editError} />}
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50 px-6 py-4 dark:border-slate-800 dark:bg-slate-950/60">
+              <button
+                type="button"
+                onClick={closeEditStudent}
+                disabled={editSaving}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={editSaving}
+                className="inline-flex items-center gap-2 rounded-2xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:opacity-60"
+              >
+                {editSaving ? <><SpinnerIcon /> Saving...</> : <><EditIcon /> Save Student</>}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {copyModalOpen && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeCopyStudentsModal();
+          }}
+        >
+          <div className="w-full max-w-lg overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+            <div className="flex items-start justify-between border-b border-slate-100 px-6 py-5 dark:border-slate-800">
+              <div className="flex gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
+                  <CopyUsersIcon className="h-5 w-5" />
+                </div>
+                <div>
+                  <h4 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                    Copy Students from Another Course
+                  </h4>
+                  <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                    Choose a semester, then a course. Existing student accounts will simply be enrolled in this course.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeCopyStudentsModal}
+                className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                aria-label="Close"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+
+            <div className="space-y-4 p-6">
+              {copyCoursesLoading ? (
+                <div className="flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 py-10 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400">
+                  <SpinnerIcon /> Loading courses...
+                </div>
+              ) : copyCourses.length === 0 ? (
+                <Alert title="No source course available" message="No other active or archived course was found in your account." />
+              ) : (
+                <>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Semester">
+                      <select
+                        value={copySemester}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setCopySemester(value);
+                          const first = copyCourses
+                            .filter((course) => semesterLabel(course) === value)
+                            .sort((a, b) => String(a.code || "").localeCompare(String(b.code || "")))[0];
+                          setCopySourceCourseId(first?.id ? String(first.id) : "");
+                          setCopySourceCount(null);
+                        }}
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                      >
+                        {copySemesterOptions.map((item) => (
+                          <option key={item} value={item}>{item}</option>
+                        ))}
+                      </select>
+                    </Field>
+
+                    <Field label="Course">
+                      <select
+                        value={copySourceCourseId}
+                        onChange={(e) => {
+                          setCopySourceCourseId(e.target.value);
+                          setCopySourceCount(null);
+                        }}
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                      >
+                        {coursesForSelectedSemester.map((course) => (
+                          <option key={course.id} value={course.id}>
+                            {course.code} · Sec {course.section}{course.intake ? ` · Intake ${course.intake}` : ""}{course.archived ? " · Archived" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+
+                  <div className="rounded-2xl border border-sky-100 bg-sky-50/70 p-4 dark:border-sky-500/20 dark:bg-sky-500/10">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-300">Students found</p>
+                        <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-slate-100">
+                          {copySourceLoading ? "…" : copySourceCount ?? "—"}
+                        </p>
+                      </div>
+                      <CopyUsersIcon className="h-7 w-7" />
+                    </div>
+                    <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-slate-400">
+                      Only enrollments are copied. Marks, attendance, OBE data and temporary passwords stay separate for each course.
+                    </p>
+                  </div>
+                </>
+              )}
+
+              {copyError && <Alert title="Could not copy students" message={copyError} />}
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50 px-6 py-4 dark:border-slate-800 dark:bg-slate-950/60">
+              <button
+                type="button"
+                onClick={closeCopyStudentsModal}
+                disabled={copyLoading}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleCopyStudents}
+                disabled={copyLoading || copyCoursesLoading || !copySourceCourseId || copySourceCount === 0}
+                className="inline-flex items-center gap-2 rounded-2xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:opacity-60"
+              >
+                {copyLoading ? <><SpinnerIcon /> Copying...</> : <><CopyUsersIcon /> Copy Students</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -928,6 +1508,19 @@ function Alert({ tone = "danger", title, message }) {
       <div className="font-semibold">{title}</div>
       <div className="mt-0.5 opacity-90">{message}</div>
     </div>
+  );
+}
+
+function PreviewChip({ tone = "success", label, value }) {
+  const styles = {
+    success: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300",
+    warning: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300",
+    danger: "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300",
+  };
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-semibold ${styles[tone] || styles.success}`}>
+      {label}: <strong>{value}</strong>
+    </span>
   );
 }
 
@@ -1024,6 +1617,35 @@ function UserPlusIconSmall() {
       <path d="M12 11a4 4 0 1 0-4-4 4 4 0 0 0 4 4z" />
       <path d="M19 8h4" />
       <path d="M21 6v4" />
+    </svg>
+  );
+}
+
+function CopyUsersIcon({ className = "h-4 w-4" }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M16 21a6 6 0 0 0-12 0" />
+      <circle cx="10" cy="8" r="4" />
+      <path d="M18 8h5" />
+      <path d="m20.5 5.5 2.5 2.5-2.5 2.5" />
+    </svg>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M6 6l12 12" />
+      <path d="M18 6 6 18" />
     </svg>
   );
 }

@@ -48,3 +48,9 @@ export const fetchStudentAttendanceSheet = async (courseId) => {
   const res = await api.get("/attendance/student-sheet", { params: { courseId } });
   return res.data;
 };
+
+// Copy one saved period attendance to another date/period.
+export const copyAttendancePeriod = async (payload) => {
+  const res = await api.post("/attendance/copy", payload);
+  return res.data;
+};

@@ -35,61 +35,48 @@ export default function TeacherCourseLayout({
   ];
 
   return (
-    <div className="mx-auto space-y-4 sm:space-y-6">
-      <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:rounded-3xl">
-        <div className="absolute inset-0 bg-gradient-to-br from-white via-slate-50 to-indigo-50/70 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/40" />
-        <div className="absolute -right-20 -top-20 h-56 w-56 rounded-full bg-indigo-200/40 blur-3xl dark:bg-indigo-500/10" />
-        <div className="absolute -left-16 -bottom-20 h-56 w-56 rounded-full bg-sky-200/40 blur-3xl dark:bg-sky-500/10" />
-
-        <div className="relative p-4 sm:p-5 md:p-7 xl:p-8">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+    <div className="mx-auto space-y-4">
+      <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="absolute inset-0 bg-gradient-to-r from-white via-slate-50 to-indigo-50/70 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/30" />
+        <div className="relative p-4 sm:p-5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0">
-              <div className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur-sm dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200 sm:inline-flex">
-                <BookIcon />
-                Course Dashboard
-              </div>
-
-              <h2 className="mt-0 text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:mt-3 sm:text-2xl md:text-3xl">
-                {course?.code || "Course Code"}{" "}
-                <span className="text-slate-300 dark:text-slate-600">—</span>{" "}
-                <span className="break-words sm:inline">{course?.title || "Untitled Course"}</span>
-              </h2>
-
-              <div className="mt-3 hidden flex-wrap items-center gap-2 sm:flex">
-                <Pill label={`Section: ${course?.section || "-"}`} />
-                <Pill label={`Semester: ${course?.semester || "-"}`} />
-                <Pill label={`Year: ${course?.year || "-"}`} />
-                <span
-                  className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${typeBadge}`}
-                >
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:text-2xl">
+                  {course?.code || "Course Code"}
+                  <span className="mx-2 text-slate-300 dark:text-slate-600">—</span>
+                  <span className="break-words">{course?.title || "Untitled Course"}</span>
+                </h2>
+                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${typeBadge}`}>
                   {typeLabel}
                 </span>
+              </div>
+
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <Pill label={`Sec ${course?.section || "-"}`} />
+                {course?.intake && <Pill label={`Intake ${course.intake}`} />}
+                <Pill label={`${course?.semester || "-"} ${course?.year || "-"}`} />
                 {isProjectMode && (
-                  <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
-                    Project Workflow Active
+                  <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
+                    Project Workflow
                   </span>
                 )}
               </div>
-
-              <p className="mt-4 hidden text-sm leading-6 text-slate-500 dark:text-slate-400 sm:block">
-                Manage course marks, assessments, submissions, OBE, students, attendance, and project workflow from one organized workspace.
-              </p>
             </div>
 
-            <div className="hidden flex-wrap gap-3 xl:justify-end sm:flex">
+            <div className="hidden shrink-0 items-center gap-2 sm:flex">
               <button
                 type="button"
                 onClick={() => navigate("/teacher/courses")}
-                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
               >
                 <ArrowLeftIcon />
-                Back to Courses
+                Courses
               </button>
-
               <button
                 type="button"
                 onClick={() => navigate("/teacher/dashboard")}
-                className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-700"
+                className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-700"
               >
                 <HomeIcon />
                 Dashboard
@@ -97,32 +84,23 @@ export default function TeacherCourseLayout({
             </div>
           </div>
 
-          <div className="mt-4 border-t border-slate-200/70 pt-4 dark:border-slate-800 sm:mt-6 sm:pt-5">
+          <div className="mt-4 border-t border-slate-200/70 pt-3 dark:border-slate-800">
             <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
               {tabs.map((tab) => {
                 const isActive = activeTab === tab.id;
-
                 return (
                   <button
                     key={tab.id}
                     type="button"
                     onClick={() => setActiveTab(tab.id)}
                     className={[
-                      "group inline-flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold border transition-all duration-200 sm:rounded-2xl sm:px-4 sm:py-2.5 sm:text-sm",
+                      "group inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition-all duration-200",
                       isActive
                         ? "border-indigo-600 bg-indigo-600 text-white shadow-sm shadow-indigo-600/20"
                         : "border-slate-200 bg-white/85 text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-700/80",
                     ].join(" ")}
                   >
-                    <span
-                      className={
-                        isActive
-                          ? "text-white"
-                          : "text-slate-500 transition group-hover:text-slate-700 dark:text-slate-400 dark:group-hover:text-slate-200"
-                      }
-                    >
-                      {tab.icon}
-                    </span>
+                    <span className={isActive ? "text-white" : "text-slate-500 dark:text-slate-400"}>{tab.icon}</span>
                     <span>{tab.label}</span>
                   </button>
                 );
@@ -132,17 +110,14 @@ export default function TeacherCourseLayout({
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:rounded-3xl">
-        <div className="border-b border-slate-100 px-4 py-3 dark:border-slate-800 sm:px-5 sm:py-4">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="border-b border-slate-100 px-4 py-2.5 dark:border-slate-800 sm:px-5">
           <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
             {tabs.find((t) => t.id === activeTab)?.label || "Course Content"}
           </div>
-          <div className="mt-1 hidden text-xs text-slate-500 dark:text-slate-400 sm:block">
-            Work with the selected course section below.
-          </div>
         </div>
 
-        <div className="p-3 sm:p-5 md:p-6">{children}</div>
+        <div className="p-3 sm:p-4 md:p-5">{children}</div>
       </div>
     </div>
   );
@@ -150,7 +125,7 @@ export default function TeacherCourseLayout({
 
 function Pill({ label }) {
   return (
-    <span className="inline-flex items-center rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+    <span className="inline-flex items-center rounded-full border border-slate-200 bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
       {label}
     </span>
   );

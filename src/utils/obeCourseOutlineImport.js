@@ -16,13 +16,14 @@ const safeText = (value) =>
 
 const normalizeSpaces = (value) =>
   safeText(value)
-    .replace(/[\u00a0\t]+/g, " ")
+    .replace(/[\u00a0\t\f]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
 const stripPageArtifacts = (value) =>
   normalizeSpaces(value)
     .replace(/\b\d+\s*\|\s*Page\b/gi, " ")
+    .replace(/\bPage\s*\|?\s*\d+\b/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -35,6 +36,8 @@ const uniqueBy = (rows = [], keyBuilder) => {
   });
   return [...map.values()];
 };
+
+const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
 const getExistingStatement = (rows = [], code = "") =>
   safeText(
@@ -60,7 +63,7 @@ const findSection = (text, startPatterns = [], endPatterns = []) => {
   for (const pattern of startPatterns) {
     const match = source.match(pattern);
     if (!match) continue;
-    if (!startMatch || match.index < startMatch.index) startMatch = match;
+    if (!startMatch || Number(match.index) < Number(startMatch.index)) startMatch = match;
   }
 
   if (!startMatch) return "";
@@ -81,7 +84,7 @@ const cleanCoSection = (section) =>
   String(section || "")
     .split(/\r?\n/)
     .map((line) =>
-      line.replace(/^\s*(?:Learning|Outcomes|\(CLOs?\))\s{2,}/i, "")
+      line.replace(/^\s*(?:Learning|Outcomes|\(CLOs?\)|\(COs?\))\s{2,}/i, "")
     )
     .join("\n");
 
@@ -90,8 +93,9 @@ const parseCourseOutcomes = (text) => {
     findSection(
       text,
       [
-        /Upon\s+completing\s+this\s+course\s+students\s+will\s+be\s+able\s+to\s*:/i,
+        /Upon\s+completing\s+this\s+course\s*,?\s*students?\s+will\s+be\s+able\s+to\s*:/i,
         /Course\s+Learning\s+Outcomes\s*\(CLOs?\)/i,
+        /Course\s+Learning\s+Outcomes\s*\(COs?\)/i,
         /Course\s+Outcomes\s*\(COs?\)/i,
       ],
       [
@@ -103,15 +107,16 @@ const parseCourseOutcomes = (text) => {
   );
 
   const rows = [];
-  const regex = /\b(?:CLO|CO)\s*(\d+)\s*[:.]\s*([\s\S]*?)(?=\b(?:CLO|CO)\s*\d+\s*[:.]|$)/gi;
+  const regex =
+    /\b(?:CLO|CO)\s*(\d+)\s*(?::|\.|-|–|—)\s*([\s\S]*?)(?=\b(?:CLO|CO)\s*\d+\s*(?::|\.|-|–|—)|$)/gi;
   let match;
 
   while ((match = regex.exec(section))) {
     const code = `CO${Number(match[1])}`;
     let statement = stripPageArtifacts(match[2]);
     statement = statement
-      .replace(/^\s*(?:Learning|Outcomes|\(CLOs?\))\s+/i, "")
-      .replace(/\s+\(CLOs?\)\s*$/i, "")
+      .replace(/^\s*(?:Learning|Outcomes|\(CLOs?\)|\(COs?\))\s+/i, "")
+      .replace(/\s+\((?:CLO|CO)s?\)\s*$/i, "")
       .replace(/\bOutcomes\s+(?=terms\b)/i, "")
       .trim();
 
@@ -122,7 +127,7 @@ const parseCourseOutcomes = (text) => {
   return uniqueBy(rows, (row) => row.code);
 };
 
-const parseMappings = (text, currentSetup = {}) => {
+const parseMappingsFromText = (text, currentSetup = {}) => {
   const mappingText = findSection(
     text,
     [
@@ -152,9 +157,7 @@ const parseMappings = (text, currentSetup = {}) => {
     const before = mappingText.slice(Math.max(0, position - 180), position);
     const after = mappingText.slice(position, Math.min(mappingText.length, nextPosition));
 
-    const precedingPoMatches = [
-      ...before.matchAll(/\b(?:PLO|PO)\s*(\d+)\b/gi),
-    ];
+    const precedingPoMatches = [...before.matchAll(/\b(?:PLO|PO)\s*(\d+)\b/gi)];
     let poNumber = precedingPoMatches.at(-1)?.[1] || "";
 
     if (!poNumber) {
@@ -210,7 +213,8 @@ const parseAllPoStatements = (text) => {
   if (!section) return [];
 
   const rows = [];
-  const regex = /\b(?:PLO|PO)\s*(\d+)\s*[.:]\s*([\s\S]*?)(?=\b(?:PLO|PO)\s*\d+\s*[.:]|$)/gi;
+  const regex =
+    /\b(?:PLO|PO)\s*(\d+)\s*[.:]\s*([\s\S]*?)(?=\b(?:PLO|PO)\s*\d+\s*[.:]|$)/gi;
   let match;
 
   while ((match = regex.exec(section))) {
@@ -271,103 +275,7 @@ const parseCourseIdentity = (text) => {
   };
 };
 
-const parseCloAssessmentSection = (text, courseOutcomes = []) => {
-  const section = findSection(
-    text,
-    [
-      /\bCLO\s+Assessment\s+Criteria\b/i,
-      /\bCO\s+Assessment\s+Criteria\b/i,
-      /\bAssessment\s+of\s+CLOs?\b/i,
-    ],
-    [
-      /\bRubrics\b/i,
-      /\bAttainment\s+Criteria\b/i,
-      /\bFeedback\b/i,
-      /\bGrading\s+Policy\b/i,
-    ]
-  );
-
-  if (!section) return [];
-
-  const compact = normalizeSpaces(section);
-  const coCodesFromHeader = [];
-  [...compact.matchAll(/\bCLO\s*(\d+)\b/gi)].forEach((match) => {
-    const code = `CO${Number(match[1])}`;
-    if (!coCodesFromHeader.includes(code)) coCodesFromHeader.push(code);
-  });
-
-  const coCodes = coCodesFromHeader.length
-    ? coCodesFromHeader
-    : (courseOutcomes || []).map((row) => safeText(row.code).toUpperCase()).filter(Boolean);
-
-  if (!coCodes.length) return [];
-
-  const readRow = (startRegex, endRegex) => {
-    const startMatch = compact.match(startRegex);
-    if (!startMatch) return null;
-
-    const tail = compact.slice(Number(startMatch.index || 0) + startMatch[0].length);
-    const endMatch = tail.match(endRegex);
-    const rowText = endMatch ? tail.slice(0, Number(endMatch.index || 0)) : tail;
-    const numbers = (rowText.match(/\b\d+(?:\.\d+)?\b/g) || []).map(Number);
-
-    if (numbers.length < coCodes.length) return null;
-    const allocations = numbers.slice(0, coCodes.length);
-    const explicitTotal = numbers[coCodes.length];
-    const totalMarks = Number.isFinite(explicitTotal)
-      ? explicitTotal
-      : allocations.reduce((sum, value) => sum + Number(value || 0), 0);
-
-    return { allocations, totalMarks };
-  };
-
-  const definitions = [
-    {
-      assessmentType: "mid",
-      assessmentName: "Mid Term",
-      startRegex: /\b(?:Lab\s+)?Mid(?:term)?\s+(?:Exam(?:ination)?|Examination)\b/i,
-      endRegex: /\b(?:Lab\s+)?Final\s+(?:Exam(?:ination)?|Examination)\b/i,
-    },
-    {
-      assessmentType: "final",
-      assessmentName: "Final",
-      startRegex: /\b(?:Lab\s+)?Final\s+(?:Exam(?:ination)?|Examination)\b/i,
-      endRegex: /\bTotal\s+Mark\b/i,
-    },
-  ];
-
-  const blueprints = [];
-  definitions.forEach((definition) => {
-    const parsed = readRow(definition.startRegex, definition.endRegex);
-    if (!parsed) return;
-
-    const items = parsed.allocations
-      .map((marks, index) => ({ marks: Number(marks || 0), coCode: coCodes[index] }))
-      .filter((row) => row.marks > 0 && row.coCode)
-      .map((row, index) => ({
-        key: `q${index + 1}`,
-        label: row.coCode,
-        marks: row.marks,
-        coCode: row.coCode,
-        order: index,
-      }));
-
-    if (!items.length) return;
-
-    const itemTotal = items.reduce((sum, item) => sum + Number(item.marks || 0), 0);
-    blueprints.push({
-      assessmentName: definition.assessmentName,
-      assessmentType: definition.assessmentType,
-      totalMarks: parsed.totalMarks > 0 ? parsed.totalMarks : itemTotal,
-      notes: "",
-      items,
-    });
-  });
-
-  return blueprints;
-};
-
-const mergeTextItemsToLines = (items = []) => {
+const positionItemsToRows = (items = []) => {
   const rows = [];
   const positioned = (Array.isArray(items) ? items : [])
     .filter((item) => safeText(item?.str))
@@ -412,24 +320,378 @@ const mergeTextItemsToLines = (items = []) => {
         previousEnd = item.x + item.width;
       });
 
-      return line.trim();
+      return {
+        y: row.y,
+        items: ordered,
+        text: line.trim(),
+      };
     })
-    .filter(Boolean);
+    .filter((row) => row.text);
 };
 
-const extractPdfText = async (file) => {
+const extractPdfDocument = async (file) => {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
   const pages = [];
+  const textPages = [];
 
   for (let pageNo = 1; pageNo <= pdf.numPages; pageNo += 1) {
     const page = await pdf.getPage(pageNo);
     const content = await page.getTextContent({ normalizeWhitespace: true });
-    const lines = mergeTextItemsToLines(content.items);
-    pages.push(lines.join("\n"));
+    const rows = positionItemsToRows(content.items);
+    pages.push({ pageNo, rows });
+    textPages.push(rows.map((row) => row.text).join("\n"));
   }
 
-  return pages.join("\n\n");
+  return {
+    text: textPages.join("\n\n"),
+    pages,
+  };
+};
+
+const codeFromToken = (value, type = "co") => {
+  const normalized = safeText(value).replace(/[.:]/g, "").toUpperCase();
+  const regex = type === "po" ? /^(?:PLO|PO)\s*(\d+)$/ : /^(?:CLO|CO)\s*(\d+)$/;
+  const match = normalized.match(regex);
+  if (!match) return "";
+  return `${type === "po" ? "PO" : "CO"}${Number(match[1])}`;
+};
+
+const parseMappingsFromPages = (pages = [], currentSetup = {}) => {
+  const mappings = [];
+
+  for (const page of pages || []) {
+    const rows = page?.rows || [];
+    const headingIndex = rows.findIndex((row) =>
+      /\bMapping\s+of\s+(?:CLO|CO)\s*[–—-]\s*(?:PLO|PO)\b/i.test(row.text)
+    );
+    if (headingIndex < 0) continue;
+
+    let endIndex = rows.findIndex(
+      (row, index) =>
+        index > headingIndex &&
+        /\bCorrelation\s+of\s+(?:CLO|CO)s?\s+to\s+(?:PLO|PO)s?\b/i.test(row.text)
+    );
+    if (endIndex < 0) endIndex = rows.length;
+
+    const sectionRows = rows.slice(headingIndex + 1, endIndex);
+    const poCandidates = [];
+
+    sectionRows.forEach((row) => {
+      row.items.forEach((item) => {
+        const code = codeFromToken(item.text, "po");
+        if (code) poCandidates.push({ code, y: row.y, x: item.x });
+      });
+    });
+
+    sectionRows.forEach((row) => {
+      row.items.forEach((item) => {
+        const coCode = codeFromToken(item.text, "co");
+        if (!coCode) return;
+
+        const nearestPo = poCandidates
+          .map((candidate) => ({
+            ...candidate,
+            distance: Math.abs(candidate.y - row.y),
+          }))
+          .filter((candidate) => candidate.distance <= 18)
+          .sort((a, b) => a.distance - b.distance)[0];
+
+        if (!nearestPo) return;
+
+        const cfRows = sectionRows
+          .map((candidate) => ({
+            row: candidate,
+            distance: Math.abs(candidate.y - row.y),
+          }))
+          .filter((candidate) => candidate.distance <= 18)
+          .sort((a, b) => a.distance - b.distance);
+
+        let importedStrength = null;
+        for (const candidate of cfRows) {
+          const match = normalizeSpaces(candidate.row.text).match(/\bCF\s*=?\s*([0-3])\b/i);
+          if (match) {
+            importedStrength = Number(match[1]);
+            break;
+          }
+        }
+
+        if (importedStrength === 0) return;
+        const existingStrength = getExistingMappingStrength(
+          currentSetup.mappings,
+          coCode,
+          nearestPo.code
+        );
+        const strength = [1, 2, 3].includes(importedStrength)
+          ? importedStrength
+          : existingStrength || 1;
+
+        mappings.push({
+          coCode,
+          targetType: "PO",
+          targetCode: nearestPo.code,
+          strength,
+        });
+      });
+    });
+  }
+
+  return uniqueBy(
+    mappings,
+    (row) => `${row.coCode}__${row.targetType}__${row.targetCode}`
+  );
+};
+
+const classifyAssessmentRow = (value) => {
+  const text = normalizeSpaces(value);
+  if (
+    /\b(?:Lab\s+)?Mid(?:term|\s*Term)?\s*(?:Lab\s*)?(?:Exam(?:ination)?)\b/i.test(text)
+  ) {
+    return { assessmentType: "mid", assessmentName: "Mid Term" };
+  }
+
+  if (
+    /\bFinal\b[\s\S]*\b(?:Exam(?:ination)?|Project(?:\s+Evaluation)?|Evaluation(?:\s*&\s*Report)?)\b/i.test(
+      text
+    )
+  ) {
+    return { assessmentType: "final", assessmentName: "Final" };
+  }
+
+  return null;
+};
+
+const numericCellValue = (value) => {
+  const text = safeText(value).replace(/,/g, "");
+  if (!/^\d+(?:\.\d+)?$/.test(text)) return null;
+  const numeric = Number(text);
+  return Number.isFinite(numeric) ? numeric : null;
+};
+
+const parseCloAssessmentFromPages = (pages = [], courseOutcomes = []) => {
+  const blueprints = [];
+  const warnings = [];
+  const validCoCodes = new Set(
+    (courseOutcomes || []).map((row) => safeText(row?.code).toUpperCase()).filter(Boolean)
+  );
+
+  for (const page of pages || []) {
+    const rows = page?.rows || [];
+    const startIndex = rows.findIndex(
+      (row) =>
+        /\bCLO\s+Assessment\b/i.test(row.text) ||
+        /\bCO\s+Assessment\b/i.test(row.text) ||
+        /\bAssessment\s+of\s+(?:CLO|CO)s?\b/i.test(row.text)
+    );
+    if (startIndex < 0) continue;
+
+    let endIndex = rows.findIndex(
+      (row, index) => index > startIndex && /\bRubrics\b/i.test(row.text)
+    );
+    if (endIndex < 0) endIndex = rows.length;
+
+    const sectionRows = rows.slice(startIndex, endIndex);
+    const assessmentRows = sectionRows
+      .map((row, index) => ({ row, index, type: classifyAssessmentRow(row.text) }))
+      .filter((entry) => entry.type);
+
+    if (!assessmentRows.length) continue;
+
+    const firstAssessmentIndex = Math.min(...assessmentRows.map((entry) => entry.index));
+    const headerRows = sectionRows.slice(0, firstAssessmentIndex);
+    const headerMap = new Map();
+
+    headerRows.forEach((row) => {
+      row.items.forEach((item) => {
+        const code = codeFromToken(item.text, "co");
+        if (!code || headerMap.has(code)) return;
+        headerMap.set(code, { code, x: item.x });
+      });
+    });
+
+    const coHeaders = [...headerMap.values()].sort((a, b) => a.x - b.x);
+    if (!coHeaders.length) continue;
+
+    const gaps = [];
+    for (let index = 1; index < coHeaders.length; index += 1) {
+      gaps.push(coHeaders[index].x - coHeaders[index - 1].x);
+    }
+    const minGap = gaps.length ? Math.min(...gaps.filter((gap) => gap > 0)) : 60;
+    const xTolerance = Math.max(18, Math.min(38, minGap * 0.45));
+    const lastHeaderX = coHeaders.at(-1)?.x || 0;
+
+    assessmentRows.forEach(({ row, type }) => {
+      const numericItems = row.items
+        .map((item) => ({ item, value: numericCellValue(item.text) }))
+        .filter((entry) => entry.value !== null);
+
+      if (!numericItems.length) return;
+
+      const allocations = coHeaders.map((header) => {
+        const nearest = numericItems
+          .map((entry) => ({
+            ...entry,
+            distance: Math.abs(entry.item.x - header.x),
+          }))
+          .filter((entry) => entry.distance <= xTolerance)
+          .sort((a, b) => a.distance - b.distance)[0];
+        return nearest ? Number(nearest.value) : 0;
+      });
+
+      const totalCandidates = numericItems
+        .filter((entry) => entry.item.x > lastHeaderX + xTolerance)
+        .sort((a, b) => b.item.x - a.item.x);
+      const explicitTotal = totalCandidates.length ? Number(totalCandidates[0].value) : null;
+      const itemTotal = round2(allocations.reduce((sum, marks) => sum + Number(marks || 0), 0));
+      const totalMarks = Number.isFinite(explicitTotal) ? round2(explicitTotal) : itemTotal;
+
+      const positiveUnknownCodes = coHeaders
+        .map((header, index) => ({ code: header.code, marks: Number(allocations[index] || 0) }))
+        .filter((entry) => entry.marks > 0 && validCoCodes.size && !validCoCodes.has(entry.code));
+
+      if (positiveUnknownCodes.length) {
+        warnings.push(
+          `${type.assessmentName} was not imported because the CLO assessment table uses ${positiveUnknownCodes
+            .map((entry) => entry.code)
+            .join(", ")}, but those outcomes are not defined in the Course Learning Outcomes section.`
+        );
+        return;
+      }
+
+      if (totalMarks > 0 && Math.abs(totalMarks - itemTotal) > 0.01) {
+        warnings.push(
+          `${type.assessmentName} was not imported because its CLO allocations add up to ${itemTotal}, while the outline lists ${totalMarks} as the assessment total. Please correct that allocation in the outline or create the blueprint manually.`
+        );
+        return;
+      }
+
+      const items = coHeaders
+        .map((header, index) => ({
+          marks: round2(allocations[index]),
+          coCode: header.code,
+        }))
+        .filter((entry) => entry.marks > 0 && entry.coCode)
+        .map((entry, index) => ({
+          key: `q${index + 1}`,
+          label: entry.coCode,
+          marks: entry.marks,
+          coCode: entry.coCode,
+          order: index,
+        }));
+
+      if (!items.length || totalMarks <= 0) return;
+
+      blueprints.push({
+        assessmentName: type.assessmentName,
+        assessmentType: type.assessmentType,
+        totalMarks,
+        notes: "",
+        items,
+      });
+    });
+  }
+
+  return {
+    blueprints: uniqueBy(blueprints, (row) => row.assessmentType),
+    warnings,
+  };
+};
+
+const parseCloAssessmentFromText = (text, courseOutcomes = []) => {
+  const section = findSection(
+    text,
+    [
+      /\bCLO\s+Assessment\s+Criteria\b/i,
+      /\bCO\s+Assessment\s+Criteria\b/i,
+      /\bAssessment\s+of\s+CLOs?\b/i,
+    ],
+    [
+      /\bRubrics\b/i,
+      /\bAttainment\s+Criteria\b/i,
+      /\bFeedback\b/i,
+      /\bGrading\s+Policy\b/i,
+    ]
+  );
+
+  if (!section) return { blueprints: [], warnings: [] };
+
+  const compact = normalizeSpaces(section);
+  const coCodesFromHeader = [];
+  [...compact.matchAll(/\bCLO\s*(\d+)\b/gi)].forEach((match) => {
+    const code = `CO${Number(match[1])}`;
+    if (!coCodesFromHeader.includes(code)) coCodesFromHeader.push(code);
+  });
+
+  const coCodes = coCodesFromHeader.length
+    ? coCodesFromHeader
+    : (courseOutcomes || []).map((row) => safeText(row.code).toUpperCase()).filter(Boolean);
+
+  if (!coCodes.length) return { blueprints: [], warnings: [] };
+
+  const definitions = [
+    {
+      assessmentType: "mid",
+      assessmentName: "Mid Term",
+      startRegex: /\b(?:Lab\s+)?Mid(?:term|\s*Term)?\s*(?:Lab\s*)?(?:Exam(?:ination)?)\b/i,
+      endRegex: /\bFinal\b[\s\S]*?\b(?:Exam(?:ination)?|Project|Evaluation)\b/i,
+    },
+    {
+      assessmentType: "final",
+      assessmentName: "Final",
+      startRegex: /\bFinal\b[\s\S]*?\b(?:Exam(?:ination)?|Project(?:\s+Evaluation)?|Evaluation(?:\s*&\s*Report)?)\b/i,
+      endRegex: /\bTotal\s+Marks?\b/i,
+    },
+  ];
+
+  const blueprints = [];
+  const warnings = [];
+
+  definitions.forEach((definition) => {
+    const startMatch = compact.match(definition.startRegex);
+    if (!startMatch) return;
+
+    const tail = compact.slice(Number(startMatch.index || 0) + startMatch[0].length);
+    const endMatch = tail.match(definition.endRegex);
+    const rowText = endMatch ? tail.slice(0, Number(endMatch.index || 0)) : tail;
+    const numbers = (rowText.match(/\b\d+(?:\.\d+)?\b/g) || []).map(Number);
+
+    // Text-only parsing cannot know where blank CLO cells were. Only use it when
+    // every CLO cell plus the total is explicitly represented in the extracted text.
+    if (numbers.length < coCodes.length + 1) return;
+
+    const allocations = numbers.slice(0, coCodes.length);
+    const totalMarks = round2(numbers[coCodes.length]);
+    const itemTotal = round2(allocations.reduce((sum, value) => sum + Number(value || 0), 0));
+
+    if (totalMarks > 0 && Math.abs(totalMarks - itemTotal) > 0.01) {
+      warnings.push(
+        `${definition.assessmentName} was not imported because its CLO allocations add up to ${itemTotal}, while the outline lists ${totalMarks} as the assessment total.`
+      );
+      return;
+    }
+
+    const items = allocations
+      .map((marks, index) => ({ marks: Number(marks || 0), coCode: coCodes[index] }))
+      .filter((row) => row.marks > 0 && row.coCode)
+      .map((row, index) => ({
+        key: `q${index + 1}`,
+        label: row.coCode,
+        marks: row.marks,
+        coCode: row.coCode,
+        order: index,
+      }));
+
+    if (!items.length) return;
+    blueprints.push({
+      assessmentName: definition.assessmentName,
+      assessmentType: definition.assessmentType,
+      totalMarks: totalMarks || itemTotal,
+      notes: "",
+      items,
+    });
+  });
+
+  return { blueprints, warnings };
 };
 
 export const parseObeCourseOutlinePdf = async (file, currentSetup = {}) => {
@@ -438,17 +700,45 @@ export const parseObeCourseOutlinePdf = async (file, currentSetup = {}) => {
     throw new Error("Course outline import currently supports PDF files.");
   }
 
-  const text = await extractPdfText(file);
+  const extracted = await extractPdfDocument(file);
+  const text = extracted.text;
   if (!normalizeSpaces(text)) {
     throw new Error("No readable text was found in this PDF.");
   }
 
   const courseOutcomes = parseCourseOutcomes(text);
-  const mappings = parseMappings(text, currentSetup);
+  const spatialMappings = parseMappingsFromPages(extracted.pages, currentSetup);
+  const textMappings = spatialMappings.length
+    ? []
+    : parseMappingsFromText(text, currentSetup);
+  const rawMappings = spatialMappings.length ? spatialMappings : textMappings;
+
+  const knownCoCodes = new Set(courseOutcomes.map((row) => safeText(row.code).toUpperCase()));
+  const invalidMappingCoCodes = uniqueBy(
+    rawMappings
+      .filter((row) => knownCoCodes.size && !knownCoCodes.has(safeText(row.coCode).toUpperCase()))
+      .map((row) => ({ code: safeText(row.coCode).toUpperCase() })),
+    (row) => row.code
+  ).map((row) => row.code);
+
+  const mappings = rawMappings.filter(
+    (row) => !knownCoCodes.size || knownCoCodes.has(safeText(row.coCode).toUpperCase())
+  );
   const poStatements = parseUsedPoStatements(text, mappings, currentSetup);
-  const blueprints = parseCloAssessmentSection(text, courseOutcomes);
+
+  const spatialAssessments = parseCloAssessmentFromPages(extracted.pages, courseOutcomes);
+  const textAssessments = spatialAssessments.blueprints.length
+    ? { blueprints: [], warnings: [] }
+    : parseCloAssessmentFromText(text, courseOutcomes);
+  const blueprints = spatialAssessments.blueprints.length
+    ? spatialAssessments.blueprints
+    : textAssessments.blueprints;
+
   const identity = parseCourseIdentity(text);
-  const warnings = [];
+  const warnings = [
+    ...spatialAssessments.warnings,
+    ...textAssessments.warnings,
+  ];
 
   if (!courseOutcomes.length) {
     warnings.push("No CO/CLO statements were detected.");
@@ -456,12 +746,17 @@ export const parseObeCourseOutlinePdf = async (file, currentSetup = {}) => {
   if (!mappings.length) {
     warnings.push("No CO-PO mapping rows were detected.");
   }
+  if (invalidMappingCoCodes.length) {
+    warnings.push(
+      `Mapping rows for ${invalidMappingCoCodes.join(", ")} were ignored because those outcomes were not defined in the Course Learning Outcomes section.`
+    );
+  }
   if (mappings.length && !poStatements.length) {
     warnings.push("Mapped PO statements could not be read from the outline.");
   }
   if (!blueprints.length) {
     warnings.push(
-      "No Mid/Final CLO assessment allocation table was detected, so Assessment Blueprint cannot be auto-filled from this outline."
+      "No valid Mid/Final CLO assessment allocation could be imported. Blank CLO cells are now handled by their actual table positions; inconsistent allocation totals are left for manual correction instead of causing a 400 error."
     );
   }
 
@@ -487,7 +782,9 @@ export const parseObeCourseOutlinePdf = async (file, currentSetup = {}) => {
     sourceType: "course-outline-pdf",
     setup,
     blueprints,
-    warnings,
+    warnings: uniqueBy(warnings.map((message) => ({ message })), (row) => row.message).map(
+      (row) => row.message
+    ),
     detected: {
       ...identity,
       courseOutcomeCount: courseOutcomes.length,
@@ -495,6 +792,8 @@ export const parseObeCourseOutlinePdf = async (file, currentSetup = {}) => {
       mappingCount: mappings.length,
       assessmentCount: blueprints.length,
       usedPoCodes: poStatements.map((row) => row.code),
+      mappingParser: spatialMappings.length ? "table-position" : "text-fallback",
+      assessmentParser: spatialAssessments.blueprints.length ? "table-position" : "text-fallback",
     },
   };
 };

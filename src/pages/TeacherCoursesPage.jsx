@@ -398,84 +398,39 @@ export default function TeacherCoursesPage() {
   }, [courses, query, typeFilter]);
 
   return (
-    <div className="space-y-5 md:space-y-6 text-slate-900 dark:text-slate-100">
-      <section className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-br from-white via-slate-50 to-indigo-50 shadow-sm dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900">
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute -left-20 top-10 h-44 w-44 rounded-full bg-sky-200/40 blur-3xl dark:bg-sky-500/10" />
-          <div className="absolute right-0 top-0 h-56 w-56 rounded-full bg-violet-200/40 blur-3xl dark:bg-violet-500/10" />
-          <div className="absolute bottom-0 left-1/3 h-40 w-40 rounded-full bg-cyan-200/30 blur-3xl dark:bg-cyan-500/10" />
-        </div>
-
-        <div className="relative p-4 sm:p-5 md:p-6">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div className="min-w-0 flex-1">
-              <div className="inline-flex items-center gap-2 rounded-full border border-primary-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-primary-700 shadow-sm backdrop-blur dark:border-primary-900/50 dark:bg-slate-900/80 dark:text-primary-300">
-                <BookIcon />
-                Courses
-              </div>
-
-              <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+    <div className="space-y-4 text-slate-900 dark:text-slate-100">
+      <section className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-r from-white via-slate-50 to-indigo-50 shadow-sm dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/20">
+        <div className="relative p-4 sm:p-5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary-600 text-white shadow-sm">
+                  <BookIcon />
+                </div>
                 <div className="min-w-0">
-                  <h1 className="text-2xl font-bold tracking-tight md:text-3xl xl:text-[2rem] text-slate-900 dark:text-white">
-                    {viewMode === "archived"
-                      ? "Archived Courses"
-                      : "Manage Your Courses"}
+                  <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-2xl">
+                    {viewMode === "archived" ? "Archived Courses" : "Manage Your Courses"}
                   </h1>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-                    {viewMode === "archived"
-                      ? "Archived courses stay out of the active list, but you can restore them anytime when needed."
-                      : "Create courses, search quickly, and manage assessments, students, and marks from one cleaner dashboard."}
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                    {viewMode === "archived" ? "Restore older courses whenever needed." : "Search, create and manage your teaching courses."}
                   </p>
                 </div>
               </div>
-
-              <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/80 bg-white/70 p-1.5 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-950/60">
-                <button
-                  type="button"
-                  onClick={() => setViewMode("active")}
-                  className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
-                    viewMode === "active"
-                      ? "bg-slate-900 text-white shadow-sm dark:bg-primary-600"
-                      : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-                  }`}
-                >
-                  My Courses
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode("archived")}
-                  className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
-                    viewMode === "archived"
-                      ? "bg-slate-900 text-white shadow-sm dark:bg-primary-600"
-                      : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-                  }`}
-                >
-                  Archived
-                </button>
-              </div>
-
-              {/* <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <StatCard label="Total" value={counts.all} />
-                <StatCard label="Theory" value={counts.theory} />
-                <StatCard label="Lab" value={counts.lab} />
-                <StatCard label="Hybrid" value={counts.hybrid} />
-              </div> */}
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:w-auto xl:min-w-[300px]">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
               <button
                 type="button"
                 onClick={openCreateModal}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-primary-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-primary-600/20 transition hover:bg-primary-700 dark:shadow-primary-900/30"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-700"
               >
                 <PlusIcon />
                 Create Course
               </button>
-
               <button
                 type="button"
                 onClick={() => navigate("/teacher/dashboard")}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-200 dark:hover:bg-slate-900"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white/90 px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
               >
                 <ArrowLeftIcon />
                 Dashboard
@@ -483,33 +438,44 @@ export default function TeacherCoursesPage() {
             </div>
           </div>
 
-          <div className="mt-6 grid grid-cols-1 gap-3 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <label className="relative block">
-                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
-                  <SearchIcon />
-                </span>
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search by code, title, intake, section, semester, year..."
-                  className="w-full rounded-2xl border border-slate-200 bg-white/90 py-3 pl-11 pr-4 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-100 dark:placeholder:text-slate-500"
-                />
-              </label>
+          <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-[auto_1fr_260px]">
+            <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white/80 p-1 shadow-sm dark:border-slate-700 dark:bg-slate-950/70">
+              <button
+                type="button"
+                onClick={() => setViewMode("active")}
+                className={`rounded-lg px-4 py-2 text-xs font-semibold transition ${viewMode === "active" ? "bg-slate-900 text-white shadow-sm dark:bg-primary-600" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"}`}
+              >
+                My Courses
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("archived")}
+                className={`rounded-lg px-4 py-2 text-xs font-semibold transition ${viewMode === "archived" ? "bg-slate-900 text-white shadow-sm dark:bg-primary-600" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"}`}
+              >
+                Archived
+              </button>
             </div>
 
-            <div>
-              <select
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
-                className="w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-100"
-              >
-                <option value="all">All Types</option>
-                <option value="theory">Theory</option>
-                <option value="lab">Lab</option>
-                <option value="hybrid">Hybrid</option>
-              </select>
-            </div>
+            <label className="relative block">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500"><SearchIcon /></span>
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search code, title, intake, section, semester..."
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white/90 pl-10 pr-4 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 dark:border-slate-700 dark:bg-slate-950/70 dark:text-slate-100 dark:placeholder:text-slate-500"
+              />
+            </label>
+
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="h-11 w-full rounded-xl border border-slate-200 bg-white/90 px-4 text-sm text-slate-900 shadow-sm outline-none transition focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 dark:border-slate-700 dark:bg-slate-950/70 dark:text-slate-100"
+            >
+              <option value="all">All Types</option>
+              <option value="theory">Theory</option>
+              <option value="lab">Lab</option>
+              <option value="hybrid">Hybrid</option>
+            </select>
           </div>
         </div>
       </section>
@@ -521,7 +487,7 @@ export default function TeacherCoursesPage() {
         </div>
       )}
 
-      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/80">
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/80">
         <div className="border-b border-slate-100 px-4 py-4 sm:px-5 dark:border-slate-800">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">

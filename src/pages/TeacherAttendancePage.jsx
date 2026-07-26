@@ -9,6 +9,7 @@ import {
   fetchAttendanceDay,
   updateAttendanceDay,
   deleteAttendanceDay,
+  copyAttendancePeriod,
 } from "../services/attendanceService";
 import Swal from "sweetalert2";
 
@@ -50,6 +51,18 @@ export default function TeacherAttendancePage() {
   // roll -> present
   const [attendance, setAttendance] = useState({});
   const [saving, setSaving] = useState(false);
+
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [copyLoading, setCopyLoading] = useState(false);
+  const [copyError, setCopyError] = useState("");
+  const [copyForm, setCopyForm] = useState({
+    courseId: "",
+    sourceDate: "",
+    sourcePeriod: 1,
+    targetDate: "",
+    targetPeriod: 2,
+    overwrite: true,
+  });
 
   useEffect(() => {
     async function loadCourses() {
@@ -283,6 +296,62 @@ export default function TeacherAttendancePage() {
     }
   };
 
+  const openCopyAttendance = () => {
+    const sourcePeriod = Number(form.period || 1);
+    const fallbackCourse = form.courseId || (courses[0]?._id || courses[0]?.id || "");
+    setCopyForm({
+      courseId: fallbackCourse,
+      sourceDate: form.date || "",
+      sourcePeriod,
+      targetDate: form.date || "",
+      targetPeriod: sourcePeriod >= 10 ? sourcePeriod : sourcePeriod + 1,
+      overwrite: true,
+    });
+    setCopyError("");
+    setCopyOpen(true);
+  };
+
+  const closeCopyAttendance = () => {
+    if (copyLoading) return;
+    setCopyOpen(false);
+    setCopyError("");
+  };
+
+  const handleCopyAttendance = async (e) => {
+    e.preventDefault();
+    setCopyError("");
+
+    if (!copyForm.courseId || !copyForm.sourceDate || !copyForm.targetDate) {
+      setCopyError("Select the course, source date and target date.");
+      return;
+    }
+
+    setCopyLoading(true);
+    try {
+      const result = await copyAttendancePeriod({
+        courseId: copyForm.courseId,
+        sourceDate: copyForm.sourceDate,
+        sourcePeriod: Number(copyForm.sourcePeriod),
+        targetDate: copyForm.targetDate,
+        targetPeriod: Number(copyForm.targetPeriod),
+        overwrite: !!copyForm.overwrite,
+      });
+
+      setCopyOpen(false);
+      await Swal.fire({
+        icon: "success",
+        title: result.action === "overwritten" ? "Attendance Replaced" : "Attendance Copied",
+        html: `<div style="text-align:left"><p>Copied <b>${result.source.date} · Period ${result.source.period}</b></p><p>to <b>${result.target.date} · Period ${result.target.period}</b>.</p><p style="margin-top:8px">Present: <b>${result.present}</b> &nbsp; Absent: <b>${result.absent}</b></p></div>`,
+        confirmButtonText: "OK",
+      });
+    } catch (err) {
+      console.error(err);
+      setCopyError(err?.response?.data?.message || "Failed to copy attendance.");
+    } finally {
+      setCopyLoading(false);
+    }
+  };
+
   const handleDeleteAttendance = async (e) => {
     e.preventDefault();
 
@@ -349,62 +418,31 @@ export default function TeacherAttendancePage() {
   return (
     <div className="mx-auto ">
       <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
-        {/* Header */}
-        <div className="border-b border-slate-200 bg-gradient-to-r from-indigo-50 via-white to-blue-50 px-4 py-5 sm:px-6 lg:px-8 dark:border-slate-800 dark:from-slate-900 dark:via-slate-950 dark:to-slate-900">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="mb-2 inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300">
-                Teacher Attendance Panel
+        {/* Compact premium header */}
+        <div className="border-b border-slate-200 bg-gradient-to-r from-indigo-50/80 via-white to-sky-50/80 px-4 py-4 sm:px-5 dark:border-slate-800 dark:from-indigo-950/20 dark:via-slate-950 dark:to-sky-950/20">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-sm">
+                <CalendarIcon />
               </div>
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-                Attendance Management
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-400">
-                Select course, date, and period. Mark attendance quickly with a
-                cleaner layout, better visibility, and dark mode support.
-              </p>
+              <div className="min-w-0">
+                <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Attendance Management</h1>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Create, update, copy or remove period-wise attendance.</p>
+              </div>
             </div>
 
-            <div className="hidden grid-cols-2 gap-3 sm:grid sm:grid-cols-4">
-              <div className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/80">
-                <div className="text-xs text-slate-500 dark:text-slate-400">
-                  Courses
-                </div>
-                <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
-                  {courses.length}
-                </div>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/80">
-                <div className="text-xs text-slate-500 dark:text-slate-400">
-                  Mode
-                </div>
-                <div className="mt-1 text-sm font-semibold capitalize text-slate-900 dark:text-white">
-                  {mode === "create" ? "Create" : mode === "update" ? "Update" : "Delete"}
-                </div>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/80">
-                <div className="text-xs text-slate-500 dark:text-slate-400">
-                  Entry
-                </div>
-                <div className="mt-1 text-sm font-semibold capitalize text-slate-900 dark:text-white">
-                  {entryMode}
-                </div>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/80">
-                <div className="text-xs text-slate-500 dark:text-slate-400">
-                  Students
-                </div>
-                <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
-                  {students.length}
-                </div>
-              </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-300">{courses.length} courses</span>
+              {students.length > 0 && (
+                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">{students.length} students loaded</span>
+              )}
             </div>
           </div>
         </div>
 
-        <div className="p-4 sm:p-6 lg:p-8">
+        <div className="p-4 sm:p-5 lg:p-6">
           {/* Mode Toggle */}
-          <div className="mb-6 grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:gap-3">
+          <div className="mb-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-2">
             <button
               type="button"
               onClick={() => setMode("create")}
@@ -446,12 +484,22 @@ export default function TeacherAttendancePage() {
               <span className="sm:hidden">Delete</span>
               <span className="hidden sm:inline">Delete Attendance</span>
             </button>
+
+            <button
+              type="button"
+              onClick={openCopyAttendance}
+              className="inline-flex min-w-0 items-center justify-center gap-2 rounded-2xl border border-sky-200 bg-sky-50 px-2 py-2.5 text-xs font-semibold text-sky-700 transition hover:bg-sky-100 sm:px-5 sm:text-sm dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300 dark:hover:bg-sky-500/20"
+            >
+              <CopyIcon />
+              <span className="sm:hidden">Copy</span>
+              <span className="hidden sm:inline">Copy Attendance</span>
+            </button>
           </div>
 
           {/* Form card */}
-          <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4 sm:p-5 lg:p-6 dark:border-slate-800 dark:bg-slate-900/60">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 sm:p-5 dark:border-slate-800 dark:bg-slate-900/50">
             {mode === "create" && (
-              <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-4">
+              <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-4">
                 <div className="lg:col-span-2">
                   <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                     Entry Type
@@ -525,7 +573,7 @@ export default function TeacherAttendancePage() {
             )}
 
             {(mode === "update" || mode === "delete") && (
-              <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div>
                   <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                     {mode === "delete" ? "Period for Delete" : "Period for Update"}
@@ -870,6 +918,113 @@ export default function TeacherAttendancePage() {
           )}
         </div>
       </section>
+
+      {copyOpen && (
+        <div
+          className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeCopyAttendance();
+          }}
+        >
+          <form
+            onSubmit={handleCopyAttendance}
+            className="w-full max-w-2xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+          >
+            <div className="flex items-start justify-between border-b border-slate-100 bg-gradient-to-r from-sky-50 via-white to-indigo-50 px-6 py-5 dark:border-slate-800 dark:from-sky-950/20 dark:via-slate-900 dark:to-indigo-950/20">
+              <div className="flex gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-600 text-white shadow-sm"><CopyIcon /></div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Copy Attendance</h3>
+                  <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">Reuse one completed period instead of marking the same students again.</p>
+                </div>
+              </div>
+              <button type="button" onClick={closeCopyAttendance} className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200" aria-label="Close"><CloseIcon /></button>
+            </div>
+
+            <div className="space-y-5 p-6">
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Course</label>
+                <select
+                  value={copyForm.courseId}
+                  onChange={(e) => setCopyForm((prev) => ({ ...prev, courseId: e.target.value }))}
+                  className={commonInputClass}
+                >
+                  <option value="">Select course</option>
+                  {courses.map((c, i) => {
+                    const id = c._id || c.id;
+                    return <option key={id || i} value={id}>{c.code} – {c.title} (Sec {c.section})</option>;
+                  })}
+                </select>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-950/70">
+                  <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white"><SourceIcon /> Copy From</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">Date</label>
+                      <input type="date" value={copyForm.sourceDate} onChange={(e) => setCopyForm((prev) => ({ ...prev, sourceDate: e.target.value }))} className={commonInputClass} />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">Period</label>
+                      <select value={copyForm.sourcePeriod} onChange={(e) => setCopyForm((prev) => ({ ...prev, sourcePeriod: e.target.value }))} className={commonInputClass}>
+                        {Array.from({ length: 10 }, (_, i) => i + 1).map((p) => <option key={p} value={p}>Period {p}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-sky-200 bg-sky-50/60 p-4 dark:border-sky-500/20 dark:bg-sky-500/10">
+                  <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white"><TargetIcon /> Copy To</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">Date</label>
+                      <input type="date" value={copyForm.targetDate} onChange={(e) => setCopyForm((prev) => ({ ...prev, targetDate: e.target.value }))} className={commonInputClass} />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">Period</label>
+                      <select value={copyForm.targetPeriod} onChange={(e) => setCopyForm((prev) => ({ ...prev, targetPeriod: e.target.value }))} className={commonInputClass}>
+                        {Array.from({ length: 10 }, (_, i) => i + 1).map((p) => <option key={p} value={p}>Period {p}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <label className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-950">
+                <div>
+                  <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">Replace existing target attendance</div>
+                  <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">When enabled, an already saved target period is overwritten with the copied status.</div>
+                </div>
+                <input type="checkbox" checked={copyForm.overwrite} onChange={(e) => setCopyForm((prev) => ({ ...prev, overwrite: e.target.checked }))} className="h-5 w-5 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
+              </label>
+
+              {copyError && <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">{copyError}</div>}
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50 px-6 py-4 dark:border-slate-800 dark:bg-slate-950/60">
+              <button type="button" onClick={closeCopyAttendance} disabled={copyLoading} className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">Cancel</button>
+              <button type="submit" disabled={copyLoading} className="inline-flex items-center gap-2 rounded-2xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:opacity-60">{copyLoading ? "Copying..." : <><CopyIcon /> Copy Attendance</>}</button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
+}
+
+function CalendarIcon() {
+  return <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>;
+}
+function CopyIcon() {
+  return <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>;
+}
+function SourceIcon() {
+  return <svg className="h-4 w-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>;
+}
+function TargetIcon() {
+  return <svg className="h-4 w-4 text-sky-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>;
+}
+function CloseIcon() {
+  return <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 6l12 12M18 6 6 18"/></svg>;
 }

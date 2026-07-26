@@ -51,3 +51,18 @@ export const removeAllStudentsFromCourseRequest = async (courseId) => {
   const res = await api.delete(`/courses/${courseId}/students`);
   return res.data;
 };
+
+// Copy/enroll the same student accounts from another course owned by this teacher.
+// Marks, attendance, passwords and OBE data are intentionally not copied.
+export const copyStudentsFromCourseRequest = async (courseId, sourceCourseId) => {
+  const res = await api.post(`/courses/${courseId}/students/copy-from-course`, {
+    sourceCourseId,
+  });
+  return res.data;
+};
+
+// Update an enrolled student's account details (roll/name/email).
+export const updateCourseStudentRequest = async (courseId, studentId, data) => {
+  const res = await api.patch(`/courses/${courseId}/students/${studentId}`, data);
+  return res.data;
+};

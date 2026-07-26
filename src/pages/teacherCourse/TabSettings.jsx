@@ -243,100 +243,78 @@ export default function TabSettings({
 
   if (!localCourse) return null;
 
-  const typeBadgeClass =
-    (localCourse.courseType || "theory").toLowerCase() === "lab"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
-      : (localCourse.courseType || "theory").toLowerCase() === "hybrid"
-        ? "border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-500/20 dark:bg-purple-500/10 dark:text-purple-300"
-        : "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300";
-
+  const currentType = (localCourse.courseType || "theory").toLowerCase();
   const courseTypeLabel =
-    (localCourse.courseType || "theory").toLowerCase() === "lab"
-      ? "Lab"
-      : (localCourse.courseType || "theory").toLowerCase() === "hybrid"
-        ? "Hybrid"
-        : "Theory";
+    currentType === "lab" ? "Lab" : currentType === "hybrid" ? "Hybrid" : "Theory";
 
+  const typeBadgeClass =
+    currentType === "lab"
+      ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+      : currentType === "hybrid"
+        ? "border-violet-500/20 bg-violet-500/10 text-violet-700 dark:text-violet-300"
+        : "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300";
 
-  const supportsProjectWorkflow =
-    ["lab", "hybrid"].includes((form.courseType || "theory").toLowerCase());
+  const supportsProjectWorkflow = ["lab", "hybrid"].includes(
+    (form.courseType || "theory").toLowerCase()
+  );
+
+  const inputClass =
+    "h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100";
+
+  const selectClass = `${inputClass} font-medium`;
 
   return (
-    <div className="space-y-6">
-      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="bg-gradient-to-r from-slate-50 via-white to-indigo-50/70 px-6 py-5 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/40">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0">
-              <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+    <div className="space-y-4">
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="border-b border-slate-200/80 bg-gradient-to-r from-slate-50 via-white to-indigo-50/70 px-4 py-4 dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/35 sm:px-5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm shadow-indigo-500/20">
                 <SettingsIcon />
-                Course Settings
               </div>
-
-              <h3 className="mt-3 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-                View and update course information
-              </h3>
-
-              <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
-                Edit essential course details such as title, section, intake, shift,
-                department, semester, year, and course type.
-              </p>
-
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <InfoPill label="Code" value={localCourse.code || "—"} />
-                <InfoPill label="Intake" value={localCourse.intake || "—"} />
-                <InfoPill label="Shift" value={localCourse.shift || "Day"} />
-                <InfoPill
-                  label="Department"
-                  value={localCourse.department || localCourse.program || "Not set"}
-                />
-                <InfoPill label="Semester" value={localCourse.semester || "—"} />
-                <InfoPill label="Year" value={localCourse.year || "—"} />
-                <span
-                  className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${typeBadgeClass}`}
-                >
-                  {courseTypeLabel}
-                </span>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="truncate text-lg font-bold tracking-tight text-slate-950 dark:text-white">
+                    Course Settings
+                  </h3>
+                  <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold ${typeBadgeClass}`}>
+                    {courseTypeLabel}
+                  </span>
+                </div>
+                <p className="mt-0.5 truncate text-sm text-slate-500 dark:text-slate-400">
+                  {localCourse.code || "Course"} · {localCourse.title || "Untitled course"}
+                </p>
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap items-center gap-2">
               {!editMode ? (
                 <button
                   type="button"
                   onClick={() => setEditMode(true)}
-                  className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-700"
+                  className="inline-flex h-9 items-center gap-2 rounded-xl bg-indigo-600 px-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700"
                 >
                   <EditIcon />
-                  Edit
+                  Edit Course
                 </button>
               ) : (
                 <>
                   <button
                     type="button"
                     onClick={handleCancel}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                    className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                   >
                     <XIcon />
                     Cancel
                   </button>
-
                   <button
                     type="button"
                     disabled={saving || !hasChanges}
                     onClick={handleSave}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex h-9 items-center gap-2 rounded-xl bg-indigo-600 px-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {saving ? (
-                      <>
-                        <SpinnerIcon />
-                        Saving...
-                      </>
-                    ) : (
-                      <>
-                        <SaveIcon />
-                        Save Changes
-                      </>
-                    )}
+                    {saving ? <SpinnerIcon /> : <SaveIcon />}
+                    {saving ? "Saving..." : "Save Changes"}
                   </button>
                 </>
               )}
@@ -344,182 +322,183 @@ export default function TabSettings({
           </div>
         </div>
 
-        <div className="p-6">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <Field label="Course Code" locked>
-              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                {localCourse.code}
+        <div className="grid gap-4 p-4 sm:p-5 xl:grid-cols-[0.9fr_1.1fr]">
+          <SettingsSection
+            icon={<IdentityIcon />}
+            title="Course Identity"
+            description="Core information students and reports use to identify this course."
+          >
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Course Code" locked>
+                <DisplayValue value={localCourse.code || "—"} strong />
+                <p className="mt-1 text-[11px] text-slate-400">Locked after course creation.</p>
+              </Field>
+
+              <Field label="Course Type">
+                {!editMode ? (
+                  <DisplayValue value={courseTypeLabel} />
+                ) : (
+                  <select
+                    value={form.courseType}
+                    onChange={(e) => handleChange("courseType", e.target.value)}
+                    className={selectClass}
+                  >
+                    <option value="theory">Theory</option>
+                    <option value="lab">Lab</option>
+                    <option value="hybrid">Hybrid</option>
+                  </select>
+                )}
+              </Field>
+
+              <div className="sm:col-span-2">
+                <Field label="Course Title">
+                  {!editMode ? (
+                    <DisplayValue value={localCourse.title || "—"} strong />
+                  ) : (
+                    <input
+                      value={form.title}
+                      onChange={(e) => handleChange("title", e.target.value)}
+                      className={inputClass}
+                      placeholder="Course title"
+                    />
+                  )}
+                </Field>
               </div>
-              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Course code is locked and cannot be edited.
-              </div>
-            </Field>
-
-            <Field label="Course Type">
-              {!editMode ? (
-                <DisplayValue value={(localCourse.courseType || "theory").toUpperCase()} />
-              ) : (
-                <select
-                  value={form.courseType}
-                  onChange={(e) => handleChange("courseType", e.target.value)}
-                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                >
-                  <option value="theory">Theory</option>
-                  <option value="lab">Lab</option>
-                  <option value="hybrid">Hybrid</option>
-                </select>
-              )}
-            </Field>
-
-            <Field label="Shift">
-              {!editMode ? (
-                <DisplayValue value={localCourse.shift || "Day"} />
-              ) : (
-                <select
-                  value={form.shift}
-                  onChange={(e) => handleChange("shift", e.target.value)}
-                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                >
-                  {BUBT_SHIFTS.map((shift) => (
-                    <option key={shift} value={shift}>
-                      {shift}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </Field>
-
-            <Field label="Department">
-              {!editMode ? (
-                <DisplayValue
-                  value={localCourse.department || localCourse.program || "Not set"}
-                />
-              ) : (
-                <select
-                  value={form.department}
-                  onChange={(e) => handleChange("department", e.target.value)}
-                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                  required
-                >
-                  <option value="">Select department/program</option>
-                  {availablePrograms.map((program) => (
-                    <option key={program.key} value={program.label}>
-                      {program.label}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </Field>
-
-            <Field label="Title">
-              {!editMode ? (
-                <DisplayValue value={localCourse.title || "—"} />
-              ) : (
-                <input
-                  value={form.title}
-                  onChange={(e) => handleChange("title", e.target.value)}
-                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-800 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                  placeholder="Course title"
-                />
-              )}
-            </Field>
-
-            <Field label="Section">
-              {!editMode ? (
-                <DisplayValue value={localCourse.section || "—"} />
-              ) : (
-                <input
-                  value={form.section}
-                  onChange={(e) => handleChange("section", e.target.value)}
-                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-800 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                  placeholder="e.g. 54/5"
-                />
-              )}
-            </Field>
-
-            <Field label="Intake">
-              {!editMode ? (
-                <DisplayValue value={localCourse.intake || "—"} />
-              ) : (
-                <input
-                  value={form.intake}
-                  onChange={(e) => handleChange("intake", e.target.value)}
-                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-800 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                  placeholder="e.g. 54"
-                />
-              )}
-            </Field>
-
-            <Field label="Semester">
-              {!editMode ? (
-                <DisplayValue value={localCourse.semester || "—"} />
-              ) : (
-                <select
-                  value={form.semester}
-                  onChange={(e) => handleChange("semester", e.target.value)}
-                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                >
-                  {SEMESTERS.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </Field>
-
-            <Field label="Year">
-              {!editMode ? (
-                <DisplayValue value={localCourse.year || "—"} />
-              ) : (
-                <input
-                  type="number"
-                  value={form.year}
-                  onChange={(e) => handleChange("year", e.target.value)}
-                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-800 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                  min={2000}
-                  max={2100}
-                />
-              )}
-            </Field>
-          </div>
-
-          {editMode && !hasChanges && (
-            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-400">
-              Make a change to enable <span className="font-semibold">Save Changes</span>.
             </div>
-          )}
+          </SettingsSection>
+
+          <SettingsSection
+            icon={<AcademicIcon />}
+            title="Academic Placement"
+            description="Shift, programme, intake and semester information used throughout the portal."
+          >
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <Field label="Shift">
+                {!editMode ? (
+                  <DisplayValue value={localCourse.shift || "Day"} />
+                ) : (
+                  <select
+                    value={form.shift}
+                    onChange={(e) => handleChange("shift", e.target.value)}
+                    className={selectClass}
+                  >
+                    {BUBT_SHIFTS.map((shift) => (
+                      <option key={shift} value={shift}>{shift}</option>
+                    ))}
+                  </select>
+                )}
+              </Field>
+
+              <div className="sm:col-span-1 lg:col-span-2">
+                <Field label="Department / Programme">
+                  {!editMode ? (
+                    <DisplayValue value={localCourse.department || localCourse.program || "Not set"} />
+                  ) : (
+                    <select
+                      value={form.department}
+                      onChange={(e) => handleChange("department", e.target.value)}
+                      className={selectClass}
+                      required
+                    >
+                      <option value="">Select department/programme</option>
+                      {availablePrograms.map((program) => (
+                        <option key={program.key} value={program.label}>{program.label}</option>
+                      ))}
+                    </select>
+                  )}
+                </Field>
+              </div>
+
+              <Field label="Intake">
+                {!editMode ? (
+                  <DisplayValue value={localCourse.intake || "—"} />
+                ) : (
+                  <input
+                    value={form.intake}
+                    onChange={(e) => handleChange("intake", e.target.value)}
+                    className={inputClass}
+                    placeholder="e.g. 48"
+                  />
+                )}
+              </Field>
+
+              <Field label="Section">
+                {!editMode ? (
+                  <DisplayValue value={localCourse.section || "—"} />
+                ) : (
+                  <input
+                    value={form.section}
+                    onChange={(e) => handleChange("section", e.target.value)}
+                    className={inputClass}
+                    placeholder="e.g. 2"
+                  />
+                )}
+              </Field>
+
+              <Field label="Semester">
+                {!editMode ? (
+                  <DisplayValue value={localCourse.semester || "—"} />
+                ) : (
+                  <select
+                    value={form.semester}
+                    onChange={(e) => handleChange("semester", e.target.value)}
+                    className={selectClass}
+                  >
+                    {SEMESTERS.map((semester) => (
+                      <option key={semester} value={semester}>{semester}</option>
+                    ))}
+                  </select>
+                )}
+              </Field>
+
+              <Field label="Year">
+                {!editMode ? (
+                  <DisplayValue value={localCourse.year || "—"} />
+                ) : (
+                  <input
+                    type="number"
+                    value={form.year}
+                    onChange={(e) => handleChange("year", e.target.value)}
+                    className={inputClass}
+                    min={2000}
+                    max={2100}
+                  />
+                )}
+              </Field>
+            </div>
+          </SettingsSection>
         </div>
-      </div>
+
+        {editMode && !hasChanges && (
+          <div className="mx-4 mb-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-400 sm:mx-5 sm:mb-5">
+            Change any field to enable <span className="font-semibold">Save Changes</span>.
+          </div>
+        )}
+      </section>
 
       {supportsProjectWorkflow && (
-        <div className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <div className="border-b border-slate-100 px-6 py-5 dark:border-slate-800">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-              Project Workflow
-            </h3>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Choose whether this lab or hybrid course will use the regular lab final flow or the new project-based workflow.
-            </p>
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
+          <div className="mb-4 flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-300">
+              <WorkflowIcon />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-950 dark:text-white">Project Workflow</h3>
+              <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                Configure the project-based flow used by lab and hybrid courses.
+              </p>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 p-6 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             <Field label="Workflow Mode">
               {!editMode ? (
-                <DisplayValue
-                  value={
-                    form.projectFeature?.mode === "project"
-                      ? "Project Based"
-                      : "Lab Final Based"
-                  }
-                />
+                <DisplayValue value={form.projectFeature?.mode === "project" ? "Project Based" : "Lab Final Based"} />
               ) : (
                 <select
                   value={form.projectFeature?.mode || "lab_final"}
-                  onChange={(e) =>
-                    handleProjectFeatureChange("mode", e.target.value)
-                  }
-                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  onChange={(e) => handleProjectFeatureChange("mode", e.target.value)}
+                  className={selectClass}
                 >
                   <option value="lab_final">Lab Final Based</option>
                   <option value="project">Project Based</option>
@@ -535,168 +514,160 @@ export default function TabSettings({
                   type="number"
                   min={0}
                   value={form.projectFeature?.totalProjectMarks || 40}
-                  onChange={(e) =>
-                    handleProjectFeatureChange("totalProjectMarks", e.target.value)
-                  }
-                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-800 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                />
-              )}
-            </Field>
-
-            <Field label="Student Group Creation">
-              {!editMode ? (
-                <DisplayValue
-                  value={
-                    form.projectFeature?.allowStudentGroupCreation ? "Enabled" : "Disabled"
-                  }
-                />
-              ) : (
-                <ToggleRow
-                  checked={form.projectFeature?.allowStudentGroupCreation !== false}
-                  onChange={(value) =>
-                    handleProjectFeatureChange("allowStudentGroupCreation", value)
-                  }
-                  label="Let students create their own groups"
-                />
-              )}
-            </Field>
-
-            <Field label="Teacher Group Editing">
-              {!editMode ? (
-                <DisplayValue
-                  value={
-                    form.projectFeature?.allowTeacherGroupEditing ? "Enabled" : "Disabled"
-                  }
-                />
-              ) : (
-                <ToggleRow
-                  checked={form.projectFeature?.allowTeacherGroupEditing !== false}
-                  onChange={(value) =>
-                    handleProjectFeatureChange("allowTeacherGroupEditing", value)
-                  }
-                  label="Teacher can edit or fix groups later"
+                  onChange={(e) => handleProjectFeatureChange("totalProjectMarks", e.target.value)}
+                  className={inputClass}
                 />
               )}
             </Field>
 
             <Field label="Student Visibility">
               {!editMode ? (
-                <DisplayValue
-                  value={form.projectFeature?.visibleToStudents ? "Visible" : "Hidden"}
-                />
+                <StatusValue enabled={form.projectFeature?.visibleToStudents !== false} enabledLabel="Visible" disabledLabel="Hidden" />
               ) : (
                 <ToggleRow
                   checked={form.projectFeature?.visibleToStudents !== false}
-                  onChange={(value) =>
-                    handleProjectFeatureChange("visibleToStudents", value)
-                  }
-                  label="Show project workflow on student side"
+                  onChange={(value) => handleProjectFeatureChange("visibleToStudents", value)}
+                  label="Visible to students"
+                />
+              )}
+            </Field>
+
+            <Field label="Student Group Creation">
+              {!editMode ? (
+                <StatusValue enabled={form.projectFeature?.allowStudentGroupCreation !== false} />
+              ) : (
+                <ToggleRow
+                  checked={form.projectFeature?.allowStudentGroupCreation !== false}
+                  onChange={(value) => handleProjectFeatureChange("allowStudentGroupCreation", value)}
+                  label="Students can create groups"
+                />
+              )}
+            </Field>
+
+            <Field label="Teacher Group Editing">
+              {!editMode ? (
+                <StatusValue enabled={form.projectFeature?.allowTeacherGroupEditing !== false} />
+              ) : (
+                <ToggleRow
+                  checked={form.projectFeature?.allowTeacherGroupEditing !== false}
+                  onChange={(value) => handleProjectFeatureChange("allowTeacherGroupEditing", value)}
+                  label="Teacher can edit groups"
                 />
               )}
             </Field>
           </div>
-        </div>
+        </section>
       )}
+    </div>
+  );
+}
 
-      <div className="overflow-hidden rounded-3xl border border-dashed border-slate-300 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
-        <div className="p-6">
-          <div className="flex items-start gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-              <FutureIcon />
-            </div>
-
-            <div>
-              <h4 className="text-base font-semibold text-slate-800 dark:text-slate-100">
-                Future Settings
-              </h4>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Later you can add controls like locking marks, closing attendance,
-                enabling exports, publishing rules, or archive options here.
-              </p>
-            </div>
-          </div>
+function SettingsSection({ icon, title, description, children }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50/55 p-4 dark:border-slate-800 dark:bg-slate-950/35">
+      <div className="mb-4 flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-300">
+          {icon}
+        </div>
+        <div>
+          <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">{title}</h4>
+          <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-slate-400">{description}</p>
         </div>
       </div>
+      {children}
     </div>
   );
 }
 
 function Field({ label, children, locked = false }) {
   return (
-    <div
-      className={`rounded-2xl border p-4 ${locked
-        ? "border-slate-200 bg-slate-50/80 dark:border-slate-700 dark:bg-slate-800/50"
-        : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
-        }`}
-    >
-      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+    <div className={`rounded-xl border px-3.5 py-3 ${locked
+      ? "border-slate-200 bg-slate-100/70 dark:border-slate-700 dark:bg-slate-800/60"
+      : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
+    }`}>
+      <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">
         {label}
       </div>
-      <div className="mt-3">{children}</div>
+      <div className="mt-2">{children}</div>
     </div>
   );
 }
 
-function DisplayValue({ value }) {
-  return <div className="text-sm font-medium text-slate-800 dark:text-slate-200">{value}</div>;
+function DisplayValue({ value, strong = false }) {
+  return (
+    <div className={`${strong ? "font-bold text-slate-950 dark:text-white" : "font-semibold text-slate-800 dark:text-slate-200"} break-words text-sm`}>
+      {value}
+    </div>
+  );
 }
 
-function InfoPill({ label, value }) {
+function StatusValue({ enabled, enabledLabel = "Enabled", disabledLabel = "Disabled" }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-      <span className="text-slate-500 dark:text-slate-400">{label}:</span>
-      <span>{value}</span>
+    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${enabled
+      ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+      : "bg-slate-500/10 text-slate-600 dark:text-slate-300"
+    }`}>
+      {enabled ? enabledLabel : disabledLabel}
     </span>
   );
 }
 
 function ToggleRow({ checked, onChange, label }) {
   return (
-    <label className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800/60">
-      <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{label}</span>
-      <button
-        type="button"
-        onClick={() => onChange(!checked)}
-        className={[
-          "relative inline-flex h-7 w-12 items-center rounded-full transition",
-          checked ? "bg-indigo-600" : "bg-slate-300 dark:bg-slate-600",
-        ].join(" ")}
-      >
-        <span
-          className={[
-            "inline-block h-5 w-5 transform rounded-full bg-white transition",
-            checked ? "translate-x-6" : "translate-x-1",
-          ].join(" ")}
-        />
-      </button>
-    </label>
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className="flex w-full items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 text-left dark:bg-slate-800/70"
+    >
+      <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">{label}</span>
+      <span className={`relative inline-flex h-6 w-10 shrink-0 items-center rounded-full transition ${checked ? "bg-indigo-600" : "bg-slate-300 dark:bg-slate-600"}`}>
+        <span className={`h-4 w-4 rounded-full bg-white shadow-sm transition ${checked ? "translate-x-5" : "translate-x-1"}`} />
+      </span>
+    </button>
   );
 }
 
 function SettingsIcon() {
   return (
-    <svg
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" />
       <path d="M19.4 15a7.9 7.9 0 0 0 .1-2l2-1.5-2-3.5-2.4 1a8 8 0 0 0-1.7-1L15 3H9l-.4 2.5a8 8 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a7.9 7.9 0 0 0 0 2l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 1.7 1L9 21h6l.4-2.5a8 8 0 0 0 1.7-1l2.4 1 2-3.5-2-1.5z" />
     </svg>
   );
 }
 
+function IdentityIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M4 6h16v12H4z" />
+      <path d="M8 10h5M8 14h8" />
+    </svg>
+  );
+}
+
+function AcademicIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="m3 10 9-5 9 5-9 5-9-5Z" />
+      <path d="M7 12.5V17c3 2 7 2 10 0v-4.5" />
+    </svg>
+  );
+}
+
+function WorkflowIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="6" cy="6" r="2" />
+      <circle cx="18" cy="6" r="2" />
+      <circle cx="12" cy="18" r="2" />
+      <path d="M8 6h8M7 8l4 8M17 8l-4 8" />
+    </svg>
+  );
+}
+
 function EditIcon() {
   return (
-    <svg
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M12 20h9" />
       <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
     </svg>
@@ -705,13 +676,7 @@ function EditIcon() {
 
 function XIcon() {
   return (
-    <svg
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M18 6 6 18" />
       <path d="m6 6 12 12" />
     </svg>
@@ -720,30 +685,10 @@ function XIcon() {
 
 function SaveIcon() {
   return (
-    <svg
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
       <path d="M17 21v-8H7v8" />
       <path d="M7 3v5h8" />
-    </svg>
-  );
-}
-
-function FutureIcon() {
-  return (
-    <svg
-      className="h-5 w-5 text-slate-600 dark:text-slate-300"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M13 3 4 14h7l-1 7 9-11h-7l1-7Z" />
     </svg>
   );
 }
@@ -752,11 +697,7 @@ function SpinnerIcon() {
   return (
     <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path
-        className="opacity-75"
-        fill="currentColor"
-        d="M4 12a8 8 0 0 1 8-8v3a5 5 0 0 0-5 5H4z"
-      />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v3a5 5 0 0 0-5 5H4z" />
     </svg>
   );
 }

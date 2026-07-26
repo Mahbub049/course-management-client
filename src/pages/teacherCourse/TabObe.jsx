@@ -1158,7 +1158,7 @@ const saveSetup = async () => {
             </label>
             <label style="display:flex;gap:12px;align-items:flex-start;padding:13px 14px;border:1px solid #dbe3ef;border-radius:14px;${canImportAssessments ? "cursor:pointer" : "opacity:.55;cursor:not-allowed"}">
               <input id="outline-import-assessments" type="checkbox" ${canImportAssessments ? "checked" : "disabled"} style="margin-top:3px;width:17px;height:17px" />
-              <span><strong style="display:block;color:#0f172a">Assessment Blueprint</strong><span style="display:block;margin-top:3px;color:#64748b;font-size:12px">Build Mid/Final CO allocations from the CLO Assessment Criteria table. Existing OBE blueprints will be replaced.</span></span>
+              <span><strong style="display:block;color:#0f172a">Assessment Blueprint</strong><span style="display:block;margin-top:3px;color:#64748b;font-size:12px">Build Mid/Final CO allocations from the CLO Assessment Criteria table. Only successfully detected assessment types will be replaced; inconsistent rows are left unchanged.</span></span>
             </label>
             ${warningHtml}
           </div>
@@ -1229,19 +1229,62 @@ const saveSetup = async () => {
           );
         }
 
+        const importedBlueprints = structure.blueprints.map((blueprint) => ({
+          ...blueprint,
+          assessmentName: isLabCourse
+            ? blueprint.assessmentType === "final"
+              ? "Lab Final"
+              : "Lab Mid"
+            : blueprint.assessmentName,
+        }));
+
+        // Validate everything before deleting any saved blueprint. This prevents a
+        // malformed outline row from partially replacing a teacher's existing setup.
+        importedBlueprints.forEach((blueprint) => {
+          const itemTotal = round2(
+            (blueprint.items || []).reduce(
+              (sum, item) => sum + Number(item.marks || 0),
+              0
+            )
+          );
+          const assessmentTotal = round2(blueprint.totalMarks);
+          if (!blueprint.items?.length || assessmentTotal <= 0) {
+            throw new Error(
+              `${blueprint.assessmentName || "Assessment"} does not contain a usable CO allocation.`
+            );
+          }
+          if (Math.abs(itemTotal - assessmentTotal) > 0.01) {
+            throw new Error(
+              `${blueprint.assessmentName || "Assessment"} allocation totals ${itemTotal}, but the outline lists ${assessmentTotal}. It was not imported.`
+            );
+          }
+          if (
+            isLabCourse &&
+            ((blueprint.assessmentType === "mid" && assessmentTotal !== 30) ||
+              (blueprint.assessmentType === "final" && assessmentTotal !== 40))
+          ) {
+            throw new Error(
+              `${blueprint.assessmentName} has ${assessmentTotal} marks in the detected table. Lab Mid must be 30 and Lab Final must be 40.`
+            );
+          }
+        });
+
         const currentBlueprints = await getObeBlueprints(courseId);
+        const importedTypes = new Set(
+          importedBlueprints.map((blueprint) => blueprint.assessmentType)
+        );
+
+        // Replace only the assessment types that were successfully detected. If an
+        // outline has an inconsistent Final row, a valid existing Final blueprint is
+        // left untouched instead of being deleted together with the valid Mid row.
         for (const blueprint of currentBlueprints || []) {
+          if (!importedTypes.has(String(blueprint.assessmentType || "").toLowerCase())) {
+            continue;
+          }
           await deleteObeBlueprint(courseId, blueprint._id || blueprint.id);
         }
-        for (const blueprint of structure.blueprints) {
-          await createObeBlueprint(courseId, {
-            ...blueprint,
-            assessmentName: isLabCourse
-              ? blueprint.assessmentType === "final"
-                ? "Lab Final"
-                : "Lab Mid"
-              : blueprint.assessmentName,
-          });
+        for (const blueprint of importedBlueprints) {
+          await createObeBlueprint(courseId, blueprint);
         }
         imported.push("assessment blueprint");
       }
@@ -1260,8 +1303,8 @@ const saveSetup = async () => {
       console.error(error);
       Swal.fire(
         "Course outline import failed",
-        error?.message ||
-          error?.response?.data?.message ||
+        error?.response?.data?.message ||
+          error?.message ||
           "Failed to read the course outline PDF.",
         "error"
       );
@@ -1367,19 +1410,62 @@ const saveSetup = async () => {
           );
         }
 
+        const importedBlueprints = structure.blueprints.map((blueprint) => ({
+          ...blueprint,
+          assessmentName: isLabCourse
+            ? blueprint.assessmentType === "final"
+              ? "Lab Final"
+              : "Lab Mid"
+            : blueprint.assessmentName,
+        }));
+
+        // Validate everything before deleting any saved blueprint. This prevents a
+        // malformed outline row from partially replacing a teacher's existing setup.
+        importedBlueprints.forEach((blueprint) => {
+          const itemTotal = round2(
+            (blueprint.items || []).reduce(
+              (sum, item) => sum + Number(item.marks || 0),
+              0
+            )
+          );
+          const assessmentTotal = round2(blueprint.totalMarks);
+          if (!blueprint.items?.length || assessmentTotal <= 0) {
+            throw new Error(
+              `${blueprint.assessmentName || "Assessment"} does not contain a usable CO allocation.`
+            );
+          }
+          if (Math.abs(itemTotal - assessmentTotal) > 0.01) {
+            throw new Error(
+              `${blueprint.assessmentName || "Assessment"} allocation totals ${itemTotal}, but the outline lists ${assessmentTotal}. It was not imported.`
+            );
+          }
+          if (
+            isLabCourse &&
+            ((blueprint.assessmentType === "mid" && assessmentTotal !== 30) ||
+              (blueprint.assessmentType === "final" && assessmentTotal !== 40))
+          ) {
+            throw new Error(
+              `${blueprint.assessmentName} has ${assessmentTotal} marks in the detected table. Lab Mid must be 30 and Lab Final must be 40.`
+            );
+          }
+        });
+
         const currentBlueprints = await getObeBlueprints(courseId);
+        const importedTypes = new Set(
+          importedBlueprints.map((blueprint) => blueprint.assessmentType)
+        );
+
+        // Replace only the assessment types that were successfully detected. If an
+        // outline has an inconsistent Final row, a valid existing Final blueprint is
+        // left untouched instead of being deleted together with the valid Mid row.
         for (const blueprint of currentBlueprints || []) {
+          if (!importedTypes.has(String(blueprint.assessmentType || "").toLowerCase())) {
+            continue;
+          }
           await deleteObeBlueprint(courseId, blueprint._id || blueprint.id);
         }
-        for (const blueprint of structure.blueprints) {
-          await createObeBlueprint(courseId, {
-            ...blueprint,
-            assessmentName: isLabCourse
-              ? blueprint.assessmentType === "final"
-                ? "Lab Final"
-                : "Lab Mid"
-              : blueprint.assessmentName,
-          });
+        for (const blueprint of importedBlueprints) {
+          await createObeBlueprint(courseId, blueprint);
         }
         imported.push("assessment blueprint");
       }
