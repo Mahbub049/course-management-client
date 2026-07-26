@@ -6,9 +6,21 @@ import {
 
 const STUDENT_START_ROW = 30;
 const STUDENT_END_ROW = 100;
+const DEFAULT_LEVELS = [
+  { min: 70, max: 100, level: 4 },
+  { min: 60, max: 69.99, level: 3 },
+  { min: 50, max: 59.99, level: 2 },
+  { min: 40, max: 49.99, level: 1 },
+  { min: 0, max: 39.99, level: 0 },
+];
 
 const safeText = (value) =>
   value === null || value === undefined ? "" : String(value).trim();
+
+const safeNumber = (value, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
 
 const getStudentId = (student = {}) =>
   safeText(student.studentId || student._id || student.id || student.student);
@@ -41,6 +53,23 @@ const buildStudentLookup = (students = []) => {
 };
 
 const readCellValue = (sheet, reference) => sheet?.[reference]?.v ?? "";
+
+const isCheckedCell = (value) => {
+  if (value === true || value === 1) return true;
+  const normalized = safeText(value).toLowerCase();
+  return ["true", "yes", "y", "1", "checked"].includes(normalized);
+};
+
+const readWorkbook = async (file) => {
+  if (!file) throw new Error("Please select an OBE workbook.");
+
+  const buffer = await file.arrayBuffer();
+  return XLSX.read(buffer, {
+    type: "array",
+    cellFormula: true,
+    cellNF: true,
+  });
+};
 
 const parseNumericMark = ({ rawValue, maxMarks, roll, label }) => {
   const text = safeText(rawValue);
@@ -235,6 +264,214 @@ const parseLegacyMarkEntryWorkbook = (workbook, students, blueprints) => {
   return records;
 };
 
+const getExistingOutcomeStatement = (rows = [], code = "") =>
+  safeText(
+    (Array.isArray(rows) ? rows : []).find(
+      (row) => safeText(row?.code).toUpperCase() === safeText(code).toUpperCase()
+    )?.statement
+  );
+
+const parseImportedSetup = (workbook, currentSetup = {}) => {
+  const mappingSheet = workbook.Sheets["CO-PO Mapping"];
+  const gradeSheet = workbook.Sheets.GradeSheet;
+  const reportSheet = workbook.Sheets["Course Report"];
+
+  if (!mappingSheet || !gradeSheet) return null;
+
+  const courseOutcomes = [];
+  for (let index = 0; index < OBE_TEMPLATE_LIMITS.courseOutcomes; index += 1) {
+    const row = index + 2;
+    const code = safeText(readCellValue(mappingSheet, `A${row}`)).toUpperCase();
+    if (!code) continue;
+
+    const importedStatement = safeText(readCellValue(mappingSheet, `B${row}`));
+    const existingStatement = getExistingOutcomeStatement(
+      currentSetup.courseOutcomes,
+      code
+    );
+
+    courseOutcomes.push({
+      code,
+      statement: importedStatement || existingStatement || code,
+      order: index,
+      isActive: true,
+    });
+  }
+
+  const allPoStatements = [];
+  const poColumns = ["C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N"];
+  poColumns.forEach((column, index) => {
+    const code = safeText(readCellValue(mappingSheet, `${column}1`)).toUpperCase();
+    if (!code) return;
+
+    allPoStatements.push({
+      code,
+      statement:
+        getExistingOutcomeStatement(currentSetup.poStatements, code) || code,
+      order: index,
+      isActive: true,
+    });
+  });
+
+  const getExistingStrength = (coCode, targetCode) => {
+    const existing = (currentSetup.mappings || []).find(
+      (row) =>
+        safeText(row?.coCode).toUpperCase() === safeText(coCode).toUpperCase() &&
+        safeText(row?.targetCode).toUpperCase() === safeText(targetCode).toUpperCase()
+    );
+    const strength = Number(existing?.strength);
+    return [1, 2, 3].includes(strength) ? strength : 1;
+  };
+
+  const importedMappings = [];
+  const linkedPoColumns = ["O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"];
+  courseOutcomes.forEach((co, coIndex) => {
+    linkedPoColumns.forEach((column, poIndex) => {
+      const po = allPoStatements[poIndex];
+      if (!po) return;
+      if (!isCheckedCell(readCellValue(mappingSheet, `${column}${coIndex + 2}`))) return;
+
+      importedMappings.push({
+        coCode: co.code,
+        targetType: "PO",
+        targetCode: po.code,
+        strength: getExistingStrength(co.code, po.code),
+      });
+    });
+  });
+
+  // Keep only POs that are actually used by the imported CO-PO mapping.
+  // If an older workbook has no mapping flags at all, preserve the current
+  // mapping/PO setup instead of wiping it accidentally.
+  const mappings = importedMappings.length
+    ? importedMappings
+    : currentSetup.mappings || [];
+  const usedPoCodes = new Set(
+    mappings
+      .filter((row) => safeText(row?.targetType).toUpperCase() !== "PSO")
+      .map((row) => safeText(row?.targetCode).toUpperCase())
+      .filter(Boolean)
+  );
+  const poStatements = allPoStatements
+    .filter((row) => usedPoCodes.has(row.code))
+    .map((row, index) => ({ ...row, order: index }));
+
+  if (!poStatements.length && currentSetup.poStatements?.length) {
+    currentSetup.poStatements.forEach((row, index) => {
+      const code = safeText(row?.code).toUpperCase();
+      if (!code || (usedPoCodes.size && !usedPoCodes.has(code))) return;
+      poStatements.push({
+        code,
+        statement: safeText(row?.statement) || code,
+        order: index,
+        isActive: row?.isActive !== false,
+      });
+    });
+  }
+
+  const thresholdCandidate = safeNumber(
+    readCellValue(gradeSheet, "AQ27"),
+    safeNumber(readCellValue(gradeSheet, "AW27"), currentSetup.thresholdPercent ?? 40)
+  );
+  const thresholdPercent =
+    thresholdCandidate >= 0 && thresholdCandidate <= 100
+      ? thresholdCandidate
+      : safeNumber(currentSetup.thresholdPercent, 40);
+
+  return {
+    thresholdPercent,
+    courseOutcomes: courseOutcomes.length
+      ? courseOutcomes
+      : currentSetup.courseOutcomes || [],
+    poStatements: poStatements.length
+      ? poStatements
+      : currentSetup.poStatements || [],
+    psoStatements: currentSetup.psoStatements || [],
+    mappings,
+    attainmentLevels:
+      currentSetup.attainmentLevels?.length
+        ? currentSetup.attainmentLevels
+        : DEFAULT_LEVELS,
+    notes: currentSetup.notes || "",
+    courseReportComment1: safeText(readCellValue(reportSheet, "B56")),
+    courseReportComment2: safeText(readCellValue(reportSheet, "B62")),
+    courseReportGeneralComment: safeText(readCellValue(reportSheet, "B67")),
+  };
+};
+
+const parseBlueprintGroup = (sheet, { type, name, columns }) => {
+  const items = [];
+
+  columns.forEach((column, index) => {
+    const marks = safeNumber(readCellValue(sheet, `${column}29`), 0);
+    const coCode = safeText(readCellValue(sheet, `${column}28`)).toUpperCase();
+    const label = safeText(readCellValue(sheet, `${column}27`)) || `Q${index + 1}`;
+
+    if (marks <= 0 && !coCode) return;
+    if (marks <= 0 || !coCode) return;
+
+    items.push({
+      key: `q${items.length + 1}`,
+      label,
+      marks: Math.round(marks * 100) / 100,
+      coCode,
+      order: items.length,
+    });
+  });
+
+  if (!items.length) return null;
+
+  return {
+    assessmentName: name,
+    assessmentType: type,
+    totalMarks: Math.round(
+      items.reduce((sum, item) => sum + Number(item.marks || 0), 0) * 100
+    ) / 100,
+    notes: "",
+    items,
+  };
+};
+
+const parseImportedBlueprints = (workbook) => {
+  const sheet = workbook.Sheets.GradeSheet;
+  if (!sheet) return [];
+
+  return [
+    parseBlueprintGroup(sheet, {
+      type: "mid",
+      name: "Mid Term",
+      columns: ["I", "J", "K", "L", "M", "N"],
+    }),
+    parseBlueprintGroup(sheet, {
+      type: "final",
+      name: "Final",
+      columns: ["P", "Q", "R", "S", "T", "U"],
+    }),
+  ].filter(Boolean);
+};
+
+export const parseObeImportedWorkbookStructure = async (
+  file,
+  currentSetup = {}
+) => {
+  const workbook = await readWorkbook(file);
+  const official = !!workbook.Sheets.GradeSheet;
+
+  if (!official) {
+    return {
+      official: false,
+      setup: null,
+      blueprints: [],
+    };
+  }
+
+  return {
+    official: true,
+    setup: parseImportedSetup(workbook, currentSetup),
+    blueprints: parseImportedBlueprints(workbook),
+  };
+};
+
 export const parseObeImportedMarkWorkbook = async (
   file,
   students = [],
@@ -247,12 +484,7 @@ export const parseObeImportedMarkWorkbook = async (
     );
   }
 
-  const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, {
-    type: "array",
-    cellFormula: true,
-    cellNF: true,
-  });
+  const workbook = await readWorkbook(file);
 
   if (workbook.Sheets.GradeSheet) {
     return parseOfficialBubtWorkbook(workbook, students, blueprints);

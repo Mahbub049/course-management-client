@@ -41,12 +41,16 @@ export const saveObeMarks = async (courseId, payload) => {
 };
 
 export const getObeOutput = async (courseId) => {
-  const { data } = await api.get(`/courses/${courseId}/obe/output`);
+  const { data } = await api.get(`/courses/${courseId}/obe/output`, {
+    params: { _: Date.now() },
+  });
   return data;
 };
 
 export const getObeExportPayload = async (courseId) => {
-  const { data } = await api.get(`/courses/${courseId}/obe/export-payload`);
+  const { data } = await api.get(`/courses/${courseId}/obe/export-payload`, {
+    params: { _: Date.now() },
+  });
   return data;
 };
 

@@ -7,6 +7,8 @@ import {
 
 const MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 const CHART_NS = "http://schemas.openxmlformats.org/drawingml/2006/chart";
+const SPREADSHEET_DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing";
+const DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
 const REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships";
 const CORE_NS = "http://purl.org/dc/terms/";
@@ -224,6 +226,360 @@ const resolveWorksheetPaths = async (zip) => {
   return { workbookDocument, workbookPath, sheetMap };
 };
 
+const relationshipPathForPart = (partPath) => {
+  const segments = String(partPath || "").split("/");
+  const fileName = segments.pop();
+  return `${segments.join("/")}/_rels/${fileName}.rels`;
+};
+
+const resolvePackageTarget = (sourcePartPath, target) => {
+  const parts = String(sourcePartPath || "").split("/").slice(0, -1);
+  String(target || "")
+    .replace(/^\//, "")
+    .split("/")
+    .forEach((part) => {
+      if (!part || part === ".") return;
+      if (part === "..") parts.pop();
+      else parts.push(part);
+    });
+  return parts.join("/");
+};
+
+const decodeDataUri = (source) => {
+  const match = /^data:([^;,]+)?(;base64)?,(.*)$/i.exec(source || "");
+  if (!match) return null;
+
+  const mimeType = safeText(match[1], "image/png").toLowerCase();
+  const encoded = match[3] || "";
+  const binary = match[2]
+    ? atob(encoded)
+    : decodeURIComponent(encoded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return { bytes, mimeType };
+};
+
+const imageExtensionForMime = (mimeType = "") => {
+  const normalized = safeText(mimeType, "").toLowerCase();
+  if (normalized.includes("jpeg") || normalized.includes("jpg")) return "jpg";
+  if (normalized.includes("webp")) return "webp";
+  if (normalized.includes("gif")) return "gif";
+  return "png";
+};
+
+const imageContentTypeForExtension = (extension = "png") =>
+  ({
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    webp: "image/webp",
+    gif: "image/gif",
+  }[String(extension).toLowerCase()] || "image/png");
+
+const convertBlobToPng = async (blob) => {
+  const type = safeText(blob?.type, "").toLowerCase();
+  if (type === "image/png" || type === "image/jpeg" || type === "image/jpg") {
+    return blob;
+  }
+
+  if (
+    typeof createImageBitmap !== "function" ||
+    typeof document === "undefined" ||
+    !document.createElement
+  ) {
+    return blob;
+  }
+
+  try {
+    const bitmap = await createImageBitmap(blob);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, bitmap.width || 1);
+    canvas.height = Math.max(1, bitmap.height || 1);
+    const context = canvas.getContext("2d");
+    if (!context) return blob;
+    context.drawImage(bitmap, 0, 0);
+    bitmap.close?.();
+
+    const pngBlob = await new Promise((resolve) =>
+      canvas.toBlob(resolve, "image/png")
+    );
+    return pngBlob || blob;
+  } catch (error) {
+    console.warn("Unable to convert faculty signature to PNG", error);
+    return blob;
+  }
+};
+
+const loadSignatureImage = async (source) => {
+  if (!source) return null;
+
+  const decoded = decodeDataUri(source);
+  if (decoded) {
+    return {
+      bytes: decoded.bytes,
+      extension: imageExtensionForMime(decoded.mimeType),
+      contentType: decoded.mimeType,
+    };
+  }
+
+  const response = await fetch(source, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Signature image could not be loaded (${response.status}).`);
+  }
+
+  const originalBlob = await response.blob();
+  const blob = await convertBlobToPng(originalBlob);
+  const extension = imageExtensionForMime(blob.type || originalBlob.type);
+  return {
+    bytes: new Uint8Array(await blob.arrayBuffer()),
+    extension,
+    contentType: imageContentTypeForExtension(extension),
+  };
+};
+
+const ensureContentTypeDefault = async (zip, extension, contentType) => {
+  const path = "[Content_Types].xml";
+  const text = await zip.file(path)?.async("text");
+  if (!text) return;
+
+  const document = parseXml(text, path);
+  const root = document.documentElement;
+  const exists = Array.from(root.childNodes).some(
+    (node) =>
+      node.nodeType === 1 &&
+      node.localName === "Default" &&
+      safeText(node.getAttribute("Extension"), "").toLowerCase() ===
+        safeText(extension, "").toLowerCase()
+  );
+  if (!exists) {
+    const node = document.createElementNS(
+      "http://schemas.openxmlformats.org/package/2006/content-types",
+      "Default"
+    );
+    node.setAttribute("Extension", extension);
+    node.setAttribute("ContentType", contentType);
+    root.insertBefore(node, root.firstChild);
+    zip.file(path, serializeXml(document));
+  }
+};
+
+const appendTextElement = (document, parent, namespace, qualifiedName, value) => {
+  const node = document.createElementNS(namespace, qualifiedName);
+  node.textContent = String(value);
+  parent.appendChild(node);
+  return node;
+};
+
+const addFacultySignatureToCourseReport = async (
+  zip,
+  worksheetPath,
+  signatureSource
+) => {
+  const signature = await loadSignatureImage(signatureSource);
+  if (!signature) return false;
+
+  const worksheetRelationshipPath = relationshipPathForPart(worksheetPath);
+  const worksheetRelationshipsText = await zip
+    .file(worksheetRelationshipPath)
+    ?.async("text");
+  if (!worksheetRelationshipsText) {
+    throw new Error("Course Report drawing relationships are missing.");
+  }
+
+  const worksheetRelationships = parseXml(
+    worksheetRelationshipsText,
+    worksheetRelationshipPath
+  );
+  const drawingRelationship = Array.from(
+    worksheetRelationships.getElementsByTagNameNS(
+      PACKAGE_REL_NS,
+      "Relationship"
+    )
+  ).find((relationship) =>
+    safeText(relationship.getAttribute("Type"), "").endsWith("/drawing")
+  );
+  if (!drawingRelationship) {
+    throw new Error("Course Report drawing is missing from the workbook template.");
+  }
+
+  const drawingPath = resolvePackageTarget(
+    worksheetPath,
+    drawingRelationship.getAttribute("Target")
+  );
+  const drawingText = await zip.file(drawingPath)?.async("text");
+  if (!drawingText) throw new Error("Course Report drawing could not be read.");
+
+  const drawingDocument = parseXml(drawingText, drawingPath);
+  const drawingRelationshipsPath = relationshipPathForPart(drawingPath);
+  const drawingRelationshipsText = await zip
+    .file(drawingRelationshipsPath)
+    ?.async("text");
+  if (!drawingRelationshipsText) {
+    throw new Error("Course Report chart relationships are missing.");
+  }
+  const drawingRelationships = parseXml(
+    drawingRelationshipsText,
+    drawingRelationshipsPath
+  );
+
+  const existingRelationshipIds = Array.from(
+    drawingRelationships.getElementsByTagNameNS(PACKAGE_REL_NS, "Relationship")
+  ).map((relationship) => relationship.getAttribute("Id"));
+  let relationshipIndex = 1;
+  while (existingRelationshipIds.includes(`rId${relationshipIndex}`)) {
+    relationshipIndex += 1;
+  }
+  const relationshipId = `rId${relationshipIndex}`;
+
+  const mediaIndexes = zip
+    .file(/^xl\/media\/obe_faculty_signature_\d+\.[a-z0-9]+$/i)
+    .map((file) => {
+      const match = /_(\d+)\./.exec(file.name);
+      return match ? Number(match[1]) : 0;
+    });
+  const mediaIndex = Math.max(0, ...mediaIndexes) + 1;
+  const mediaFileName = `obe_faculty_signature_${mediaIndex}.${signature.extension}`;
+  const mediaPath = `xl/media/${mediaFileName}`;
+  zip.file(mediaPath, signature.bytes);
+  await ensureContentTypeDefault(
+    zip,
+    signature.extension,
+    signature.contentType
+  );
+
+  const relationshipNode = drawingRelationships.createElementNS(
+    PACKAGE_REL_NS,
+    "Relationship"
+  );
+  relationshipNode.setAttribute("Id", relationshipId);
+  relationshipNode.setAttribute(
+    "Type",
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
+  );
+  relationshipNode.setAttribute("Target", `../media/${mediaFileName}`);
+  drawingRelationships.documentElement.appendChild(relationshipNode);
+
+  const existingIds = Array.from(
+    drawingDocument.getElementsByTagNameNS(SPREADSHEET_DRAWING_NS, "cNvPr")
+  )
+    .map((node) => Number(node.getAttribute("id")))
+    .filter(Number.isFinite);
+  const pictureId = Math.max(10, ...existingIds) + 1;
+
+  const anchor = drawingDocument.createElementNS(
+    SPREADSHEET_DRAWING_NS,
+    "xdr:twoCellAnchor"
+  );
+  anchor.setAttribute("editAs", "oneCell");
+
+  const from = drawingDocument.createElementNS(
+    SPREADSHEET_DRAWING_NS,
+    "xdr:from"
+  );
+  appendTextElement(drawingDocument, from, SPREADSHEET_DRAWING_NS, "xdr:col", 1);
+  appendTextElement(drawingDocument, from, SPREADSHEET_DRAWING_NS, "xdr:colOff", 76200);
+  appendTextElement(drawingDocument, from, SPREADSHEET_DRAWING_NS, "xdr:row", 70);
+  appendTextElement(drawingDocument, from, SPREADSHEET_DRAWING_NS, "xdr:rowOff", 19050);
+  anchor.appendChild(from);
+
+  const to = drawingDocument.createElementNS(
+    SPREADSHEET_DRAWING_NS,
+    "xdr:to"
+  );
+  appendTextElement(drawingDocument, to, SPREADSHEET_DRAWING_NS, "xdr:col", 4);
+  appendTextElement(drawingDocument, to, SPREADSHEET_DRAWING_NS, "xdr:colOff", 0);
+  appendTextElement(drawingDocument, to, SPREADSHEET_DRAWING_NS, "xdr:row", 74);
+  appendTextElement(drawingDocument, to, SPREADSHEET_DRAWING_NS, "xdr:rowOff", 0);
+  anchor.appendChild(to);
+
+  const picture = drawingDocument.createElementNS(
+    SPREADSHEET_DRAWING_NS,
+    "xdr:pic"
+  );
+  const nonVisual = drawingDocument.createElementNS(
+    SPREADSHEET_DRAWING_NS,
+    "xdr:nvPicPr"
+  );
+  const cNvPr = drawingDocument.createElementNS(
+    SPREADSHEET_DRAWING_NS,
+    "xdr:cNvPr"
+  );
+  cNvPr.setAttribute("id", String(pictureId));
+  cNvPr.setAttribute("name", "Faculty Signature");
+  cNvPr.setAttribute("descr", "Reporting faculty signature");
+  nonVisual.appendChild(cNvPr);
+  const cNvPicPr = drawingDocument.createElementNS(
+    SPREADSHEET_DRAWING_NS,
+    "xdr:cNvPicPr"
+  );
+  const picLocks = drawingDocument.createElementNS(
+    DRAWING_NS,
+    "a:picLocks"
+  );
+  picLocks.setAttribute("noChangeAspect", "1");
+  cNvPicPr.appendChild(picLocks);
+  nonVisual.appendChild(cNvPicPr);
+  picture.appendChild(nonVisual);
+
+  const blipFill = drawingDocument.createElementNS(
+    SPREADSHEET_DRAWING_NS,
+    "xdr:blipFill"
+  );
+  const blip = drawingDocument.createElementNS(DRAWING_NS, "a:blip");
+  blip.setAttributeNS(REL_NS, "r:embed", relationshipId);
+  blipFill.appendChild(blip);
+  const stretch = drawingDocument.createElementNS(DRAWING_NS, "a:stretch");
+  stretch.appendChild(
+    drawingDocument.createElementNS(DRAWING_NS, "a:fillRect")
+  );
+  blipFill.appendChild(stretch);
+  picture.appendChild(blipFill);
+
+  const shapeProperties = drawingDocument.createElementNS(
+    SPREADSHEET_DRAWING_NS,
+    "xdr:spPr"
+  );
+  const transform = drawingDocument.createElementNS(DRAWING_NS, "a:xfrm");
+  const offset = drawingDocument.createElementNS(DRAWING_NS, "a:off");
+  offset.setAttribute("x", "0");
+  offset.setAttribute("y", "0");
+  transform.appendChild(offset);
+  const extent = drawingDocument.createElementNS(DRAWING_NS, "a:ext");
+  extent.setAttribute("cx", "1828800");
+  extent.setAttribute("cy", "685800");
+  transform.appendChild(extent);
+  shapeProperties.appendChild(transform);
+  const geometry = drawingDocument.createElementNS(DRAWING_NS, "a:prstGeom");
+  geometry.setAttribute("prst", "rect");
+  geometry.appendChild(
+    drawingDocument.createElementNS(DRAWING_NS, "a:avLst")
+  );
+  shapeProperties.appendChild(geometry);
+  const line = drawingDocument.createElementNS(DRAWING_NS, "a:ln");
+  line.setAttribute("w", "0");
+  line.appendChild(drawingDocument.createElementNS(DRAWING_NS, "a:noFill"));
+  shapeProperties.appendChild(line);
+  picture.appendChild(shapeProperties);
+
+  anchor.appendChild(picture);
+  anchor.appendChild(
+    drawingDocument.createElementNS(
+      SPREADSHEET_DRAWING_NS,
+      "xdr:clientData"
+    )
+  );
+  drawingDocument.documentElement.appendChild(anchor);
+
+  zip.file(drawingPath, serializeXml(drawingDocument));
+  zip.file(
+    drawingRelationshipsPath,
+    serializeXml(drawingRelationships)
+  );
+  return true;
+};
+
 const getCourseOutcomes = (payload = {}) => {
   const outputRows = payload.output?.coAttainment;
   if (Array.isArray(outputRows) && outputRows.length) {
@@ -411,6 +767,76 @@ const getTeacherName = (payload = {}) =>
     ""
   );
 
+const getTeacherSignature = (payload = {}) =>
+  safeText(
+    payload.teacherSignature ||
+      payload.teacher?.signatureImage ||
+      payload.course?.teacher?.signatureImage ||
+      payload.course?.createdBy?.signatureImage,
+    ""
+  );
+
+const ABBREVIATION_LABELS = {
+  AT: "Attendance",
+  CT: "Class Test",
+  ASM: "Assignment",
+  QT: "Quiz Test",
+  PRE: "Presentation",
+  VIV: "Viva Voce",
+  "LAB E": "Lab Evaluation",
+  LAB: "Lab Test",
+  CP: "Class Participation",
+  MT: "Mid Term",
+  FE: "Final Exam",
+};
+
+const normalizeAbbreviation = (value = "") =>
+  safeText(value, "").replace(/\s+/g, " ").toUpperCase();
+
+const buildRelevantAbbreviations = (payload = {}, layout = {}) => {
+  const rows = [];
+  const seen = new Set();
+  const add = (code, label, best = "") => {
+    const normalized = normalizeAbbreviation(code);
+    if (!normalized || seen.has(normalized) || rows.length >= 10) return;
+    seen.add(normalized);
+    rows.push({
+      code: safeText(code, ""),
+      label: safeText(label, ABBREVIATION_LABELS[normalized] || normalized),
+      best,
+    });
+  };
+
+  const continuous = Array.isArray(payload.continuousAssessment?.headers)
+    ? payload.continuousAssessment.headers
+    : Array.isArray(payload.output?.continuousAssessment?.headers)
+      ? payload.output.continuousAssessment.headers
+      : [];
+
+  continuous.forEach((header) => {
+    const code = safeText(header.label || header.key, "");
+    if (!code || numberValue(header.maxMarks) <= 0) return;
+    const normalized = normalizeAbbreviation(code);
+    const best = ["CT", "ASM", "QT", "PRE", "VIV", "LAB E", "LAB"].includes(normalized)
+      ? 1
+      : "";
+    add(code, header.assessmentName || ABBREVIATION_LABELS[normalized], best);
+  });
+
+  if (numberValue(layout?.totals?.mid) > 0) add("MT", "Mid Term", 1);
+  if (numberValue(layout?.totals?.final) > 0) add("FE", "Final Exam", 1);
+
+  if (!continuous.length) {
+    (layout?.slots?.ca || []).forEach((slot) => {
+      if (slot?.isPlaceholder || numberValue(slot?.marks) <= 0) return;
+      const normalized = normalizeAbbreviation(slot.label);
+      add(slot.label, ABBREVIATION_LABELS[normalized] || slot.blueprintName, 1);
+    });
+  }
+
+  return rows;
+};
+
 const calculateWorkbookData = (payload, layout, courseOutcomes, programOutcomes) => {
   const markMap = buildMarkMap(payload.marks || []);
   const continuousMarkMap = buildContinuousMarkMap(
@@ -587,6 +1013,15 @@ const populateGradeSheet = (document, payload, layout, workbookData, courseOutco
   writeCellValue(document, cells, "B18", safeText(course.intake, ""));
   writeCellValue(document, cells, "B19", safeText(course.section, ""));
   writeCellValue(document, cells, "B20", course.shift ?? setup.shift ?? 0);
+
+  const abbreviations = buildRelevantAbbreviations(payload, layout);
+  for (let index = 0; index < 10; index += 1) {
+    const row = 14 + index;
+    const item = abbreviations[index];
+    writeCellValue(document, cells, `E${row}`, item?.code || "", { preserveFormula: false });
+    writeCellValue(document, cells, `F${row}`, item?.label || "", { preserveFormula: false });
+    writeCellValue(document, cells, `I${row}`, item?.best ?? "", { preserveFormula: false });
+  }
 
   const groups = [
     ["ca", OBE_TEMPLATE_COLUMNS.ca],
@@ -923,13 +1358,25 @@ const populateCourseReport = (document, payload, workbookData, courseOutcomes, p
     );
   });
 
-  writeCellValue(document, cells, "B56", "", { preserveFormula: false });
-  writeCellValue(document, cells, "B62", "", { preserveFormula: false });
+  writeCellValue(
+    document,
+    cells,
+    "B56",
+    safeText(setup.courseReportComment1, ""),
+    { preserveFormula: false }
+  );
+  writeCellValue(
+    document,
+    cells,
+    "B62",
+    safeText(setup.courseReportComment2, ""),
+    { preserveFormula: false }
+  );
   writeCellValue(
     document,
     cells,
     "B67",
-    safeText(setup.notes || payload.output?.notes, ""),
+    safeText(setup.courseReportGeneralComment, ""),
     { preserveFormula: false }
   );
 };
@@ -1133,6 +1580,7 @@ export const exportObeWorkbook = async (payload = {}) => {
   });
 
   const errors = [...layout.errors];
+  const warnings = [...layout.warnings];
   const rawStudents = Array.isArray(payload.students)
     ? payload.students
     : payload.output?.students || [];
@@ -1226,6 +1674,26 @@ export const exportObeWorkbook = async (payload = {}) => {
   );
   removeCheckboxMacroAssignments(mappingDocument);
 
+  const teacherSignature = getTeacherSignature(payload);
+  if (teacherSignature) {
+    try {
+      await addFacultySignatureToCourseReport(
+        zip,
+        sheetMap.get("Course Report"),
+        teacherSignature
+      );
+    } catch (error) {
+      console.warn("Unable to add faculty signature to Course Report", error);
+      warnings.push(
+        "The faculty signature could not be embedded in the Course Report sheet."
+      );
+    }
+  } else {
+    warnings.push(
+      "No faculty signature is saved in the teacher profile, so the Course Report signature area is blank."
+    );
+  }
+
   setWorkbookRecalculation(workbookDocument);
 
   zip.file(sheetMap.get("GradeSheet"), serializeXml(gradeDocument));
@@ -1248,5 +1716,5 @@ export const exportObeWorkbook = async (payload = {}) => {
     compressionOptions: { level: 6 },
   });
 
-  return { blob, warnings: layout.warnings };
+  return { blob, warnings };
 };

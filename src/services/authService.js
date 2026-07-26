@@ -31,7 +31,9 @@ export const updateProfileRequest = async ({
   phone,
   shortCode,
   designation,
+  department,
   profileImageBase64,
+  signatureImageBase64,
 }) => {
   const res = await api.put("/auth/profile", {
     username,
@@ -40,7 +42,9 @@ export const updateProfileRequest = async ({
     phone,
     shortCode,
     designation,
+    department,
     profileImageBase64,
+    signatureImageBase64,
   });
 
   return res.data;

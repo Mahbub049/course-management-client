@@ -90,8 +90,6 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
       label: "Academic Calendar",
       icon: <AcademicCalendarIcon />,
     },
-    { to: "/change-password", label: "Account", icon: <UserIcon /> },
-
   ];
 
   const studentLinks = [
@@ -115,6 +113,7 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
   }, [role]);
 
   const pageTitle = useMemo(() => {
+    if (location.pathname.startsWith("/change-password")) return "Account";
     const found = links.find((l) => location.pathname.startsWith(l.to));
     return found?.label || "BUBT Marks Portal";
   }, [location.pathname, links]);
@@ -244,9 +243,13 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
               : "",
           ].join(" ")}
         >
-          <div
+          <button
+            type="button"
+            onClick={() => navigate("/change-password")}
+            title="Manage account"
             className={[
-              "flex items-center gap-3",
+              "flex w-full items-center gap-3 rounded-2xl text-left transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-violet-500/20 dark:hover:bg-slate-800/70",
+              collapsed && !isMobile ? "p-0" : "p-1",
               collapsed && !isMobile ? "justify-center" : "",
             ].join(" ")}
           >
@@ -272,7 +275,7 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
                 </div>
               </div>
             )}
-          </div>
+          </button>
 
           {!(collapsed && !isMobile) && (
             <button
@@ -367,12 +370,17 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
 
               <div className="flex items-center gap-2 sm:gap-3">
                 {userName && (
-                  <span className="hidden text-sm text-slate-600 dark:text-slate-300 lg:inline">
+                  <button
+                    type="button"
+                    onClick={() => navigate("/change-password")}
+                    className="hidden rounded-xl px-2 py-1 text-sm text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 lg:inline"
+                    title="Manage account"
+                  >
                     Signed in as{" "}
                     <span className="font-semibold text-slate-900 dark:text-white">
                       {userName}
                     </span>
-                  </span>
+                  </button>
                 )}
 
                 {role && (

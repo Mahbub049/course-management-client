@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import { downloadRoutineDocument, getMyRoutine } from "../services/routineService";
+import { downloadClassRoutinePdf } from "../utils/routinePdfExport";
 import {
   DAY_LABELS,
   PRAYER_LUNCH,
@@ -78,6 +79,17 @@ function TeacherRoutinePage() {
     }
   };
 
+  const downloadPdf = () => {
+    try {
+      setDownloading("class-routine-pdf");
+      downloadClassRoutinePdf(routine);
+    } catch (error) {
+      Swal.fire("Download failed", error?.message || "Create and save a valid routine first.", "error");
+    } finally {
+      setDownloading("");
+    }
+  };
+
   if (loading) {
     return <div className="flex min-h-[45vh] items-center justify-center text-sm font-semibold text-slate-500">Loading routine...</div>;
   }
@@ -91,12 +103,13 @@ function TeacherRoutinePage() {
           <div>
             <span className="rounded-full border border-violet-300/40 bg-violet-500/10 px-3 py-1 text-xs font-bold text-violet-700 dark:text-violet-300">Class Routine</span>
             <h1 className="mt-3 text-2xl font-black text-slate-950 dark:text-white">Routine & Weekly Activities</h1>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">The Word downloads follow the two supplied university templates and omit unused time-slot columns.</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Download the full Word routine or a clean class-only PDF.</p>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
             <button type="button" onClick={() => navigate("/teacher/routine/manage")} className="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-bold text-white">Create / Update</button>
             <button type="button" onClick={() => window.open("/routine-reference", "_blank", "noopener,noreferrer")} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold dark:border-slate-700">Schedule & Rooms</button>
             <button type="button" onClick={() => download("class-routine")} disabled={Boolean(downloading)} className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700 disabled:opacity-60 dark:bg-emerald-500/10 dark:text-emerald-300">{downloading === "class-routine" ? "Preparing..." : "Download Routine"}</button>
+            <button type="button" onClick={downloadPdf} disabled={Boolean(downloading) || !routine} className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2.5 text-sm font-bold text-rose-700 disabled:opacity-60 dark:bg-rose-500/10 dark:text-rose-300">{downloading === "class-routine-pdf" ? "Preparing PDF..." : "Download PDF"}</button>
             <button type="button" onClick={() => download("faculty-nameplate")} disabled={Boolean(downloading)} className="rounded-xl border border-sky-300 bg-sky-50 px-4 py-2.5 text-sm font-bold text-sky-700 disabled:opacity-60 dark:bg-sky-500/10 dark:text-sky-300">{downloading === "faculty-nameplate" ? "Preparing..." : "Download Nameplate"}</button>
           </div>
         </div>

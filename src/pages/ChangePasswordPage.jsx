@@ -16,6 +16,22 @@ const DESIGNATION_OPTIONS = [
   "Professor",
 ];
 
+const DEPARTMENT_OPTIONS = [
+  { value: "CSE", label: "CSE - Computer Science & Engineering" },
+  { value: "DSE", label: "DSE - Data Science & Engineering" },
+  { value: "EEE", label: "EEE - Electrical & Electronic Engineering" },
+  { value: "Textile Engineering", label: "Textile Engineering" },
+  { value: "Civil Engineering", label: "Civil Engineering" },
+  { value: "BBA", label: "Business Administration (BBA)" },
+  { value: "Accounting", label: "Accounting" },
+  { value: "Finance", label: "Finance" },
+  { value: "Management", label: "Management" },
+  { value: "Marketing", label: "Marketing" },
+  { value: "English", label: "English" },
+  { value: "Economics", label: "Economics" },
+  { value: "Law & Justice", label: "Law & Justice" },
+];
+
 function ChangePasswordPage() {
   const navigate = useNavigate();
   const role = getAuthItem("marksPortalRole");
@@ -38,6 +54,9 @@ function ChangePasswordPage() {
   const [designation, setDesignation] = useState(
     getAuthItem("marksPortalDesignation") || ""
   );
+  const [department, setDepartment] = useState(
+    getAuthItem("marksPortalDepartment") || ""
+  );
 
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState("");
@@ -55,6 +74,10 @@ function ChangePasswordPage() {
     getAuthItem("marksPortalProfileImage") || ""
   );
   const [profileImageBase64, setProfileImageBase64] = useState("");
+  const [signatureImage, setSignatureImage] = useState(
+    getAuthItem("marksPortalSignatureImage") || ""
+  );
+  const [signatureImageBase64, setSignatureImageBase64] = useState("");
 
   useEffect(() => {
     if (role !== "teacher") return undefined;
@@ -73,7 +96,9 @@ function ChangePasswordPage() {
         setPhone(data.phone || "");
         setShortCode(data.shortCode || "");
         setDesignation(data.designation || "");
+        setDepartment(data.department || "");
         setProfileImage(data.profileImage || "");
+        setSignatureImage(data.signatureImage || "");
 
         setAuthItem("marksPortalUsername", data.username || "");
         setAuthItem("marksPortalName", data.name || "");
@@ -85,6 +110,9 @@ function ChangePasswordPage() {
 
         if (data.profileImage) {
           setAuthItem("marksPortalProfileImage", data.profileImage);
+        }
+        if (data.signatureImage) {
+          setAuthItem("marksPortalSignatureImage", data.signatureImage);
         }
       } catch (err) {
         // Keep the locally stored values if the profile request is unavailable.
@@ -119,6 +147,30 @@ function ChangePasswordPage() {
     reader.onloadend = () => {
       setProfileImage(reader.result);
       setProfileImageBase64(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSignatureImageChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setProfileError("");
+
+    if (!file.type.startsWith("image/")) {
+      setProfileError("Please select a valid signature image file.");
+      return;
+    }
+
+    if (file.size > 3 * 1024 * 1024) {
+      setProfileError("Please select a signature image smaller than 3MB.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setSignatureImage(reader.result);
+      setSignatureImageBase64(reader.result);
     };
     reader.readAsDataURL(file);
   };
@@ -172,6 +224,11 @@ function ChangePasswordPage() {
       return;
     }
 
+    if (!department) {
+      setProfileError("Please select your department.");
+      return;
+    }
+
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       setProfileError("Please enter a valid email address.");
       return;
@@ -187,7 +244,9 @@ function ChangePasswordPage() {
         phone: phone.trim(),
         shortCode: shortCode.trim(),
         designation,
+        department,
         profileImageBase64: profileImageBase64 || undefined,
+        signatureImageBase64: signatureImageBase64 || undefined,
       });
 
       setProfileSuccess("Profile updated successfully.");
@@ -209,6 +268,9 @@ function ChangePasswordPage() {
       if (data.profileImage) {
         setAuthItem("marksPortalProfileImage", data.profileImage);
       }
+      if (data.signatureImage) {
+        setAuthItem("marksPortalSignatureImage", data.signatureImage);
+      }
 
       window.dispatchEvent(new Event("marksPortalProfileUpdated"));
     } catch (err) {
@@ -221,33 +283,27 @@ function ChangePasswordPage() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Hero */}
-      <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-indigo-50 p-5 shadow-sm dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/30 sm:p-6 lg:p-7">
+    <div className="space-y-5">
+      <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-indigo-50 p-5 shadow-sm dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/30 sm:p-6">
         <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-indigo-200/40 blur-3xl dark:bg-indigo-600/20" />
-        <div className="absolute -left-10 bottom-0 h-32 w-32 rounded-full bg-sky-200/40 blur-3xl dark:bg-sky-600/20" />
-
-        <div className="relative flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs font-semibold text-slate-700 backdrop-blur dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200">
+            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200">
               <SettingsIcon />
               Account Settings
             </div>
-
             <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
               Manage Your Account
             </h1>
-
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-              Update your password securely. Teachers can also change username,
-              display name, email, phone, short code, and designation from this page.
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-400">
+              Manage your profile and security details from one compact page.
             </p>
           </div>
 
           <button
             type="button"
             onClick={() => navigate(-1)}
-            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+            className="inline-flex items-center justify-center gap-2 self-start rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 md:self-auto"
           >
             <ArrowLeftIcon />
             Back
@@ -255,284 +311,226 @@ function ChangePasswordPage() {
         </div>
       </section>
 
-      {/* Cards */}
-      <div
-        className={`grid grid-cols-1 gap-5 ${
-          role === "teacher" ? "xl:grid-cols-2" : ""
-        }`}
-      >
-        {/* Change Password */}
+      {role === "teacher" && (
         <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800 sm:px-6">
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-indigo-100 bg-indigo-50 dark:border-indigo-500/20 dark:bg-indigo-500/10">
-                <LockIcon />
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-violet-100 bg-violet-50 dark:border-violet-500/20 dark:bg-violet-500/10">
+                <UserBadgeIcon />
               </div>
-
               <div>
                 <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-                  Change Password
+                  Faculty Profile
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Keep your account secure by updating your password regularly.
+                  Profile photo, signature, faculty details, and contact information.
                 </p>
               </div>
             </div>
           </div>
 
           <div className="p-5 sm:p-6">
-            {error && (
-              <AlertBox tone="danger" title="Action required" message={error} />
+            {profileError && (
+              <AlertBox tone="danger" title="Could not save" message={profileError} />
+            )}
+            {profileSuccess && (
+              <AlertBox tone="success" title="Saved" message={profileSuccess} />
             )}
 
-            {success && (
-              <AlertBox tone="success" title="Success" message={success} />
-            )}
-
-            <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-              <Field label="Current Password">
-                <PasswordInput
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  autoComplete="current-password"
-                  required
-                />
-              </Field>
-
-              <Field
-                label="New Password"
-                hint="Minimum 6 characters. Use a stronger password if possible."
-              >
-                <PasswordInput
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  autoComplete="new-password"
-                  required
-                />
-              </Field>
-
-              <Field label="Confirm New Password">
-                <PasswordInput
-                  value={confirmNewPassword}
-                  onChange={(e) => setConfirmNewPassword(e.target.value)}
-                  autoComplete="new-password"
-                  required
-                />
-              </Field>
-
-              <div className="flex justify-end pt-2">
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {loading ? (
-                    <>
-                      <SpinnerIcon />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <CheckIcon />
-                      Update Password
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </section>
-
-        {/* Teacher Account Details */}
-        {role === "teacher" && (
-          <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800 sm:px-6">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-violet-100 bg-violet-50 dark:border-violet-500/20 dark:bg-violet-500/10">
-                  <UserBadgeIcon />
-                </div>
-
-                <div>
-                  <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-                    Account Details
-                  </h2>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Update your teacher username, contact details, display name, short code, and designation.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-5 sm:p-6">
-              {profileError && (
-                <AlertBox
-                  tone="danger"
-                  title="Could not save"
-                  message={profileError}
-                />
-              )}
-
-              {profileSuccess && (
-                <AlertBox
-                  tone="success"
-                  title="Saved"
-                  message={profileSuccess}
-                />
-              )}
-
-              <form onSubmit={handleProfileSave} className="mt-4 space-y-4">
+            <form onSubmit={handleProfileSave} className="mt-4 grid gap-5 xl:grid-cols-[310px_minmax(0,1fr)]">
+              <div className="space-y-4">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/60">
                   <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
                     Profile Picture
                   </label>
-
-                  <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-center">
-                    <div className="h-24 w-24 overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+                  <div className="mt-3 flex items-center gap-4">
+                    <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
                       {profileImage ? (
-                        <img
-                          src={profileImage}
-                          alt="Profile preview"
-                          className="h-full w-full object-cover"
-                        />
+                        <img src={profileImage} alt="Profile preview" className="h-full w-full object-cover" />
                       ) : (
-                        <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
-                          No image
-                        </div>
+                        <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">No image</div>
                       )}
                     </div>
-
-                    <div className="flex-1">
+                    <div className="min-w-0 flex-1">
                       <input
                         type="file"
                         accept="image/*"
                         onChange={handleProfileImageChange}
-                        className="block w-full cursor-pointer text-sm text-slate-600 file:mr-4 file:cursor-pointer file:rounded-xl file:border-0 file:bg-indigo-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-indigo-700 dark:text-slate-300"
+                        className="block w-full cursor-pointer text-xs text-slate-600 file:mr-2 file:cursor-pointer file:rounded-xl file:border-0 file:bg-indigo-600 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white hover:file:bg-indigo-700 dark:text-slate-300"
                       />
-                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                        JPG, PNG, WEBP supported. Keep image under 5MB.
-                      </p>
+                      <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">JPG, PNG or WEBP, up to 5MB.</p>
                     </div>
                   </div>
                 </div>
 
-                <Field
-                  label="Teacher Username"
-                  hint="This is the ID you use to log in as teacher."
-                >
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/60">
+                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
+                    Faculty Signature
+                  </label>
+                  <div className="mt-3 flex h-20 items-center justify-center overflow-hidden rounded-xl border border-dashed border-slate-300 bg-white p-2 dark:border-slate-600 dark:bg-slate-950">
+                    {signatureImage ? (
+                      <img src={signatureImage} alt="Faculty signature preview" className="max-h-full max-w-full object-contain" />
+                    ) : (
+                      <span className="text-xs text-slate-400">No signature uploaded</span>
+                    )}
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleSignatureImageChange}
+                    className="mt-3 block w-full cursor-pointer text-xs text-slate-600 file:mr-2 file:cursor-pointer file:rounded-xl file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white hover:file:bg-slate-800 dark:text-slate-300 dark:file:bg-slate-100 dark:file:text-slate-900"
+                  />
+                  <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">Use a clear signature image with a plain or transparent background, up to 3MB.</p>
+                </div>
+              </div>
+
+              <div className="grid content-start gap-4 sm:grid-cols-2">
+                <Field label="Teacher Username" hint="Your teacher login ID.">
                   <input
                     type="text"
                     className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="e.g. main_teacher"
                   />
                 </Field>
 
-                <Field
-                  label="Short Code"
-                  hint="Enter the short code used to identify you, such as initials or a faculty code."
-                >
+                <Field label="Short Code" hint="Faculty initials/code used in reports.">
                   <input
                     type="text"
                     className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
                     value={shortCode}
                     onChange={(e) => setShortCode(e.target.value)}
-                    placeholder="e.g. MMS"
                     maxLength={20}
                   />
                 </Field>
 
-                <Field label="Display Name (optional)">
+                <Field label="Display Name">
                   <input
                     type="text"
                     className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="e.g. Mahbub Sarwar"
                   />
                 </Field>
 
-                <Field
-                  label="Email Address"
-                  hint="Used in routine documents, faculty records, and account recovery."
-                >
-                  <input
-                    type="email"
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="name@bubt.edu.bd"
-                    required
-                  />
-                </Field>
-
-                <Field
-                  label="Phone Number"
-                  hint="Used in the faculty routine and nameplate documents."
-                >
-                  <input
-                    type="tel"
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+8801XXXXXXXXX"
-                    maxLength={30}
-                  />
-                </Field>
-
-                <Field
-                  label="Designation"
-                  hint="This designation will be used in official reports, including the attendance PDF."
-                >
+                <Field label="Department" hint="Select the faculty department shown in reports and your profile.">
                   <select
                     className="routine-select w-full cursor-pointer rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    value={designation}
-                    onChange={(e) => setDesignation(e.target.value)}
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
                     required
                   >
-                    <option value="">Select designation</option>
-                    {DESIGNATION_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
+                    <option value="">Select department</option>
+                    {department && !DEPARTMENT_OPTIONS.some((item) => item.value === department) && (
+                      <option value={department}>{department}</option>
+                    )}
+                    {DEPARTMENT_OPTIONS.map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
                       </option>
                     ))}
                   </select>
                 </Field>
 
-                <div className="flex justify-end pt-2">
+                <Field label="Email Address">
+                  <input
+                    type="email"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </Field>
+
+                <Field label="Phone Number">
+                  <input
+                    type="tel"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    maxLength={30}
+                  />
+                </Field>
+
+                <div className="sm:col-span-2">
+                  <Field label="Designation">
+                    <select
+                      className="routine-select w-full cursor-pointer rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      value={designation}
+                      onChange={(e) => setDesignation(e.target.value)}
+                      required
+                    >
+                      <option value="">Select designation</option>
+                      {DESIGNATION_OPTIONS.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+
+                <div className="flex justify-end sm:col-span-2">
                   <button
                     type="submit"
                     disabled={profileLoading}
                     className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
                   >
                     {profileLoading ? (
-                      <>
-                        <SpinnerIcon />
-                        Saving...
-                      </>
+                      <><SpinnerIcon />Saving...</>
                     ) : (
-                      <>
-                        <CheckIcon />
-                        Save Changes
-                      </>
+                      <><CheckIcon />Save Profile</>
                     )}
                   </button>
                 </div>
-              </form>
-
-              <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/80">
-                <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                  Tip
-                </div>
-                <p className="mt-1 text-xs leading-6 text-slate-600 dark:text-slate-400">
-                  Your saved designation will be used automatically in official
-                  reports such as the attendance PDF.
-                </p>
               </div>
+            </form>
+          </div>
+        </section>
+      )}
+
+      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800 sm:px-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-indigo-100 bg-indigo-50 dark:border-indigo-500/20 dark:bg-indigo-500/10">
+              <LockIcon />
             </div>
-          </section>
-        )}
-      </div>
+            <div>
+              <h2 className="text-base font-semibold text-slate-900 dark:text-white">Change Password</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Update your password without leaving the profile page.</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-5 sm:p-6">
+          {error && <AlertBox tone="danger" title="Action required" message={error} />}
+          {success && <AlertBox tone="success" title="Success" message={success} />}
+
+          <form onSubmit={handleSubmit} className="mt-4 grid gap-4 lg:grid-cols-3">
+            <Field label="Current Password">
+              <PasswordInput value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} autoComplete="current-password" required />
+            </Field>
+            <Field label="New Password" hint="Minimum 6 characters.">
+              <PasswordInput value={newPassword} onChange={(e) => setNewPassword(e.target.value)} autoComplete="new-password" required />
+            </Field>
+            <Field label="Confirm New Password">
+              <PasswordInput value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} autoComplete="new-password" required />
+            </Field>
+
+            <div className="flex justify-end lg:col-span-3">
+              <button
+                type="submit"
+                disabled={loading}
+                className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loading ? (
+                  <><SpinnerIcon />Saving...</>
+                ) : (
+                  <><CheckIcon />Update Password</>
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      </section>
     </div>
   );
 }

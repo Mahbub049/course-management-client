@@ -708,16 +708,6 @@ function advancedAssessmentItems(assessment) {
   return items;
 }
 
-function getAdvancedExportColumns(assessment) {
-  const items = advancedAssessmentItems(assessment);
-
-  return items.map((item) => ({
-    key: item.key,
-    label: `${assessment.name} → ${item.label}`,
-    fullMarks: item.fullMarks,
-  }));
-}
-
 function calculateAdvancedObtained(assessment, subMarksMap) {
   const items = advancedAssessmentItems(assessment);
   return round2(
@@ -1147,52 +1137,61 @@ function AssessmentPublishingControls({
     String(visibilityAssessmentId || "") === assessmentId;
   const isBusy = isPublishing || isUnpublishing || isUpdatingVisibility;
 
+  const statusLabel = !isPublished
+    ? "Unpublished"
+    : showMarksToStudents
+      ? "Mark shown"
+      : "Mark hidden";
+
   return (
-    <div className="space-y-1.5 normal-case">
-      <div
+    <div className="flex flex-wrap items-center justify-center gap-1 normal-case">
+      <span
         className={[
-          "rounded-full border px-2 py-1 text-[10px] font-semibold leading-tight",
+          "inline-flex h-6 items-center rounded-lg border px-1.5 text-[9px] font-bold leading-none",
           !isPublished
             ? "border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
             : showMarksToStudents
               ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
               : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300",
         ].join(" ")}
+        title={
+          !isPublished
+            ? "This assessment is not visible to students."
+            : showMarksToStudents
+              ? "The individual assessment mark is visible to students."
+              : "The individual mark is hidden; total and grade remain visible."
+        }
       >
-        {!isPublished
-          ? "Not visible to students"
-          : showMarksToStudents
-            ? "Individual mark visible"
-            : "Mark hidden • Total & grade visible"}
-      </div>
+        {statusLabel}
+      </span>
 
-      <div className="flex flex-wrap justify-center gap-1.5">
+      <button
+        type="button"
+        onClick={() => onPublish(assessment)}
+        disabled={isBusy}
+        className="inline-flex h-6 items-center rounded-lg border border-indigo-200 bg-indigo-50 px-1.5 text-[9px] font-bold text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300"
+        title={isPublished ? "Publish the latest saved marks again." : "Publish this assessment to students."}
+      >
+        {isPublishing
+          ? isPublished
+            ? "Republishing..."
+            : "Publishing..."
+          : isPublished
+            ? "Republish"
+            : "Publish"}
+      </button>
+
+      {isPublished && (
         <button
           type="button"
-          onClick={() => onPublish(assessment)}
+          onClick={() => onUnpublish(assessment)}
           disabled={isBusy}
-          className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300"
+          className="inline-flex h-6 items-center rounded-lg border border-rose-200 bg-rose-50 px-1.5 text-[9px] font-bold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300"
+          title="Remove this assessment from the student view."
         >
-          {isPublishing
-            ? isPublished
-              ? "Republishing..."
-              : "Publishing..."
-            : isPublished
-              ? "Republish"
-              : "Publish"}
+          {isUnpublishing ? "Unpublishing..." : "Unpublish"}
         </button>
-
-        {isPublished && (
-          <button
-            type="button"
-            onClick={() => onUnpublish(assessment)}
-            disabled={isBusy}
-            className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300"
-          >
-            {isUnpublishing ? "Unpublishing..." : "Unpublish"}
-          </button>
-        )}
-      </div>
+      )}
 
       {isPublished && (
         <button
@@ -1200,7 +1199,7 @@ function AssessmentPublishingControls({
           onClick={() => onToggleVisibility(assessment)}
           disabled={isBusy}
           className={[
-            "rounded-full border px-2.5 py-1 text-[11px] font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60",
+            "inline-flex h-6 items-center rounded-lg border px-1.5 text-[9px] font-bold transition disabled:cursor-not-allowed disabled:opacity-60",
             showMarksToStudents
               ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
               : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300",
@@ -1214,8 +1213,8 @@ function AssessmentPublishingControls({
           {isUpdatingVisibility
             ? "Updating..."
             : showMarksToStudents
-              ? "Hide Exam Mark"
-              : "Show Exam Mark"}
+              ? "Hide mark"
+              : "Show mark"}
         </button>
       )}
     </div>
@@ -1438,17 +1437,7 @@ export default function TabMarks({ courseId, course }) {
     return sortedAssessments.filter((a) => a?.structureType === "lab_final");
   }, [sortedAssessments]);
 
-  const advancedExportColumns = useMemo(() => {
-    return advancedLabFinalAssessments.flatMap((assessment) =>
-      getAdvancedExportColumns(assessment).map((col) => ({
-        assessmentId: assessment._id,
-        assessmentName: assessment.name,
-        key: col.key,
-        label: col.label,
-        fullMarks: col.fullMarks,
-      }))
-    );
-  }, [advancedLabFinalAssessments]);
+
 
   const ctAssessments = useMemo(() => {
     return sortedAssessments.filter(
@@ -1623,8 +1612,6 @@ export default function TabMarks({ courseId, course }) {
       (a) => String(a._id) === String(assessmentId)
     );
 
-    if (assessment?.syncLocked) return;
-
     if (assessment && isAttendanceAssessment(assessment)) {
       setAttMarksMap((prev) => ({
         ...prev,
@@ -1668,8 +1655,6 @@ export default function TabMarks({ courseId, course }) {
     const assessment = assessments.find(
       (a) => String(a._id) === String(assessmentId)
     );
-
-    if (assessment?.syncLocked) return;
 
     const normalizedNumber = normalized === "" ? 0 : toHalfMarkNumber(normalized);
     const nextCell = {
@@ -2321,71 +2306,182 @@ export default function TabMarks({ courseId, course }) {
   };
 
   const handleExportExcel = () => {
-    const header = [
-      "Roll",
-      "Student",
-      ...(courseType === "lab"
-        ? labRegularAssessments.map((a) => `${a.name} (${a.fullMarks})`)
-        : ctAssessments.map((a) => `${a.name} (${a.fullMarks})`)),
-      `${getMainColumnLabel(courseType)} /${getMainColumnFullMarks(course, courseType)}`,
-      ...nonCtDisplayColumns.map((col) =>
-        col.type === "assessment"
-          ? `${col.assessment.name} (${col.assessment.fullMarks})`
-          : `${col.label} (${col.fullMarks})`
-      ),
-      ...advancedExportColumns.map((col) => `${col.label} (${col.fullMarks})`),
-      "Total /100",
-      "Grade",
-    ];
+    const assessmentList = Array.isArray(sortedAssessments)
+      ? sortedAssessments
+      : [];
 
-    const rows = sortedStudents.map((s) => {
-      const row = marksMap[s.id] || {};
-      const total = computeTotal100(
-        course,
-        assessments,
-        row,
-        Number(attMarksMap[s.id] || 0)
+    const assessmentName = (assessment) =>
+      String(assessment?.name || "").toLowerCase().trim();
+
+    const findMidAssessment = () => {
+      const structuredMid = assessmentList.find(
+        (assessment) =>
+          assessment?.structureType === "lab_final" &&
+          getStructuredLabPeriod(assessment) === "mid"
       );
 
-      const advancedBreakdownValues = advancedExportColumns.map((col) => {
-        const cell = row[col.assessmentId];
-        const subMarksMap = getSubMarkMap(cell);
-        return Number(subMarksMap?.[col.key] || 0);
+      if (structuredMid) return structuredMid;
+
+      return assessmentList.find((assessment) => {
+        const name = assessmentName(assessment);
+        return name.includes("mid") && !name.includes("final");
       });
+    };
+
+    const findFinalAssessment = () => {
+      const structuredFinal = assessmentList.find(
+        (assessment) =>
+          assessment?.structureType === "lab_final" &&
+          getStructuredLabPeriod(assessment) === "final"
+      );
+
+      if (structuredFinal) return structuredFinal;
+
+      return assessmentList.find((assessment) =>
+        assessmentName(assessment).includes("final")
+      );
+    };
+
+    const getScaledAssessmentValue = (row, assessment, targetMarks) => {
+      if (!assessment) return 0;
+
+      const cell = row?.[assessment._id];
+      if (isIncompleteCell(cell)) return "A";
+
+      const fullMarks = Number(assessment.fullMarks || 0);
+      if (fullMarks <= 0) return 0;
+
+      return roundPolicyTotal(
+        pct(getMainMarkValue(cell), fullMarks) * Number(targetMarks || 0)
+      );
+    };
+
+    const getTheoryMidValue = (row) => {
+      if (courseType !== "hybrid") {
+        return getScaledAssessmentValue(row, findMidAssessment(), 30);
+      }
+
+      const genericMid = assessmentList.find(isHybridGenericMidAssessment);
+      if (genericMid) return getScaledAssessmentValue(row, genericMid, 30);
+
+      if (hasHybridMidParts(assessmentList)) {
+        return roundPolicyTotal(computeHybridMidTotal(assessmentList, row));
+      }
+
+      return getScaledAssessmentValue(row, findMidAssessment(), 30);
+    };
+
+    const getTheoryFinalValue = (row) => {
+      if (courseType !== "hybrid") {
+        return getScaledAssessmentValue(row, findFinalAssessment(), 40);
+      }
+
+      const genericFinal = assessmentList.find(isHybridGenericFinalAssessment);
+      if (genericFinal) return getScaledAssessmentValue(row, genericFinal, 40);
+
+      if (hasHybridFinalParts(assessmentList)) {
+        return roundPolicyTotal(computeHybridFinalTotal(assessmentList, row));
+      }
+
+      return getScaledAssessmentValue(row, findFinalAssessment(), 40);
+    };
+
+    const getAssignmentValue = (row) => {
+      const assignment = assessmentList.find((assessment) =>
+        assessmentName(assessment).includes("assign")
+      );
+      const presentation = assessmentList.find((assessment) =>
+        assessmentName(assessment).includes("present")
+      );
+
+      if (courseType === "hybrid") {
+        if (!assignment) return 0;
+        return roundPolicyTotal(
+          pct(
+            getMainMarkValue(row?.[assignment._id]),
+            Number(assignment.fullMarks || 0)
+          ) * getHybridAssignmentWeight(course)
+        );
+      }
+
+      if (assignment && presentation) {
+        const assignmentScore =
+          pct(
+            getMainMarkValue(row?.[assignment._id]),
+            Number(assignment.fullMarks || 0)
+          ) * 5;
+        const presentationScore =
+          pct(
+            getMainMarkValue(row?.[presentation._id]),
+            Number(presentation.fullMarks || 0)
+          ) * 5;
+
+        return roundPolicyTotal(assignmentScore + presentationScore);
+      }
+
+      const single = assignment || presentation;
+      if (!single) return 0;
+
+      return roundPolicyTotal(
+        pct(
+          getMainMarkValue(row?.[single._id]),
+          Number(single.fullMarks || 0)
+        ) * 10
+      );
+    };
+
+    const isLabCourse = courseType === "lab";
+
+    // Keep the exported marksheet deliberately compact and predictable.
+    // These exact headers are also suitable for header-based import/fill tools.
+    const header = isLabCourse
+      ? ["Roll", "Student", "Lab Evaluation", "Final", "Mid Term", "Attendance"]
+      : [
+          "Roll",
+          "Student",
+          "Class Test",
+          "Mid Term",
+          "Final",
+          "Attendance",
+          "Assignment",
+        ];
+
+    const rows = sortedStudents.map((student) => {
+      const row = marksMap[student.id] || {};
+      const attendance = roundPolicyTotal(Number(attMarksMap[student.id] || 0));
+
+      if (isLabCourse) {
+        return [
+          student.roll || "",
+          student.name || "",
+          getLabMain(assessmentList, row),
+          getScaledAssessmentValue(row, findFinalAssessment(), 40),
+          getScaledAssessmentValue(row, findMidAssessment(), 30),
+          attendance,
+        ];
+      }
 
       return [
-        s.roll || "",
-        s.name || "",
-        ...(courseType === "lab"
-          ? labRegularAssessments.map((a) => getMarkDisplayValue(row[a._id]))
-          : ctAssessments.map((a) => getMarkDisplayValue(row[a._id]))),
-        courseType === "lab"
-          ? getLabMain(assessments, row)
-          : roundPolicyTotal(computeCtScore(course, assessments, row)),
-        ...nonCtDisplayColumns.map((col) => {
-          if (col.type === "hybrid_mid_total") {
-            return Number(computeHybridMidTotal(assessments, row)).toFixed(1);
-          }
-
-          if (col.type === "hybrid_final_total") {
-            return Number(computeHybridFinalTotal(assessments, row)).toFixed(1);
-          }
-
-          return getMarkDisplayValue(row[col.assessment._id]);
-        }),
-        ...advancedBreakdownValues,
-        Number(total).toFixed(1),
-        gradeForStudent(course, assessments, row, total),
+        student.roll || "",
+        student.name || "",
+        roundPolicyTotal(computeCtScore(course, assessmentList, row)),
+        getTheoryMidValue(row),
+        getTheoryFinalValue(row),
+        attendance,
+        getAssignmentValue(row),
       ];
     });
 
     const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
 
-    const colWidths = header.map((h) => {
-      const len = String(h || "").length;
-      return { wch: Math.min(Math.max(len + 4, 12), 30) };
-    });
-    ws["!cols"] = colWidths;
+    ws["!cols"] = header.map((columnName) => ({
+      wch:
+        columnName === "Student"
+          ? 28
+          : columnName === "Roll"
+            ? 16
+            : Math.max(14, columnName.length + 3),
+    }));
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Marks");
@@ -3207,10 +3303,6 @@ export default function TabMarks({ courseId, course }) {
 
                           {(courseType === "lab" ? labRegularAssessments : ctAssessments).map(
                             (a, colIndex) => {
-                              const isAttendanceCol = String(a.name || "")
-                                .toLowerCase()
-                                .includes("att");
-
                               const cell = row[a._id];
 
                               return (
@@ -3218,7 +3310,6 @@ export default function TabMarks({ courseId, course }) {
                                   <input
                                     type="text"
                                     inputMode="decimal"
-                                    disabled={isAttendanceCol}
                                     title={
                                       a.syncLocked
                                         ? "This value is connected to Marks Sync, but manual editing is allowed. Running sync again may replace the manual value."
@@ -3227,11 +3318,9 @@ export default function TabMarks({ courseId, course }) {
                                     className={[
                                       "h-11 w-24 rounded-xl border px-3 text-sm shadow-sm transition",
                                       "focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500",
-                                      isAttendanceCol
-                                        ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
-                                        : a.syncLocked
-                                          ? "border-emerald-200 bg-emerald-50/50 text-slate-900 hover:border-emerald-300 dark:border-emerald-500/30 dark:bg-emerald-500/5 dark:text-slate-100"
-                                          : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
+                                      a.syncLocked
+                                        ? "border-emerald-200 bg-emerald-50/50 text-slate-900 hover:border-emerald-300 dark:border-emerald-500/30 dark:bg-emerald-500/5 dark:text-slate-100"
+                                        : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
                                     ].join(" ")}
                                     value={cell == null ? "" : getMarkDisplayValue(cell)}
                                     onChange={(e) =>

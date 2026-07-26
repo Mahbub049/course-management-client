@@ -9,6 +9,7 @@ const AUTH_KEYS = [
   "marksPortalDesignation",
   "marksPortalDepartment",
   "marksPortalProfileImage",
+  "marksPortalSignatureImage",
 ];
 
 export function getAuthItem(key) {
@@ -78,6 +79,10 @@ export function saveAuthData(data, rememberMe) {
 
   if (data.profileImage) {
     storage.setItem("marksPortalProfileImage", data.profileImage);
+  }
+
+  if (data.signatureImage) {
+    storage.setItem("marksPortalSignatureImage", data.signatureImage);
   }
 }
 
