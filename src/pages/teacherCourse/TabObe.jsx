@@ -23,7 +23,17 @@ import {
   parseObeImportedWorkbookStructure,
 } from "../../utils/obeWorkbookImport";
 import { parseObeCourseOutlinePdf } from "../../utils/obeCourseOutlineImport";
+import {
+  analyzeObeMarksSheet,
+  chooseDefaultObeMarksSheet,
+  findMatchingBlueprintForGroup,
+  normalizeImportedMarkValue,
+  normalizeObeImportLabel,
+  parseObeMarksWorkbook,
+  suggestBlueprintItemForColumn,
+} from "../../utils/obeMarksExcelImport";
 import { getAuthItem } from "../../utils/authStorage";
+import { premiumSwal } from "../../utils/premiumDialog";
 
 const defaultLevels = [
   { min: 70, max: 100, level: 4 },
@@ -64,6 +74,15 @@ const toast = (icon, title) =>
     showConfirmButton: false,
     timer: 1800,
   });
+
+const withSwalValidation = (fn) => () => {
+  try {
+    return fn();
+  } catch (error) {
+    Swal.showValidationMessage(error?.message || "Please review the highlighted import settings.");
+    return false;
+  }
+};
 
 const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
@@ -196,6 +215,49 @@ const reuseSemesterRank = {
   fall: 3,
 };
 
+const normalizeStudentNameForImport = (value) =>
+  String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const buildMarkEntryState = (data = {}) => {
+  const students = Array.isArray(data?.students) ? data.students : [];
+  const loadedBlueprints = sortBlueprints(
+    (Array.isArray(data?.blueprints) ? data.blueprints : []).map(
+      normalizeBlueprintLabels
+    )
+  );
+  const marks = Array.isArray(data?.marks) ? data.marks : [];
+  const draft = {};
+
+  for (const student of students) {
+    for (const blueprint of loadedBlueprints) {
+      const key = `${student.studentId}__${blueprint._id}`;
+      draft[key] = {};
+      for (const item of blueprint.items || []) draft[key][item.key] = "";
+    }
+  }
+
+  for (const mark of marks) {
+    const key = `${mark.student}__${mark.blueprint}`;
+    if (!draft[key]) draft[key] = {};
+    for (const entry of mark.entries || []) {
+      draft[key][entry.itemKey] = entry.obtainedMarks;
+    }
+  }
+
+  return { students, blueprints: loadedBlueprints, draft };
+};
+
+const isPersistedSetupData = (data = {}) =>
+  Boolean(
+    data?.courseOutcomes?.length ||
+      data?.poStatements?.length ||
+      data?.mappings?.length
+  );
+
 export default function TabObe({ courseId, course }) {
   const courseType = getCourseType(course);
   const isLabCourse = courseType === "lab";
@@ -208,6 +270,7 @@ export default function TabObe({ courseId, course }) {
   const [setup, setSetup] = useState(emptySetup);
   const [setupLoading, setSetupLoading] = useState(true);
   const [setupSaving, setSetupSaving] = useState(false);
+  const [hasPersistedSetup, setHasPersistedSetup] = useState(false);
 
   const [blueprints, setBlueprints] = useState([]);
   const [blueprintsLoading, setBlueprintsLoading] = useState(true);
@@ -229,6 +292,7 @@ export default function TabObe({ courseId, course }) {
   const [obeStudentSearch, setObeStudentSearch] = useState("");
 
   const obeInputRefs = useRef([]);
+  const obeMarksImportInputRef = useRef(null);
 
   const [outputData, setOutputData] = useState(null);
   const [outputLoading, setOutputLoading] = useState(false);
@@ -320,6 +384,7 @@ export default function TabObe({ courseId, course }) {
     try {
       setSetupLoading(true);
       const data = await getObeSetup(courseId);
+      setHasPersistedSetup(isPersistedSetupData(data));
 
       setSetup({
         thresholdPercent: data?.thresholdPercent ?? 40,
@@ -367,40 +432,13 @@ export default function TabObe({ courseId, course }) {
     try {
       setMarkLoading(true);
       const data = await getObeMarks(courseId);
-
-      const students = Array.isArray(data?.students) ? data.students : [];
-      const loadedBlueprints = sortBlueprints(
-        (Array.isArray(data?.blueprints) ? data.blueprints : []).map(
-          normalizeBlueprintLabels
-        )
-      );
-      const marks = Array.isArray(data?.marks) ? data.marks : [];
-
-      const draft = {};
-
-      for (const student of students) {
-        for (const blueprint of loadedBlueprints) {
-          const key = `${student.studentId}__${blueprint._id}`;
-          draft[key] = {};
-
-          for (const item of blueprint.items || []) {
-            draft[key][item.key] = "";
-          }
-        }
-      }
-
-      for (const mark of marks) {
-        const key = `${mark.student}__${mark.blueprint}`;
-        if (!draft[key]) draft[key] = {};
-
-        for (const entry of mark.entries || []) {
-          draft[key][entry.itemKey] = entry.obtainedMarks;
-        }
-      }
+      const { students, blueprints: loadedBlueprints, draft } =
+        buildMarkEntryState(data);
 
       setMarkStudents(students);
       setMarkBlueprints(loadedBlueprints);
       setMarkDraft(draft);
+      return { students, blueprints: loadedBlueprints, draft };
     } catch (error) {
       console.error(error);
       toast("error", error?.response?.data?.message || "Failed to load OBE marks.");
@@ -1135,30 +1173,30 @@ const saveSetup = async () => {
         .filter(Boolean)
         .join(" — ");
       const warningHtml = (structure.warnings || []).length
-        ? `<div style="margin-top:12px;padding:11px 12px;border-radius:12px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:12px;line-height:1.5">${structure.warnings
+        ? `<div class="premium-dialog-warning" style="margin-top:12px;padding:11px 12px;font-size:12px;line-height:1.5">${structure.warnings
             .map((warning) => `• ${escapeHtml(warning)}`)
             .join("<br>")}</div>`
         : "";
 
-      const result = await Swal.fire({
+      const result = await premiumSwal({
         title: "Import Course Outline",
         width: 660,
         html: `
           <div style="text-align:left">
-            <div style="margin:0 0 14px;padding:12px 14px;border-radius:14px;background:#eef2ff;border:1px solid #c7d2fe">
-              <strong style="display:block;color:#312e81;font-size:13px">${escapeHtml(identity || file.name)}</strong>
-              <span style="display:block;margin-top:4px;color:#6366f1;font-size:12px">Detected ${Number(detected.courseOutcomeCount || 0)} CO(s), ${Number(detected.poCount || 0)} mapped PO(s), ${Number(detected.mappingCount || 0)} mapping(s), and ${Number(detected.assessmentCount || 0)} assessment blueprint(s).</span>
+            <div class="premium-dialog-soft-indigo" style="margin:0 0 14px;padding:12px 14px">
+              <strong class="premium-dialog-accent" style="display:block;font-size:13px">${escapeHtml(identity || file.name)}</strong>
+              <span class="premium-dialog-muted" style="display:block;margin-top:4px;font-size:12px">Detected ${Number(detected.courseOutcomeCount || 0)} CO(s), ${Number(detected.poCount || 0)} mapped PO(s), ${Number(detected.mappingCount || 0)} mapping(s), and ${Number(detected.assessmentCount || 0)} assessment blueprint(s).</span>
             </div>
-            <p style="margin:0 0 14px;color:#64748b;font-size:13px;line-height:1.55">
+            <p class="premium-dialog-muted" style="margin:0 0 14px;font-size:13px;line-height:1.55">
               Choose what should be filled from this course outline. Only the selected sections will be changed.
             </p>
-            <label style="display:flex;gap:12px;align-items:flex-start;padding:13px 14px;margin-bottom:10px;border:1px solid #dbe3ef;border-radius:14px;${canImportSetup ? "cursor:pointer" : "opacity:.55;cursor:not-allowed"}">
+            <label class="premium-dialog-card" style="display:flex;gap:12px;align-items:flex-start;padding:13px 14px;margin-bottom:10px;${canImportSetup ? "cursor:pointer" : "opacity:.55;cursor:not-allowed"}">
               <input id="outline-import-setup" type="checkbox" ${canImportSetup ? "checked" : "disabled"} style="margin-top:3px;width:17px;height:17px" />
-              <span><strong style="display:block;color:#0f172a">OBE Setup</strong><span style="display:block;margin-top:3px;color:#64748b;font-size:12px">CO statements, only the POs used in the mapping, PO statements, CO-PO correlation factors, and attainment threshold.</span></span>
+              <span><strong class="premium-dialog-strong" style="display:block">OBE Setup</strong><span class="premium-dialog-muted" style="display:block;margin-top:3px;font-size:12px">CO statements, only the POs used in the mapping, PO statements, CO-PO correlation factors, and attainment threshold.</span></span>
             </label>
-            <label style="display:flex;gap:12px;align-items:flex-start;padding:13px 14px;border:1px solid #dbe3ef;border-radius:14px;${canImportAssessments ? "cursor:pointer" : "opacity:.55;cursor:not-allowed"}">
+            <label class="premium-dialog-card" style="display:flex;gap:12px;align-items:flex-start;padding:13px 14px;${canImportAssessments ? "cursor:pointer" : "opacity:.55;cursor:not-allowed"}">
               <input id="outline-import-assessments" type="checkbox" ${canImportAssessments ? "checked" : "disabled"} style="margin-top:3px;width:17px;height:17px" />
-              <span><strong style="display:block;color:#0f172a">Assessment Blueprint</strong><span style="display:block;margin-top:3px;color:#64748b;font-size:12px">Build Mid/Final CO allocations from the CLO Assessment Criteria table. Only successfully detected assessment types will be replaced; inconsistent rows are left unchanged.</span></span>
+              <span><strong class="premium-dialog-strong" style="display:block">Assessment Blueprint</strong><span class="premium-dialog-muted" style="display:block;margin-top:3px;font-size:12px">Build Mid/Final CO allocations from the CLO Assessment Criteria table. Only successfully detected assessment types will be replaced; inconsistent rows are left unchanged.</span></span>
             </label>
             ${warningHtml}
           </div>
@@ -1294,20 +1332,23 @@ const saveSetup = async () => {
       setEditingBlueprintId(null);
       setBlueprintForm(createEmptyBlueprintForm(isLabCourse));
 
-      Swal.fire(
-        "Course outline imported",
-        `${imported.join(" and ")} filled successfully from ${file.name}.`,
-        "success"
-      );
+      premiumSwal({
+        icon: "success",
+        title: "Course outline imported",
+        text: `${imported.join(" and ")} filled successfully from ${file.name}.`,
+        confirmButtonText: "Done",
+      });
     } catch (error) {
       console.error(error);
-      Swal.fire(
-        "Course outline import failed",
-        error?.response?.data?.message ||
+      premiumSwal({
+        icon: "error",
+        title: "Course outline import failed",
+        text:
+          error?.response?.data?.message ||
           error?.message ||
           "Failed to read the course outline PDF.",
-        "error"
-      );
+        confirmButtonText: "Close",
+      });
     } finally {
       input.value = "";
     }
@@ -1508,6 +1549,1123 @@ const saveSetup = async () => {
       );
     } finally {
       event.target.value = "";
+    }
+  };
+
+
+  const handleObeMarksExcelImport = async (event) => {
+    const input = event.target;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    const allowedTypes = new Set(
+      isLabCourse ? ["mid", "final"] : ["ct", "assignment", "mid", "final", "attendance"]
+    );
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const parsedWorkbook = parseObeMarksWorkbook(buffer);
+      const { workbook, sheetNames, metadata } = parsedWorkbook;
+      if (!sheetNames.length) throw new Error("No worksheet was found in this Excel file.");
+
+      let sheetName = chooseDefaultObeMarksSheet(sheetNames, course);
+      if (sheetNames.length > 1) {
+        const sheetResult = await premiumSwal({
+          title: "Choose Excel worksheet",
+          width: 560,
+          html: `
+            <div style="text-align:left">
+              <p class="premium-dialog-muted" style="margin:0 0 12px;font-size:13px;line-height:1.55">
+                The workbook contains multiple sheets. Select the sheet that contains the student OBE marks.
+              </p>
+              <select id="obe-generic-sheet" class="swal2-select" style="display:block;width:100%;margin:0">
+                ${sheetNames
+                  .map(
+                    (name) =>
+                      `<option value="${escapeHtml(name)}" ${name === sheetName ? "selected" : ""}>${escapeHtml(name)}</option>`
+                  )
+                  .join("")}
+              </select>
+            </div>
+          `,
+          showCancelButton: true,
+          confirmButtonText: "Analyse Sheet",
+          confirmButtonColor: "#4f46e5",
+          preConfirm: () => document.getElementById("obe-generic-sheet")?.value || "",
+        });
+        if (!sheetResult.isConfirmed) return;
+        sheetName = sheetResult.value;
+      }
+
+      const analysis = analyzeObeMarksSheet(workbook, sheetName, {
+        courseType,
+        metadata,
+      });
+      if (analysis.error) throw new Error(analysis.error);
+      if (!analysis.rows.length) throw new Error("No student rows were detected in the selected worksheet.");
+
+      const supportedGroups = analysis.groups
+        .filter(
+          (group) =>
+            (allowedTypes.has(group.assessmentType) || group.assessmentType === "other") &&
+            group.columns.some((column) => column.recommended)
+        )
+        .map((group) => ({
+          ...group,
+          columns: group.columns.filter((column) => column.recommended),
+        }));
+
+      const ignoredGroups = analysis.groups.filter(
+        (group) =>
+          group.columns.some((column) => column.recommended) &&
+          !allowedTypes.has(group.assessmentType) &&
+          group.assessmentType !== "other"
+      );
+
+      if (!supportedGroups.length) {
+        throw new Error(
+          isLabCourse
+            ? "No Lab Mid or Lab Final mark columns could be detected. Lab Evaluation/Attendance are not entered through Lab OBE Mark Entry."
+            : "No supported OBE assessment columns could be detected in this worksheet."
+        );
+      }
+
+      let workingSetup = setup;
+      let workingBlueprints = Array.isArray(markBlueprints) ? [...markBlueprints] : [];
+      let workingHasPersistedSetup = hasPersistedSetup;
+
+      const initialHasMappings =
+        Array.isArray(workingSetup?.mappings) && workingSetup.mappings.length > 0;
+      if (!workingHasPersistedSetup || !initialHasMappings || !workingBlueprints.length) {
+        const missingParts = [
+          !workingHasPersistedSetup
+            ? "OBE setup"
+            : !initialHasMappings
+              ? "CO-PO mappings"
+              : "",
+          !workingBlueprints.length ? "assessment blueprints" : "",
+        ].filter(Boolean);
+
+        const continueResult = await premiumSwal({
+          title: "Complete the OBE configuration first",
+          width: 760,
+          html: `
+            <div class="premium-dialog-soft-indigo" style="padding:15px 16px;margin-bottom:14px">
+              <div class="premium-dialog-strong" style="font-size:13px;font-weight:900">Missing: ${escapeHtml(missingParts.join(" · "))}</div>
+              <div class="premium-dialog-muted" style="margin-top:5px;font-size:12px">Choose how the importer should obtain the missing CO, PO, mapping and assessment information.</div>
+            </div>
+
+            <label class="premium-dialog-card" style="display:flex;gap:12px;align-items:flex-start;padding:14px 15px;margin-bottom:10px;cursor:pointer">
+              <input type="radio" name="obe-config-source" value="excel" checked style="margin-top:3px;width:17px;height:17px" />
+              <span>
+                <strong class="premium-dialog-strong" style="display:block">Use this Excel workbook</strong>
+                <span class="premium-dialog-muted" style="display:block;margin-top:4px;font-size:12px">Detect CO/CLO and PO/PLO wording from the mark sheet. Anything still missing will be asked in the next step.</span>
+              </span>
+            </label>
+
+            <label class="premium-dialog-soft-sky" style="display:flex;gap:12px;align-items:flex-start;padding:14px 15px;cursor:pointer">
+              <input type="radio" name="obe-config-source" value="pdf" style="margin-top:3px;width:17px;height:17px" />
+              <span style="min-width:0;flex:1">
+                <strong class="premium-dialog-strong" style="display:block">Use Course Outline PDF</strong>
+                <span class="premium-dialog-muted" style="display:block;margin-top:4px;font-size:12px">Recommended when the mark workbook does not contain CO-PO statements or mappings. The same PDF parser used in Setup / Assessment Blueprint will be used here.</span>
+                <input id="obe-config-outline-pdf" type="file" accept=".pdf,application/pdf" style="display:block;width:100%;margin-top:10px;padding:9px 10px" />
+              </span>
+            </label>
+          `,
+          showCancelButton: true,
+          confirmButtonText: "Continue Import",
+          cancelButtonText: "Cancel",
+          focusConfirm: false,
+          preConfirm: withSwalValidation(() => {
+            const source =
+              document.querySelector('input[name="obe-config-source"]:checked')?.value || "excel";
+            const outlineFile = document.getElementById("obe-config-outline-pdf")?.files?.[0] || null;
+            if (source === "pdf" && !outlineFile) {
+              throw new Error("Choose the Course Outline PDF first.");
+            }
+            return { source, outlineFile };
+          }),
+        });
+        if (!continueResult.isConfirmed) return;
+
+        if (continueResult.value?.source === "pdf") {
+          const outlineFile = continueResult.value.outlineFile;
+          const outlineStructure = await parseObeCourseOutlinePdf(
+            outlineFile,
+            workingSetup || {}
+          );
+
+          if (!outlineStructure.setup && !outlineStructure.blueprints?.length) {
+            throw new Error(
+              "The selected Course Outline PDF did not contain usable CO-PO setup or assessment allocation data."
+            );
+          }
+
+          if (outlineStructure.setup) {
+            workingSetup = {
+              ...(workingSetup || {}),
+              ...outlineStructure.setup,
+            };
+            await saveObeSetup(courseId, workingSetup);
+            workingHasPersistedSetup = true;
+          }
+
+          const outlineBlueprints = (outlineStructure.blueprints || []).map((blueprint) => ({
+            ...blueprint,
+            assessmentName: isLabCourse
+              ? blueprint.assessmentType === "final"
+                ? "Lab Final"
+                : "Lab Mid"
+              : blueprint.assessmentName,
+          }));
+
+          for (const blueprint of outlineBlueprints) {
+            const sameType = workingBlueprints.find(
+              (row) =>
+                String(row.assessmentType || "").toLowerCase() ===
+                  String(blueprint.assessmentType || "").toLowerCase() &&
+                Math.abs(Number(row.totalMarks || 0) - Number(blueprint.totalMarks || 0)) < 0.01
+            );
+            if (sameType) continue;
+
+            const itemTotal = round2(
+              (blueprint.items || []).reduce(
+                (sum, item) => sum + Number(item.marks || 0),
+                0
+              )
+            );
+            if (
+              !blueprint.items?.length ||
+              Number(blueprint.totalMarks || 0) <= 0 ||
+              Math.abs(itemTotal - Number(blueprint.totalMarks || 0)) > 0.01
+            ) {
+              continue;
+            }
+
+            const created = normalizeBlueprintLabels(
+              await createObeBlueprint(courseId, blueprint)
+            );
+            workingBlueprints.push(created);
+          }
+
+          const remainingMissing = [];
+          if (!workingHasPersistedSetup) remainingMissing.push("OBE setup");
+          if (!Array.isArray(workingSetup?.mappings) || !workingSetup.mappings.length) {
+            remainingMissing.push("CO-PO mappings");
+          }
+          if (!workingBlueprints.length) remainingMissing.push("assessment blueprints");
+
+          await premiumSwal({
+            icon: remainingMissing.length ? "warning" : "success",
+            title: remainingMissing.length
+              ? "PDF imported with some missing information"
+              : "Course Outline mapping loaded",
+            html: `
+              <div class="premium-dialog-card" style="padding:14px 15px">
+                <div><strong class="premium-dialog-strong">Detected:</strong> ${Number(outlineStructure.detected?.courseOutcomeCount || 0)} CO(s), ${Number(outlineStructure.detected?.poCount || 0)} used PO(s), ${Number(outlineStructure.detected?.mappingCount || 0)} mapping(s), ${Number(outlineStructure.detected?.assessmentCount || 0)} blueprint(s).</div>
+                ${remainingMissing.length ? `<div class="premium-dialog-warning" style="margin-top:10px;padding:10px 12px">Still missing: ${escapeHtml(remainingMissing.join(", "))}. The next step will ask only for those details.</div>` : `<div class="premium-dialog-success" style="margin-top:8px;font-weight:800">The Excel marks can now be matched against the imported OBE structure.</div>`}
+              </div>
+            `,
+            confirmButtonText: "Continue",
+          });
+        }
+      }
+
+      const sourceTypeCounts = supportedGroups.reduce((map, group) => {
+        map.set(group.assessmentType, (map.get(group.assessmentType) || 0) + 1);
+        return map;
+      }, new Map());
+      const claimedBlueprintIds = new Set();
+      let groupPlans = supportedGroups.map((group) => {
+        const sourceName = normalizeObeImportLabel(group.assessmentName);
+        const sameTypeBlueprints = workingBlueprints.filter(
+          (blueprint) =>
+            String(blueprint.assessmentType || "").toLowerCase() ===
+            String(group.assessmentType || "").toLowerCase()
+        );
+        let existingBlueprint = sameTypeBlueprints.find((blueprint) => {
+          const targetName = normalizeObeImportLabel(blueprint.assessmentName);
+          return (
+            targetName === sourceName ||
+            (targetName && sourceName && (targetName.includes(sourceName) || sourceName.includes(targetName)))
+          );
+        }) || null;
+
+        if (
+          !existingBlueprint &&
+          group.assessmentType !== "other" &&
+          sourceTypeCounts.get(group.assessmentType) === 1
+        ) {
+          existingBlueprint = findMatchingBlueprintForGroup(group, workingBlueprints);
+        }
+        if (!existingBlueprint && group.assessmentType === "other") {
+          existingBlueprint = workingBlueprints.find(
+            (blueprint) => normalizeObeImportLabel(blueprint.assessmentName) === sourceName
+          ) || null;
+        }
+        if (
+          existingBlueprint &&
+          claimedBlueprintIds.has(String(existingBlueprint._id))
+        ) {
+          existingBlueprint = null;
+        }
+        if (existingBlueprint) {
+          claimedBlueprintIds.add(String(existingBlueprint._id));
+        }
+
+        if (!existingBlueprint) {
+          return {
+            mode: "create",
+            group,
+            assessmentName: group.assessmentName,
+            assessmentType: allowedTypes.has(group.assessmentType)
+              ? group.assessmentType
+              : "",
+            totalMarks: Number(group.totalMarks || 0),
+            columnPlans: group.columns.map((column, index) => ({
+              column,
+              include: true,
+              coCode: column.coCode || "",
+              maxMarks: Number(column.suggestedMaxMarks || 0),
+              itemLabel:
+                column.coCode ||
+                String(column.childHeader || "").trim() ||
+                `Q${index + 1}`,
+            })),
+          };
+        }
+
+        const usedItemKeys = new Set();
+        const columnPlans = group.columns.map((column) => {
+          let item = suggestBlueprintItemForColumn(column, existingBlueprint);
+          if (item && usedItemKeys.has(String(item.key))) item = null;
+          if (item) usedItemKeys.add(String(item.key));
+          return {
+            column,
+            targetItemKey: item?.key || "",
+          };
+        });
+
+        return {
+          mode: "existing",
+          group,
+          existingBlueprint,
+          columnPlans,
+        };
+      });
+
+      const needsAssessmentReview = groupPlans.some(
+        (plan) =>
+          plan.mode === "create" ||
+          plan.columnPlans.some((columnPlan) => !columnPlan.targetItemKey)
+      );
+
+      if (needsAssessmentReview) {
+        const assessmentHtml = groupPlans
+          .map((plan, groupIndex) => {
+            const group = plan.group;
+            if (plan.mode === "existing") {
+              const itemOptions = (plan.existingBlueprint.items || [])
+                .map(
+                  (item) =>
+                    `<option value="${escapeHtml(item.key)}">${escapeHtml(item.label)} · ${escapeHtml(item.coCode)} · ${Number(item.marks || 0)}</option>`
+                )
+                .join("");
+
+              const rows = plan.columnPlans
+                .map(
+                  (columnPlan, columnIndex) => `
+                    <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,1fr);gap:10px;align-items:center;margin-top:9px">
+                      <div class="premium-dialog-strong" style="font-size:12px;font-weight:700">${escapeHtml(columnPlan.column.sourceLabel)}</div>
+                      <select id="obe-map-${groupIndex}-${columnIndex}" class="premium-dialog-field" style="width:100%">
+                        <option value="">Skip this column</option>
+                        ${(plan.existingBlueprint.items || [])
+                          .map(
+                            (item) =>
+                              `<option value="${escapeHtml(item.key)}" ${String(item.key) === String(columnPlan.targetItemKey) ? "selected" : ""}>${escapeHtml(item.label)} · ${escapeHtml(item.coCode)} · ${Number(item.marks || 0)}</option>`
+                          )
+                          .join("")}
+                      </select>
+                    </div>
+                  `
+                )
+                .join("");
+
+              return `
+                <div class="premium-dialog-card" style="padding:14px;margin-bottom:12px">
+                  <div style="display:flex;justify-content:space-between;gap:10px;align-items:center">
+                    <div>
+                      <div class="premium-dialog-strong" style="font-weight:800">${escapeHtml(group.assessmentName)}</div>
+                      <div class="premium-dialog-muted" style="font-size:11px;margin-top:2px">Excel assessment matched to existing “${escapeHtml(plan.existingBlueprint.assessmentName)}”.</div>
+                    </div>
+                    <span class="premium-dialog-badge premium-dialog-success">EXISTING</span>
+                  </div>
+                  ${rows}
+                </div>
+              `;
+            }
+
+            return `
+              <div class="premium-dialog-soft-indigo" style="padding:14px;margin-bottom:12px">
+                <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:10px">
+                  <div>
+                    <div class="premium-dialog-strong" style="font-weight:800">New assessment from Excel</div>
+                    <div class="premium-dialog-muted" style="font-size:11px;margin-top:2px">No matching blueprint exists. Confirm the assessment and question/CO full marks.</div>
+                  </div>
+                  <span class="premium-dialog-badge premium-dialog-accent">CREATE</span>
+                </div>
+                <div style="display:grid;grid-template-columns:minmax(0,1fr) 150px 120px;gap:10px">
+                  <label class="premium-dialog-label">Assessment name
+                    <input id="obe-create-name-${groupIndex}" value="${escapeHtml(plan.assessmentName)}" class="premium-dialog-field" style="display:block;width:100%;margin-top:4px" />
+                  </label>
+                  <label class="premium-dialog-label">Assessment type
+                    <select id="obe-create-type-${groupIndex}" class="premium-dialog-field" style="display:block;width:100%;margin-top:4px">
+                      <option value="">Select type</option>
+                      ${(isLabCourse ? ["mid", "final"] : ["ct", "assignment", "mid", "final", "attendance"])
+                        .map(
+                          (type) =>
+                            `<option value="${type}" ${type === plan.assessmentType ? "selected" : ""}>${escapeHtml(getAssessmentTypeLabel(type, isLabCourse))}</option>`
+                        )
+                        .join("")}
+                    </select>
+                  </label>
+                  <label class="premium-dialog-label">Total marks
+                    <input id="obe-create-total-${groupIndex}" type="number" min="0" step="0.5" value="${plan.totalMarks || ""}" class="premium-dialog-field" style="display:block;width:100%;margin-top:4px" />
+                  </label>
+                </div>
+                <div class="premium-dialog-muted" style="margin-top:10px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em">Excel column → CO / full marks</div>
+                ${plan.columnPlans
+                  .map(
+                    (columnPlan, columnIndex) => `
+                      <div style="display:grid;grid-template-columns:30px minmax(0,1fr) 95px 95px;gap:8px;align-items:center;margin-top:8px">
+                        <input id="obe-create-use-${groupIndex}-${columnIndex}" type="checkbox" checked />
+                        <div class="premium-dialog-strong" style="font-size:12px;font-weight:700">${escapeHtml(columnPlan.column.sourceLabel)}</div>
+                        <input id="obe-create-co-${groupIndex}-${columnIndex}" value="${escapeHtml(columnPlan.coCode)}" placeholder="CO1" class="premium-dialog-field" style="width:100%" />
+                        <input id="obe-create-max-${groupIndex}-${columnIndex}" type="number" min="0" step="0.5" value="${columnPlan.maxMarks || ""}" placeholder="Marks" class="premium-dialog-field" style="width:100%" />
+                      </div>
+                    `
+                  )
+                  .join("")}
+              </div>
+            `;
+          })
+          .join("");
+
+        const assessmentResult = await premiumSwal({
+          title: "Review assessment mapping",
+          width: 900,
+          html: `
+            <div style="text-align:left;max-height:62vh;overflow:auto;padding-right:4px">
+              <p class="premium-dialog-muted" style="margin:0 0 12px;font-size:13px;line-height:1.55">
+                Existing assessments are mapped by wording and CO where possible. Missing assessments can be created directly from this Excel file.
+              </p>
+              ${assessmentHtml}
+            </div>
+          `,
+          showCancelButton: true,
+          confirmButtonText: "Continue",
+          cancelButtonText: "Cancel",
+          confirmButtonColor: "#4f46e5",
+          focusConfirm: false,
+          preConfirm: withSwalValidation(() => {
+            const nextPlans = groupPlans.map((plan, groupIndex) => {
+              if (plan.mode === "existing") {
+                const usedTargets = new Set();
+                const columnPlans = plan.columnPlans.map((columnPlan, columnIndex) => {
+                  const targetItemKey = document.getElementById(
+                    `obe-map-${groupIndex}-${columnIndex}`
+                  )?.value || "";
+                  if (targetItemKey) {
+                    if (usedTargets.has(targetItemKey)) {
+                      throw new Error(
+                        `${plan.existingBlueprint.assessmentName}: two Excel columns cannot map to the same OBE item.`
+                      );
+                    }
+                    usedTargets.add(targetItemKey);
+                  }
+                  return { ...columnPlan, targetItemKey };
+                });
+                return { ...plan, columnPlans };
+              }
+
+              const assessmentName = String(
+                document.getElementById(`obe-create-name-${groupIndex}`)?.value || ""
+              ).trim();
+              const assessmentType = String(
+                document.getElementById(`obe-create-type-${groupIndex}`)?.value || ""
+              ).trim().toLowerCase();
+              let totalMarks = Number(
+                document.getElementById(`obe-create-total-${groupIndex}`)?.value || 0
+              );
+              if (!assessmentName) {
+                throw new Error("Every new assessment needs a name.");
+              }
+              if (!allowedTypes.has(assessmentType)) {
+                throw new Error(`${assessmentName}: select a valid assessment type.`);
+              }
+
+              const columnPlans = plan.columnPlans.map((columnPlan, columnIndex) => {
+                const include = document.getElementById(
+                  `obe-create-use-${groupIndex}-${columnIndex}`
+                )?.checked === true;
+                const coCode = String(
+                  document.getElementById(`obe-create-co-${groupIndex}-${columnIndex}`)?.value || ""
+                )
+                  .trim()
+                  .toUpperCase()
+                  .replace(/^CLO/, "CO");
+                const maxMarks = Number(
+                  document.getElementById(`obe-create-max-${groupIndex}-${columnIndex}`)?.value || 0
+                );
+
+                if (include && !/^CO\d{1,2}$/.test(coCode)) {
+                  throw new Error(`${columnPlan.column.sourceLabel}: enter a valid CO such as CO1.`);
+                }
+                if (include && (!Number.isFinite(maxMarks) || maxMarks <= 0)) {
+                  throw new Error(`${columnPlan.column.sourceLabel}: enter its full marks.`);
+                }
+
+                return {
+                  ...columnPlan,
+                  include,
+                  coCode,
+                  maxMarks: round2(maxMarks),
+                  itemLabel:
+                    columnPlan.column.coCode ||
+                    String(columnPlan.column.childHeader || "").trim() ||
+                    coCode,
+                };
+              });
+
+              const included = columnPlans.filter((row) => row.include);
+              if (!included.length) {
+                return { ...plan, mode: "skip", assessmentName, assessmentType, totalMarks: 0, columnPlans };
+              }
+
+              const itemTotal = round2(
+                included.reduce((sum, row) => sum + Number(row.maxMarks || 0), 0)
+              );
+              if (!totalMarks) totalMarks = itemTotal;
+              totalMarks = round2(totalMarks);
+              if (Math.abs(itemTotal - totalMarks) > 0.01) {
+                throw new Error(
+                  `${assessmentName}: question/CO full marks add up to ${itemTotal}, but assessment total is ${totalMarks}.`
+                );
+              }
+              if (
+                isLabCourse &&
+                ((assessmentType === "mid" && totalMarks !== 30) ||
+                  (assessmentType === "final" && totalMarks !== 40))
+              ) {
+                throw new Error(
+                  `${assessmentName}: Lab Mid must total 30 and Lab Final must total 40.`
+                );
+              }
+
+              return {
+                ...plan,
+                assessmentName,
+                assessmentType,
+                totalMarks,
+                columnPlans,
+              };
+            });
+
+            return nextPlans;
+          }),
+        });
+
+        if (!assessmentResult?.isConfirmed) return;
+        groupPlans = assessmentResult.value;
+      }
+
+      const activePlans = groupPlans.filter((plan) => plan.mode !== "skip");
+      if (!activePlans.length) throw new Error("No Excel mark columns were selected for import.");
+
+      const requiredCoCodes = new Set();
+      activePlans.forEach((plan) => {
+        if (plan.mode === "existing") {
+          plan.columnPlans.forEach((columnPlan) => {
+            if (!columnPlan.targetItemKey) return;
+            const item = (plan.existingBlueprint.items || []).find(
+              (row) => String(row.key) === String(columnPlan.targetItemKey)
+            );
+            if (item?.coCode) requiredCoCodes.add(String(item.coCode).toUpperCase());
+          });
+        } else {
+          plan.columnPlans
+            .filter((row) => row.include)
+            .forEach((row) => requiredCoCodes.add(String(row.coCode).toUpperCase()));
+        }
+      });
+
+      const currentCoRows = (workingSetup.courseOutcomes || []).filter(
+        (row) => String(row?.code || "").trim() && String(row?.statement || "").trim()
+      );
+      const currentPoRows = (workingSetup.poStatements || []).filter(
+        (row) => String(row?.code || "").trim() && String(row?.statement || "").trim()
+      );
+      const currentMappings = (workingSetup.mappings || []).filter(
+        (row) => String(row?.coCode || "").trim() && String(row?.targetCode || "").trim()
+      );
+
+      const coMap = new Map(
+        currentCoRows.map((row) => [String(row.code).trim().toUpperCase(), { ...row }])
+      );
+      const poMap = new Map(
+        currentPoRows.map((row) => [String(row.code).trim().toUpperCase(), { ...row }])
+      );
+      const nextMappings = [...currentMappings];
+      const directMappingMap = new Map();
+
+      (analysis.metadata?.coPoMappings || []).forEach((mapping) => {
+        const coCode = String(mapping.coCode || "").toUpperCase();
+        const poCode = String(mapping.poCode || "").toUpperCase();
+        if (!coCode || !poCode) return;
+        if (!directMappingMap.has(coCode)) directMappingMap.set(coCode, []);
+        if (!directMappingMap.get(coCode).includes(poCode)) {
+          directMappingMap.get(coCode).push(poCode);
+        }
+      });
+      analysis.selectedColumns.forEach((column) => {
+        if (!column.coCode || !column.poCode) return;
+        if (!directMappingMap.has(column.coCode)) directMappingMap.set(column.coCode, []);
+        if (!directMappingMap.get(column.coCode).includes(column.poCode)) {
+          directMappingMap.get(column.coCode).push(column.poCode);
+        }
+      });
+
+      const setupQuestions = [];
+      requiredCoCodes.forEach((coCode) => {
+        const hasCo = coMap.has(coCode);
+        const existingPoMappings = nextMappings.filter(
+          (row) =>
+            String(row.coCode || "").toUpperCase() === coCode &&
+            String(row.targetType || "PO").toUpperCase() !== "PSO"
+        );
+        const detectedPoMappings = directMappingMap.get(coCode) || [];
+
+        if (!hasCo) {
+          coMap.set(coCode, {
+            code: coCode,
+            statement: analysis.metadata?.coStatements?.[coCode] || "",
+            order: coMap.size,
+            isActive: true,
+          });
+        }
+
+        if (!existingPoMappings.length && detectedPoMappings.length) {
+          detectedPoMappings.forEach((poCode) => {
+            if (!poMap.has(poCode)) {
+              poMap.set(poCode, {
+                code: poCode,
+                statement: analysis.metadata?.poStatements?.[poCode] || poCode,
+                order: poMap.size,
+                isActive: true,
+              });
+            }
+            if (
+              !nextMappings.some(
+                (row) =>
+                  String(row.coCode || "").toUpperCase() === coCode &&
+                  String(row.targetCode || "").toUpperCase() === poCode
+              )
+            ) {
+              nextMappings.push({
+                coCode,
+                targetType: "PO",
+                targetCode: poCode,
+                strength: 1,
+              });
+            }
+          });
+        }
+
+        const stillNoMapping = !nextMappings.some(
+          (row) =>
+            String(row.coCode || "").toUpperCase() === coCode &&
+            String(row.targetType || "PO").toUpperCase() !== "PSO"
+        );
+        const missingStatement = !String(coMap.get(coCode)?.statement || "").trim();
+        if (missingStatement || stillNoMapping) {
+          setupQuestions.push({ coCode, missingStatement, missingMapping: stillNoMapping });
+        }
+      });
+
+      if (setupQuestions.length) {
+        const knownPoCodes = new Set([
+          ...analysis.detectedPoCodes,
+          ...poMap.keys(),
+          ...Array.from({ length: 12 }, (_, index) => `PO${index + 1}`),
+        ]);
+        const orderedPoCodes = [...knownPoCodes].sort(
+          (a, b) => Number(a.replace(/\D/g, "")) - Number(b.replace(/\D/g, ""))
+        );
+
+        const setupResult = await premiumSwal({
+          title: "Complete missing CO-PO information",
+          width: 860,
+          html: `
+            <div style="text-align:left;max-height:60vh;overflow:auto;padding-right:4px">
+              <p class="premium-dialog-muted" style="margin:0 0 12px;font-size:13px;line-height:1.55">
+                Some information required by OBE is not present in the current setup or could not be detected from Excel. Complete only the missing fields below.
+              </p>
+              <div class="premium-dialog-soft-sky" style="padding:12px 13px;margin-bottom:12px">
+                <strong class="premium-dialog-strong" style="display:block;font-size:12px">Optional: fill missing mapping from Course Outline PDF</strong>
+                <span class="premium-dialog-muted" style="display:block;margin-top:3px;font-size:11px">Select the outline and the importer will use its CO statements, PO statements and CO→PO rows wherever the fields below are still blank.</span>
+                <input id="obe-missing-outline-pdf" type="file" accept=".pdf,application/pdf" style="display:block;width:100%;margin-top:9px;padding:8px 9px" />
+              </div>
+              ${setupQuestions
+                .map((question, index) => {
+                  const row = coMap.get(question.coCode) || {};
+                  const defaultPo =
+                    (directMappingMap.get(question.coCode) || [])[0] ||
+                    (analysis.detectedPoCodes.length === 1 ? analysis.detectedPoCodes[0] : "");
+                  return `
+                    <div class="premium-dialog-card" style="padding:12px;margin-bottom:10px">
+                      <div class="premium-dialog-strong" style="font-weight:800;margin-bottom:8px">${escapeHtml(question.coCode)}</div>
+                      ${question.missingStatement ? `
+                        <label class="premium-dialog-label" style="display:block">CO statement
+                          <input id="obe-setup-co-statement-${index}" value="${escapeHtml(row.statement || "")}" placeholder="Enter the ${escapeHtml(question.coCode)} statement" class="premium-dialog-field" style="display:block;width:100%;margin-top:4px" />
+                        </label>
+                      ` : ""}
+                      ${question.missingMapping ? `
+                        <label class="premium-dialog-label" style="display:block;margin-top:9px">Map ${escapeHtml(question.coCode)} to
+                          <select id="obe-setup-po-${index}" class="premium-dialog-field" style="display:block;width:100%;margin-top:4px">
+                            <option value="">Select PO</option>
+                            ${orderedPoCodes
+                              .map(
+                                (poCode) =>
+                                  `<option value="${poCode}" ${poCode === defaultPo ? "selected" : ""}>${poCode}</option>`
+                              )
+                              .join("")}
+                          </select>
+                        </label>
+                      ` : ""}
+                    </div>
+                  `;
+                })
+                .join("")}
+            </div>
+          `,
+          showCancelButton: true,
+          confirmButtonText: "Use This Setup",
+          cancelButtonText: "Cancel",
+          confirmButtonColor: "#4f46e5",
+          focusConfirm: false,
+          preConfirm: async () => {
+            try {
+              const outlineFile = document.getElementById("obe-missing-outline-pdf")?.files?.[0] || null;
+              let outlineSetup = null;
+              if (outlineFile) {
+                const parsedOutline = await parseObeCourseOutlinePdf(outlineFile, workingSetup || {});
+                outlineSetup = parsedOutline.setup || null;
+              }
+
+              setupQuestions.forEach((question, index) => {
+                const row = coMap.get(question.coCode) || {
+                  code: question.coCode,
+                  order: coMap.size,
+                  isActive: true,
+                };
+                if (question.missingStatement) {
+                  const manualStatement = String(
+                    document.getElementById(`obe-setup-co-statement-${index}`)?.value || ""
+                  ).trim();
+                  const pdfStatement = String(
+                    (outlineSetup?.courseOutcomes || []).find(
+                      (item) => String(item.code || "").toUpperCase() === question.coCode
+                    )?.statement || ""
+                  ).trim();
+                  const statement = manualStatement || pdfStatement;
+                  if (!statement) {
+                    throw new Error(`${question.coCode}: enter the Course Outcome statement or attach a Course Outline PDF containing it.`);
+                  }
+                  row.statement = statement;
+                  coMap.set(question.coCode, row);
+                }
+
+                if (question.missingMapping) {
+                  const manualPo = String(
+                    document.getElementById(`obe-setup-po-${index}`)?.value || ""
+                  ).trim().toUpperCase();
+                  const pdfMapping = (outlineSetup?.mappings || []).find(
+                    (item) =>
+                      String(item.coCode || "").toUpperCase() === question.coCode &&
+                      String(item.targetType || "PO").toUpperCase() !== "PSO"
+                  );
+                  const poCode = manualPo || String(pdfMapping?.targetCode || "").toUpperCase();
+                  if (!/^PO\d{1,2}$/.test(poCode)) {
+                    throw new Error(`${question.coCode}: select the mapped PO or attach a Course Outline PDF containing the mapping.`);
+                  }
+                  if (!poMap.has(poCode)) {
+                    const pdfPoStatement = String(
+                      (outlineSetup?.poStatements || []).find(
+                        (item) => String(item.code || "").toUpperCase() === poCode
+                      )?.statement || ""
+                    ).trim();
+                    poMap.set(poCode, {
+                      code: poCode,
+                      statement:
+                        pdfPoStatement ||
+                        analysis.metadata?.poStatements?.[poCode] ||
+                        poCode,
+                      order: poMap.size,
+                      isActive: true,
+                    });
+                  }
+                  if (
+                    !nextMappings.some(
+                      (item) =>
+                        String(item.coCode || "").toUpperCase() === question.coCode &&
+                        String(item.targetCode || "").toUpperCase() === poCode
+                    )
+                  ) {
+                    nextMappings.push({
+                      coCode: question.coCode,
+                      targetType: "PO",
+                      targetCode: poCode,
+                      strength: Number(pdfMapping?.strength || 1) || 1,
+                    });
+                  }
+                }
+              });
+              return true;
+            } catch (error) {
+              Swal.showValidationMessage(error?.message || "Complete the missing CO-PO information.");
+              return false;
+            }
+          },
+        });
+        if (!setupResult?.isConfirmed) return;
+      }
+
+      const nextCourseOutcomes = [...coMap.values()].map((row, index) => ({
+        ...row,
+        order: index,
+        isActive: row.isActive !== false,
+      }));
+      const usedPoCodes = new Set(
+        nextMappings
+          .filter((row) => String(row.targetType || "PO").toUpperCase() !== "PSO")
+          .map((row) => String(row.targetCode || "").toUpperCase())
+          .filter(Boolean)
+      );
+      const nextPoStatements = [...poMap.values()]
+        .filter((row) => usedPoCodes.has(String(row.code || "").toUpperCase()))
+        .map((row, index) => ({ ...row, order: index, isActive: row.isActive !== false }));
+
+      const setupNeedsSave =
+        !workingHasPersistedSetup ||
+        nextCourseOutcomes.length !== currentCoRows.length ||
+        nextPoStatements.length !== currentPoRows.length ||
+        nextMappings.length !== currentMappings.length ||
+        nextCourseOutcomes.some((row) => {
+          const current = currentCoRows.find(
+            (old) => String(old.code || "").toUpperCase() === String(row.code || "").toUpperCase()
+          );
+          return !current || String(current.statement || "").trim() !== String(row.statement || "").trim();
+        });
+
+      const studentLookup = new Map(
+        markStudents.map((student) => [String(student.roll || "").trim().toLowerCase(), student])
+      );
+      let matchedStudents = 0;
+      let unmatchedStudents = 0;
+      let nameMismatches = 0;
+      analysis.rows.forEach((row) => {
+        const student = studentLookup.get(String(row.roll || "").trim().toLowerCase());
+        if (!student) {
+          unmatchedStudents += 1;
+          return;
+        }
+        matchedStudents += 1;
+        if (
+          row.name &&
+          student.name &&
+          normalizeStudentNameForImport(row.name) !== normalizeStudentNameForImport(student.name)
+        ) {
+          nameMismatches += 1;
+        }
+      });
+
+      const mappedExistingGroups = activePlans.filter((plan) => plan.mode === "existing").length;
+      const newGroups = activePlans.filter((plan) => plan.mode === "create").length;
+      const mappedColumnCount = activePlans.reduce(
+        (sum, plan) =>
+          sum +
+          plan.columnPlans.filter((row) =>
+            plan.mode === "existing" ? Boolean(row.targetItemKey) : row.include
+          ).length,
+        0
+      );
+
+      const confirmResult = await premiumSwal({
+        title: "Confirm OBE Excel Import",
+        width: 720,
+        html: `
+          <div style="text-align:left">
+            <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:14px">
+              <div class="premium-dialog-card" style="padding:12px"><div class="premium-dialog-muted" style="font-size:10px;font-weight:800;text-transform:uppercase">Students matched</div><div class="premium-dialog-strong" style="font-size:20px;font-weight:900;margin-top:3px">${matchedStudents}</div></div>
+              <div class="premium-dialog-card" style="padding:12px"><div class="premium-dialog-muted" style="font-size:10px;font-weight:800;text-transform:uppercase">Excel columns mapped</div><div class="premium-dialog-strong" style="font-size:20px;font-weight:900;margin-top:3px">${mappedColumnCount}</div></div>
+            </div>
+            <div class="premium-dialog-strong" style="font-size:13px;line-height:1.7">
+              <div><strong>Worksheet:</strong> ${escapeHtml(sheetName)}</div>
+              <div><strong>Existing assessments used:</strong> ${mappedExistingGroups}</div>
+              <div><strong>New assessments to create:</strong> ${newGroups}</div>
+              <div><strong>OBE setup update:</strong> ${setupNeedsSave ? "Yes" : "No"}</div>
+              ${unmatchedStudents ? `<div style="color:#b45309"><strong>Students not enrolled:</strong> ${unmatchedStudents} (skipped)</div>` : ""}
+              ${nameMismatches ? `<div style="color:#b45309"><strong>Name differences:</strong> ${nameMismatches} (roll number remains the primary match)</div>` : ""}
+              ${analysis.duplicateRolls.length ? `<div style="color:#b45309"><strong>Duplicate Excel rolls:</strong> ${analysis.duplicateRolls.length} (later duplicates skipped)</div>` : ""}
+              ${ignoredGroups.length ? `<div style="color:#b45309"><strong>Unsupported groups ignored:</strong> ${ignoredGroups.map((group) => escapeHtml(group.assessmentName)).join(", ")}</div>` : ""}
+            </div>
+            <div style="margin-top:15px;padding-top:13px;border-top:1px solid #e2e8f0">
+              <div class="premium-dialog-muted" style="font-size:11px;font-weight:800;text-transform:uppercase;margin-bottom:8px">Existing OBE mark cells</div>
+              <label style="display:flex;align-items:center;gap:8px;margin-bottom:7px;cursor:pointer"><input type="radio" name="obe-import-mode" value="blank" checked /> Fill blank cells only (recommended)</label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="obe-import-mode" value="replace" /> Replace existing OBE marks with Excel values</label>
+            </div>
+            <p class="premium-dialog-muted" style="margin:14px 0 0;font-size:12px;line-height:1.55">After confirmation, required setup/assessments will be created first and the imported OBE marks will be saved.</p>
+          </div>
+        `,
+        icon: "question",
+        showCancelButton: true,
+        confirmButtonText: "Import & Save",
+        cancelButtonText: "Cancel",
+        confirmButtonColor: "#4f46e5",
+        focusConfirm: false,
+        preConfirm: () => ({
+          overwrite:
+            document.querySelector('input[name="obe-import-mode"]:checked')?.value === "replace",
+        }),
+      });
+      if (!confirmResult.isConfirmed) return;
+      const overwrite = confirmResult.value?.overwrite === true;
+
+      const preliminaryTargets = new Map();
+      activePlans.forEach((plan) => {
+        if (plan.mode === "existing") {
+          plan.columnPlans.forEach((columnPlan) => {
+            if (!columnPlan.targetItemKey) return;
+            const item = (plan.existingBlueprint.items || []).find(
+              (row) => String(row.key) === String(columnPlan.targetItemKey)
+            );
+            if (!item) return;
+            preliminaryTargets.set(columnPlan.column.key, {
+              mode: "existing",
+              blueprintId: String(plan.existingBlueprint._id),
+              itemKey: item.key,
+              maxMarks: Number(item.marks || 0),
+            });
+          });
+        } else {
+          plan.columnPlans
+            .filter((row) => row.include)
+            .forEach((row) => {
+              preliminaryTargets.set(row.column.key, {
+                mode: "create",
+                maxMarks: Number(row.maxMarks || 0),
+              });
+            });
+        }
+      });
+
+      let potentialChanges = 0;
+      analysis.rows.forEach((row) => {
+        const student = studentLookup.get(String(row.roll || "").trim().toLowerCase());
+        if (!student) return;
+        preliminaryTargets.forEach((target, columnKey) => {
+          const normalized = normalizeImportedMarkValue(row.values[columnKey]);
+          if (
+            normalized.kind !== "number" ||
+            normalized.value < 0 ||
+            normalized.value > Number(target.maxMarks || 0)
+          ) {
+            return;
+          }
+          if (!overwrite && target.mode === "existing") {
+            const recordKey = `${student.studentId}__${target.blueprintId}`;
+            const currentValue = markDraft[recordKey]?.[target.itemKey];
+            if (currentValue !== "" && currentValue !== null && currentValue !== undefined) {
+              return;
+            }
+          }
+          potentialChanges += 1;
+        });
+      });
+
+      if (!potentialChanges) {
+        throw new Error(
+          overwrite
+            ? "No valid Excel mark values matched the selected OBE columns and enrolled students."
+            : "No blank OBE cells can be filled from this Excel file. Choose Replace Existing OBE Marks if you intend to overwrite saved values."
+        );
+      }
+
+      if (setupNeedsSave) {
+        await saveObeSetup(courseId, {
+          ...workingSetup,
+          courseOutcomes: nextCourseOutcomes,
+          poStatements: nextPoStatements,
+          mappings: nextMappings,
+        });
+      }
+
+      const targetByColumnKey = new Map();
+      activePlans.forEach((plan) => {
+        if (plan.mode !== "existing") return;
+        plan.columnPlans.forEach((columnPlan) => {
+          if (!columnPlan.targetItemKey) return;
+          const item = (plan.existingBlueprint.items || []).find(
+            (row) => String(row.key) === String(columnPlan.targetItemKey)
+          );
+          if (!item) return;
+          targetByColumnKey.set(columnPlan.column.key, {
+            blueprintId: plan.existingBlueprint._id,
+            itemKey: item.key,
+            maxMarks: Number(item.marks || 0),
+          });
+        });
+      });
+
+      for (const plan of activePlans) {
+        if (plan.mode !== "create") continue;
+        const included = plan.columnPlans.filter((row) => row.include);
+        if (!included.length) continue;
+        const payload = {
+          assessmentName: plan.assessmentName,
+          assessmentType: plan.assessmentType || plan.group.assessmentType,
+          totalMarks: plan.totalMarks,
+          notes: "",
+          items: included.map((row, index) => ({
+            key: `q${index + 1}`,
+            label: row.itemLabel || row.coCode || `Q${index + 1}`,
+            marks: row.maxMarks,
+            coCode: row.coCode,
+            order: index,
+          })),
+        };
+        const created = normalizeBlueprintLabels(
+          await createObeBlueprint(courseId, payload)
+        );
+        included.forEach((row, index) => {
+          const item = created.items?.[index] || payload.items[index];
+          targetByColumnKey.set(row.column.key, {
+            blueprintId: created._id || created.id,
+            itemKey: item.key,
+            maxMarks: Number(item.marks || row.maxMarks || 0),
+          });
+        });
+      }
+
+      const latestData = await getObeMarks(courseId);
+      const latestState = buildMarkEntryState(latestData);
+      const latestStudentLookup = new Map(
+        latestState.students.map((student) => [
+          String(student.roll || "").trim().toLowerCase(),
+          student,
+        ])
+      );
+      const blueprintById = new Map(
+        latestState.blueprints.map((blueprint) => [String(blueprint._id), blueprint])
+      );
+      const nextDraft = { ...latestState.draft };
+      const touchedRecordKeys = new Set();
+      let importedCells = 0;
+      let skippedExisting = 0;
+      let skippedInvalid = 0;
+      let skippedBlank = 0;
+
+      analysis.rows.forEach((row) => {
+        const student = latestStudentLookup.get(String(row.roll || "").trim().toLowerCase());
+        if (!student) return;
+
+        targetByColumnKey.forEach((target, columnKey) => {
+          const normalized = normalizeImportedMarkValue(row.values[columnKey]);
+          if (normalized.kind === "blank") {
+            skippedBlank += 1;
+            return;
+          }
+          if (
+            normalized.kind !== "number" ||
+            normalized.value < 0 ||
+            normalized.value > Number(target.maxMarks || 0)
+          ) {
+            skippedInvalid += 1;
+            return;
+          }
+
+          const recordKey = `${student.studentId}__${target.blueprintId}`;
+          if (!nextDraft[recordKey]) nextDraft[recordKey] = {};
+          const currentValue = nextDraft[recordKey][target.itemKey];
+          const hasExistingValue = currentValue !== "" && currentValue !== null && currentValue !== undefined;
+          if (!overwrite && hasExistingValue) {
+            skippedExisting += 1;
+            return;
+          }
+
+          nextDraft[recordKey] = {
+            ...nextDraft[recordKey],
+            [target.itemKey]: normalized.value,
+          };
+          touchedRecordKeys.add(recordKey);
+          importedCells += 1;
+        });
+      });
+
+      if (!importedCells) {
+        throw new Error(
+          skippedExisting
+            ? "No marks were changed because all matching OBE cells already contain values. Choose Replace Existing Marks to overwrite them."
+            : "No valid OBE mark values could be imported from the selected worksheet."
+        );
+      }
+
+      const records = [...touchedRecordKeys].map((recordKey) => {
+        const [studentId, blueprintId] = recordKey.split("__");
+        const blueprint = blueprintById.get(String(blueprintId));
+        return {
+          studentId,
+          blueprintId,
+          entries: (blueprint?.items || []).map((item) => ({
+            itemKey: item.key,
+            obtainedMarks: Number(nextDraft[recordKey]?.[item.key] || 0),
+          })),
+        };
+      });
+
+      await saveObeMarks(courseId, { records });
+      setMarkStudents(latestState.students);
+      setMarkBlueprints(latestState.blueprints);
+      setMarkDraft(nextDraft);
+      setHasPersistedSetup(true);
+      setOutputData(null);
+      await Promise.all([loadSetup(), loadBlueprints(), loadMarks()]);
+      if (activeSubtab === "output") await loadOutput();
+
+      await premiumSwal({
+        title: "OBE marks imported",
+        icon: "success",
+        html: `
+          <div class="premium-dialog-strong" style="text-align:left;font-size:13px;line-height:1.7">
+            <div><strong>Imported mark cells:</strong> ${importedCells}</div>
+            ${skippedExisting ? `<div><strong>Existing cells kept:</strong> ${skippedExisting}</div>` : ""}
+            ${skippedBlank ? `<div><strong>Blank Excel cells skipped:</strong> ${skippedBlank}</div>` : ""}
+            ${skippedInvalid ? `<div style="color:#b45309"><strong>Invalid / over-maximum values skipped:</strong> ${skippedInvalid}</div>` : ""}
+            <div style="margin-top:8px">The OBE Mark Entry table has been refreshed with the saved values.</div>
+          </div>
+        `,
+        confirmButtonColor: "#4f46e5",
+      });
+    } catch (error) {
+      console.error(error);
+      premiumSwal({
+        icon: "error",
+        title: "OBE Excel import failed",
+        text: error?.response?.data?.message || error?.message || "Failed to import the Excel file.",
+        confirmButtonText: "Close",
+      });
+    } finally {
+      input.value = "";
     }
   };
 
@@ -2393,15 +3551,33 @@ const saveSetup = async () => {
             title="Mark Entry Grid"
             subtitle="Use Tab, Enter, or arrow keys to move between cells. Values are limited to each question's configured full mark."
             actions={
-              <button
-                type="button"
-                onClick={saveMarks}
-                disabled={markSaving || markLoading || !markBlueprints.length}
-                className={`${primaryButtonClass} inline-flex items-center gap-2`}
-              >
-                <ObeIcon name="save" className="h-4 w-4" />
-                {markSaving ? "Saving..." : "Save OBE Marks"}
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  ref={obeMarksImportInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.xlsm"
+                  className="hidden"
+                  onChange={handleObeMarksExcelImport}
+                />
+                <button
+                  type="button"
+                  onClick={() => obeMarksImportInputRef.current?.click()}
+                  disabled={markSaving || markLoading || !markStudents.length}
+                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-xs font-bold text-slate-700 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-indigo-500/40 dark:hover:bg-indigo-500/10 dark:hover:text-indigo-300"
+                >
+                  <ObeIcon name="upload" className="h-4 w-4" />
+                  Smart Import Excel
+                </button>
+                <button
+                  type="button"
+                  onClick={saveMarks}
+                  disabled={markSaving || markLoading || !markBlueprints.length}
+                  className={`${primaryButtonClass} inline-flex items-center gap-2`}
+                >
+                  <ObeIcon name="save" className="h-4 w-4" />
+                  {markSaving ? "Saving..." : "Save OBE Marks"}
+                </button>
+              </div>
             }
           >
             {markLoading ? (
@@ -2412,7 +3588,7 @@ const saveSetup = async () => {
               </div>
             ) : !markBlueprints.length ? (
               <div className="text-sm text-slate-500">
-                No OBE blueprints created yet. Create a blueprint first.
+                No OBE blueprints created yet. Use <strong>Import Excel</strong> to create the required setup/assessment mapping from a compatible sheet, or create a blueprint manually first.
               </div>
             ) : (
               <>

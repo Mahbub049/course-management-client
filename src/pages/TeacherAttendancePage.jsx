@@ -27,6 +27,8 @@ const sortStudentsByRoll = (studentList = []) => {
 
 export default function TeacherAttendancePage() {
   const dateInputRef = useRef(null);
+  const copySourceDateRef = useRef(null);
+  const copyTargetDateRef = useRef(null);
 
   const [courses, setCourses] = useState([]);
   const [loadingCourses, setLoadingCourses] = useState(true);
@@ -412,8 +414,19 @@ export default function TeacherAttendancePage() {
           : `Bulk: Period ${Number(form.startPeriod)} to ${Number(form.startPeriod) + Number(form.numClasses) - 1
           }`;
 
+  const openDatePicker = (ref) => {
+    const input = ref?.current;
+    if (!input) return;
+    input.focus();
+    try {
+      if (typeof input.showPicker === "function") input.showPicker();
+    } catch {
+      // Browsers without showPicker still keep the native date control usable.
+    }
+  };
+
   const commonInputClass =
-    "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-indigo-400 dark:focus:ring-indigo-400/10";
+    "w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-indigo-400 dark:focus:ring-indigo-400/10";
 
   return (
     <div className="mx-auto ">
@@ -488,7 +501,7 @@ export default function TeacherAttendancePage() {
             <button
               type="button"
               onClick={openCopyAttendance}
-              className="inline-flex min-w-0 items-center justify-center gap-2 rounded-2xl border border-sky-200 bg-sky-50 px-2 py-2.5 text-xs font-semibold text-sky-700 transition hover:bg-sky-100 sm:px-5 sm:text-sm dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300 dark:hover:bg-sky-500/20"
+              className="inline-flex min-w-0 items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white px-2 py-2.5 text-xs font-semibold text-slate-700 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 sm:px-5 sm:text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-indigo-500/40 dark:hover:bg-indigo-500/10 dark:hover:text-indigo-300"
             >
               <CopyIcon />
               <span className="sm:hidden">Copy</span>
@@ -928,11 +941,11 @@ export default function TeacherAttendancePage() {
         >
           <form
             onSubmit={handleCopyAttendance}
-            className="w-full max-w-2xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+            className="w-full max-w-xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
           >
-            <div className="flex items-start justify-between border-b border-slate-100 bg-gradient-to-r from-sky-50 via-white to-indigo-50 px-6 py-5 dark:border-slate-800 dark:from-sky-950/20 dark:via-slate-900 dark:to-indigo-950/20">
+            <div className="flex items-start justify-between border-b border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-900">
               <div className="flex gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-600 text-white shadow-sm"><CopyIcon /></div>
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-600 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300"><CopyIcon /></div>
                 <div>
                   <h3 className="text-lg font-bold text-slate-900 dark:text-white">Copy Attendance</h3>
                   <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">Reuse one completed period instead of marking the same students again.</p>
@@ -941,7 +954,7 @@ export default function TeacherAttendancePage() {
               <button type="button" onClick={closeCopyAttendance} className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200" aria-label="Close"><CloseIcon /></button>
             </div>
 
-            <div className="space-y-5 p-6">
+            <div className="space-y-4 p-5">
               <div>
                 <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Course</label>
                 <select
@@ -958,12 +971,19 @@ export default function TeacherAttendancePage() {
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-950/70">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-800/35">
                   <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white"><SourceIcon /> Copy From</div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">Date</label>
-                      <input type="date" value={copyForm.sourceDate} onChange={(e) => setCopyForm((prev) => ({ ...prev, sourceDate: e.target.value }))} className={commonInputClass} />
+                      <input
+                        ref={copySourceDateRef}
+                        type="date"
+                        value={copyForm.sourceDate}
+                        onClick={() => openDatePicker(copySourceDateRef)}
+                        onChange={(e) => setCopyForm((prev) => ({ ...prev, sourceDate: e.target.value }))}
+                        className={`${commonInputClass} cursor-pointer [color-scheme:light] dark:[color-scheme:dark]`}
+                      />
                     </div>
                     <div>
                       <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">Period</label>
@@ -974,12 +994,19 @@ export default function TeacherAttendancePage() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-sky-200 bg-sky-50/60 p-4 dark:border-sky-500/20 dark:bg-sky-500/10">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-800/35">
                   <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white"><TargetIcon /> Copy To</div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">Date</label>
-                      <input type="date" value={copyForm.targetDate} onChange={(e) => setCopyForm((prev) => ({ ...prev, targetDate: e.target.value }))} className={commonInputClass} />
+                      <input
+                        ref={copyTargetDateRef}
+                        type="date"
+                        value={copyForm.targetDate}
+                        onClick={() => openDatePicker(copyTargetDateRef)}
+                        onChange={(e) => setCopyForm((prev) => ({ ...prev, targetDate: e.target.value }))}
+                        className={`${commonInputClass} cursor-pointer [color-scheme:light] dark:[color-scheme:dark]`}
+                      />
                     </div>
                     <div>
                       <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">Period</label>
@@ -991,20 +1018,20 @@ export default function TeacherAttendancePage() {
                 </div>
               </div>
 
-              <label className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-950">
+              <label className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 dark:border-slate-700 dark:bg-slate-800/35">
                 <div>
                   <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">Replace existing target attendance</div>
                   <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">When enabled, an already saved target period is overwritten with the copied status.</div>
                 </div>
-                <input type="checkbox" checked={copyForm.overwrite} onChange={(e) => setCopyForm((prev) => ({ ...prev, overwrite: e.target.checked }))} className="h-5 w-5 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
+                <input type="checkbox" checked={copyForm.overwrite} onChange={(e) => setCopyForm((prev) => ({ ...prev, overwrite: e.target.checked }))} className="h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
               </label>
 
               {copyError && <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">{copyError}</div>}
             </div>
 
-            <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50 px-6 py-4 dark:border-slate-800 dark:bg-slate-950/60">
-              <button type="button" onClick={closeCopyAttendance} disabled={copyLoading} className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">Cancel</button>
-              <button type="submit" disabled={copyLoading} className="inline-flex items-center gap-2 rounded-2xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:opacity-60">{copyLoading ? "Copying..." : <><CopyIcon /> Copy Attendance</>}</button>
+            <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950/50">
+              <button type="button" onClick={closeCopyAttendance} disabled={copyLoading} className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Cancel</button>
+              <button type="submit" disabled={copyLoading} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-60">{copyLoading ? "Copying..." : <><CopyIcon /> Copy Attendance</>}</button>
             </div>
           </form>
         </div>
@@ -1023,7 +1050,7 @@ function SourceIcon() {
   return <svg className="h-4 w-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>;
 }
 function TargetIcon() {
-  return <svg className="h-4 w-4 text-sky-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>;
+  return <svg className="h-4 w-4 text-indigo-600 dark:text-indigo-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>;
 }
 function CloseIcon() {
   return <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 6l12 12M18 6 6 18"/></svg>;

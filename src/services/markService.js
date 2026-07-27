@@ -10,7 +10,7 @@ export const saveMarksForCourseRequest = async (courseId, marks) => {
   return res.data;
 };
 
-export const syncMarksFromObeRequest = async (courseId) => {
-  const res = await api.post(`/courses/${courseId}/marks/sync-from-obe`);
+export const syncMarksFromObeRequest = async (courseId, payload = {}) => {
+  const res = await api.post(`/courses/${courseId}/marks/sync-from-obe`, payload);
   return res.data;
 };

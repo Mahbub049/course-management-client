@@ -19,6 +19,7 @@ import {
   createAssessmentRequest,
 } from "../../services/assessmentService";
 import { fetchAttendanceSummary } from "../../services/attendanceSummaryService";
+import { getObeBlueprints, getObeSetup } from "../../services/obeService";
 import {
   chooseDefaultMarksSheet,
   importCategory,
@@ -26,6 +27,7 @@ import {
   parseMarksSheet,
   parseMarksWorkbook,
 } from "../../utils/marksheetExcelImport";
+import { premiumSwal } from "../../utils/premiumDialog";
 
 function getCourseType(course) {
   const t = (course?.courseType || course?.type || "").toLowerCase();
@@ -1400,258 +1402,444 @@ function MarksExcelImportModal({
   const createCount = Object.values(mappings || {}).filter(
     (value) => value === "create"
   ).length;
+  const ignoredCount = Math.max(0, columns.length - mappedCount - createCount);
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 px-6 py-5 dark:border-slate-800">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-indigo-600 dark:text-indigo-300">
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
-                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <path d="M12 3v12m0 0 4-4m-4 4-4-4" strokeLinecap="round" strokeLinejoin="round" />
-                  <path d="M5 15v4h14v-4" strokeLinecap="round" strokeLinejoin="round" />
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:p-5">
+      <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white text-slate-900 shadow-2xl dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+        <div className="relative overflow-hidden border-b border-slate-200 bg-slate-50/80 px-5 py-5 sm:px-7 sm:py-6 dark:border-slate-800 dark:bg-slate-900">
+          
+          <div className="relative flex items-start justify-between gap-4">
+            <div className="flex min-w-0 gap-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-600 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300">
+                <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.9">
+                  <path d="M12 3v11m0 0 4-4m-4 4-4-4" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M5 16v3h14v-3" strokeLinecap="round" />
                 </svg>
-              </span>
-              Excel Marks Import
+              </div>
+              <div className="min-w-0">
+                <div className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-indigo-600 dark:text-indigo-300">Smart Excel Import</div>
+                <h3 className="mt-1 text-xl font-extrabold tracking-tight text-slate-900 sm:text-2xl dark:text-white">Review the workbook mapping</h3>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-400">
+                  Existing assessments are matched automatically. You can remap any column, create missing assessment fields, and choose whether existing marks are protected.
+                </p>
+              </div>
             </div>
-            <h3 className="mt-2 text-xl font-bold text-slate-950 dark:text-white">
-              Map Excel columns to the marksheet
-            </h3>
-            <p className="mt-1 max-w-3xl text-sm text-slate-500 dark:text-slate-400">
-              Auto-match existing assessments, adjust any mapping manually, or create missing assessments and import their marks in the same operation.
-            </p>
+            <button type="button" onClick={onClose} disabled={busy} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-white disabled:opacity-50" aria-label="Close import modal">
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" /></svg>
+            </button>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-            aria-label="Close import modal"
-          >
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
-            </svg>
-          </button>
+          <div className="relative mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {[
+              ["Students", rows.length, "text-emerald-700 dark:text-emerald-300"],
+              ["Mapped", mappedCount, "text-sky-700 dark:text-sky-300"],
+              ["Create", createCount, "text-indigo-700 dark:text-indigo-300"],
+              ["Ignored", ignoredCount, "text-slate-700 dark:text-slate-300"],
+            ].map(([label, value, color]) => (
+              <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-3 dark:border-slate-700 dark:bg-slate-800/70">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{label}</div>
+                <div className={`mt-1 text-xl font-black ${color}`}>{value}</div>
+              </div>
+            ))}
+          </div>
         </div>
 
-        <div className="overflow-y-auto px-6 py-5">
-          <div className="grid gap-3 md:grid-cols-4">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
-              <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">File</div>
-              <div className="mt-1 truncate text-sm font-semibold text-slate-800 dark:text-slate-100" title={fileName}>
-                {fileName || "Excel workbook"}
+        <div className="overflow-y-auto px-5 py-5 sm:px-7">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 6h16v12H4z"/><path d="M8 10h8M8 14h5" strokeLinecap="round"/></svg>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-500">Workbook</div>
+                  <div className="mt-1 truncate text-sm font-extrabold text-slate-900 dark:text-white" title={fileName}>{fileName || "Excel workbook"}</div>
+                  <select value={sheetName} onChange={(e) => onSheetChange(e.target.value)} className="mt-3 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100">
+                    {sheetNames.map((name) => <option value={name} key={name}>{name}</option>)}
+                  </select>
+                </div>
               </div>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
-              <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Students detected</div>
-              <div className="mt-1 text-xl font-bold text-slate-900 dark:text-white">{rows.length}</div>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
-              <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Mapped columns</div>
-              <div className="mt-1 text-xl font-bold text-slate-900 dark:text-white">{mappedCount}</div>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
-              <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">New assessments</div>
-              <div className="mt-1 text-xl font-bold text-slate-900 dark:text-white">{createCount}</div>
-            </div>
-          </div>
 
-          <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.45fr)]">
-            <label className="block">
-              <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Worksheet</span>
-              <select
-                value={sheetName}
-                onChange={(e) => onSheetChange(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800 outline-none transition focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-              >
-                {sheetNames.map((name) => (
-                  <option value={name} key={name}>{name}</option>
-                ))}
-              </select>
-            </label>
-
-            <div>
-              <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Existing marks</span>
-              <div className="grid grid-cols-2 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-950">
-                <button
-                  type="button"
-                  onClick={() => setImportPolicy("blank_only")}
-                  className={[
-                    "rounded-lg px-3 py-2 text-xs font-bold transition",
-                    importPolicy === "blank_only"
-                      ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-800 dark:text-indigo-300"
-                      : "text-slate-500 dark:text-slate-400",
-                  ].join(" ")}
-                >
-                  Fill blanks only
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setImportPolicy("replace")}
-                  className={[
-                    "rounded-lg px-3 py-2 text-xs font-bold transition",
-                    importPolicy === "replace"
-                      ? "bg-amber-50 text-amber-700 shadow-sm dark:bg-amber-500/10 dark:text-amber-300"
-                      : "text-slate-500 dark:text-slate-400",
-                  ].join(" ")}
-                >
-                  Replace existing
-                </button>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+              <div className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-500">Existing marks policy</div>
+              <div className="mt-3 grid grid-cols-2 rounded-xl border border-slate-200 bg-slate-100 p-1 dark:border-slate-700 dark:bg-slate-900">
+                <button type="button" onClick={() => setImportPolicy("blank_only")} className={`rounded-lg px-3 py-2.5 text-xs font-extrabold transition ${importPolicy === "blank_only" ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-800 dark:text-indigo-300" : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"}`}>Fill blanks only</button>
+                <button type="button" onClick={() => setImportPolicy("replace")} className={`rounded-lg px-3 py-2.5 text-xs font-extrabold transition ${importPolicy === "replace" ? "bg-white text-amber-700 shadow-sm dark:bg-slate-800 dark:text-amber-300" : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"}`}>Replace existing</button>
               </div>
+              <p className="mt-2 text-[11px] leading-5 text-slate-500">Blank Excel cells never erase portal marks.</p>
             </div>
           </div>
 
           {preview?.error ? (
-            <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
-              {preview.error}
-            </div>
+            <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300">{preview.error}</div>
           ) : (
             <>
-              <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+              <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-3 dark:border-slate-700 dark:bg-slate-800/40 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={onAutoMatch}
-                    className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-sky-700"
-                  >
-                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
-                      <path d="M7 7h10M7 12h7M7 17h4" strokeLinecap="round" />
-                      <path d="M17 14l2 2 3-4" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
+                  <button type="button" onClick={onAutoMatch} className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-300 bg-white px-3.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
+                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M7 7h10M7 12h7M7 17h4" strokeLinecap="round"/><path d="M17 14l2 2 3-4" strokeLinecap="round" strokeLinejoin="round"/></svg>
                     Auto Match
                   </button>
-                  <button
-                    type="button"
-                    onClick={onCreateRecommended}
-                    className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-indigo-700"
-                  >
-                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
-                      <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-                    </svg>
-                    Create Missing Recommended
+                  <button type="button" onClick={onCreateRecommended} className="inline-flex h-9 items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/15">
+                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 5v14M5 12h14" strokeLinecap="round"/></svg>
+                    Create Missing
                   </button>
                 </div>
-
-                <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  <input
-                    type="checkbox"
-                    checked={showAllColumns}
-                    onChange={(e) => setShowAllColumns(e.target.checked)}
-                    className="h-4 w-4 rounded border-slate-300 text-indigo-600"
-                  />
-                  Show detailed CO/Lab columns
+                <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
+                  <input type="checkbox" checked={showAllColumns} onChange={(e) => setShowAllColumns(e.target.checked)} className="h-4 w-4 accent-indigo-500" />
+                  Show detailed CO / Lab columns
                 </label>
               </div>
 
-              <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">
-                <div className="grid grid-cols-[minmax(220px,1fr)_130px_minmax(270px,1.1fr)] gap-3 bg-slate-100 px-4 py-3 text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:bg-slate-800/80 dark:text-slate-300">
-                  <div>Excel column</div>
-                  <div>Detected max</div>
-                  <div>Import into</div>
-                </div>
-
-                <div className="max-h-[42vh] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
-                  {visibleColumns.map((column) => {
-                    const mapping = mappings[column.key] || "ignore";
-                    const config = createConfigs[column.key] || {};
-                    return (
-                      <div key={column.key} className="grid grid-cols-[minmax(220px,1fr)_130px_minmax(270px,1.1fr)] gap-3 px-4 py-3.5">
+              <div className="mt-4 space-y-3">
+                {visibleColumns.map((column, index) => {
+                  const mapping = mappings[column.key] || "ignore";
+                  const config = createConfigs[column.key] || {};
+                  const target = targets.find((item) => item.key === mapping);
+                  const status = mapping === "create" ? "create" : mapping === "ignore" ? "ignore" : "mapped";
+                  return (
+                    <div key={column.key} className={`rounded-2xl border p-4 transition ${status === "mapped" ? "border-emerald-200 bg-emerald-50/50 dark:border-emerald-500/20 dark:bg-emerald-500/5" : status === "create" ? "border-indigo-200 bg-indigo-50/50 dark:border-indigo-500/20 dark:bg-indigo-500/5" : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800/45"}`}>
+                      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,.9fr)] lg:items-center">
                         <div className="min-w-0">
-                          <div className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100" title={column.sourceLabel}>
-                            {column.sourceLabel}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-lg bg-slate-100 px-2 text-[10px] font-black text-slate-500 dark:bg-slate-700 dark:text-slate-300">{index + 1}</span>
+                            <div className="truncate text-sm font-extrabold text-slate-900 dark:text-white" title={column.sourceLabel}>{column.sourceLabel}</div>
+                            {column.recommended && <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[9px] font-extrabold uppercase tracking-wide text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">Recommended</span>}
                           </div>
-                          <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-400">
-                            {column.recommended && (
-                              <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-bold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
-                                Recommended
-                              </span>
-                            )}
-                            <span>{column.category.replace(/_/g, " ")}</span>
+                          <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                            <span className="rounded-lg bg-slate-100 px-2 py-1 dark:bg-slate-700/70">{String(column.category || "other").replace(/_/g, " ")}</span>
+                            <span className="rounded-lg bg-slate-100 px-2 py-1 dark:bg-slate-700/70">Detected max: <strong className="text-slate-700 dark:text-slate-300">{column.maxMarks ?? "—"}</strong></span>
+                            {target?.synced && <span className="rounded-lg bg-amber-50 px-2 py-1 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">sync-connected target</span>}
                           </div>
-                        </div>
-
-                        <div className="pt-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                          {column.maxMarks ?? "—"}
                         </div>
 
                         <div>
-                          <select
-                            value={mapping}
-                            onChange={(e) => onMappingChange(column.key, e.target.value)}
-                            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                          >
-                            <option value="ignore">Ignore this column</option>
+                          <select value={mapping} onChange={(e) => onMappingChange(column.key, e.target.value)} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100">
+                            <option value="ignore">Ignore this Excel column</option>
                             <option value="create">＋ Create new assessment</option>
-                            {targets.map((target) => (
-                              <option key={target.key} value={target.key} disabled={target.locked}>
-                                {target.label} ({target.fullMarks}){target.synced ? " — sync connected" : ""}
-                              </option>
-                            ))}
+                            {targets.map((item) => <option key={item.key} value={item.key} disabled={item.locked}>{item.label} ({item.fullMarks}){item.synced ? " — sync connected" : ""}</option>)}
                           </select>
 
                           {mapping === "create" && (
-                            <div className="mt-2 grid grid-cols-[minmax(0,1fr)_96px] gap-2">
-                              <input
-                                value={config.name || ""}
-                                onChange={(e) => onCreateConfigChange(column.key, "name", e.target.value)}
-                                placeholder="Assessment name"
-                                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                              />
-                              <input
-                                type="number"
-                                min="0.5"
-                                step="0.5"
-                                value={config.fullMarks ?? ""}
-                                onChange={(e) => onCreateConfigChange(column.key, "fullMarks", e.target.value)}
-                                placeholder="Marks"
-                                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                              />
+                            <div className="mt-2 grid grid-cols-[minmax(0,1fr)_105px] gap-2">
+                              <input value={config.name || ""} onChange={(e) => onCreateConfigChange(column.key, "name", e.target.value)} placeholder="Assessment name" className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
+                              <input type="number" min="0.5" step="0.5" value={config.fullMarks ?? ""} onChange={(e) => onCreateConfigChange(column.key, "fullMarks", e.target.value)} placeholder="Marks" className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
                             </div>
                           )}
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
+                    </div>
+                  );
+                })}
               </div>
 
-              {!visibleColumns.length && (
-                <div className="mt-4 rounded-2xl border border-slate-200 p-5 text-center text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                  No useful marks columns were detected. Turn on “Show detailed CO/Lab columns” to inspect every column.
-                </div>
-              )}
-
-              {!!preview?.duplicateRolls?.length && (
-                <div className="mt-3 text-xs font-semibold text-amber-600 dark:text-amber-300">
-                  {preview.duplicateRolls.length} duplicate student row(s) in the Excel sheet will be ignored.
-                </div>
-              )}
+              {!visibleColumns.length && <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-center text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-400">No useful marks columns were detected. Enable detailed columns to inspect the complete sheet.</div>}
+              {!!preview?.duplicateRolls?.length && <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">{preview.duplicateRolls.length} duplicate student row(s) will be ignored.</div>}
             </>
           )}
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4 dark:border-slate-800 dark:bg-slate-950/50">
-          <div className="text-xs text-slate-500 dark:text-slate-400">
-            Roll/ID is used as the primary student match. Excel blank cells never clear portal marks.
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={busy}
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-            >
-              Cancel
+        <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950/60 sm:flex-row sm:items-center sm:justify-between sm:px-7">
+          <div className="text-xs leading-5 text-slate-500">Roll/ID is the primary match. Review every “Create” row before importing.</div>
+          <div className="flex gap-2 self-end">
+            <button type="button" onClick={onClose} disabled={busy} className="h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Cancel</button>
+            <button type="button" onClick={onImport} disabled={busy || Boolean(preview?.error)} className="inline-flex h-11 items-center gap-2 rounded-xl bg-indigo-600 px-5 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60">
+              {busy ? "Importing..." : "Confirm & Import Marks"}
             </button>
-            <button
-              type="button"
-              onClick={onImport}
-              disabled={busy || Boolean(preview?.error)}
-              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {busy ? "Importing..." : "Import Marks"}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function getObeBlueprintCategory(blueprint = {}) {
+  const explicit = String(blueprint?.assessmentType || "").trim().toLowerCase();
+  if (["ct", "assignment", "mid", "final", "attendance"].includes(explicit)) {
+    return explicit;
+  }
+  const category = importCategory(blueprint?.assessmentName || "");
+  return category === "ct_aggregate" ? "ct" : category;
+}
+
+function scoreObeBlueprintTarget(blueprint, assessment) {
+  if (!blueprint || !assessment) return -1;
+  const sourceName = normalizeImportLabel(blueprint.assessmentName || "");
+  const targetName = normalizeImportLabel(assessment.name || "");
+  const sourceCategory = getObeBlueprintCategory(blueprint);
+  const targetCategory = importCategory(assessment.name || "");
+  const sameMarks =
+    Math.abs(Number(blueprint.totalMarks || 0) - Number(assessment.fullMarks || 0)) < 1e-9;
+
+  let score = 0;
+  if (sourceName && targetName && sourceName === targetName) score += 140;
+  if (sourceCategory !== "other" && sourceCategory === targetCategory) score += 70;
+  if (sameMarks) score += 55;
+  if (sourceName && targetName && (sourceName.includes(targetName) || targetName.includes(sourceName))) {
+    score += 24;
+  }
+  if (assessment?.structureType === "lab_final") score += 8;
+  return score;
+}
+
+function buildObeFetchDefaults(blueprints = [], assessments = [], courseType = "theory") {
+  const mappings = {};
+  const createConfigs = {};
+  const usedAssessmentIds = new Set();
+
+  (blueprints || []).forEach((blueprint) => {
+    const candidates = (assessments || [])
+      .filter((assessment) => !usedAssessmentIds.has(String(assessment._id)))
+      .map((assessment) => ({
+        assessment,
+        score: scoreObeBlueprintTarget(blueprint, assessment),
+      }))
+      .filter(
+        ({ assessment, score }) =>
+          score > 0 &&
+          Math.abs(Number(blueprint.totalMarks || 0) - Number(assessment.fullMarks || 0)) < 1e-9
+      )
+      .sort((a, b) => b.score - a.score);
+
+    const best = candidates[0];
+    if (best && best.score >= 105) {
+      mappings[String(blueprint._id)] = `assessment:${best.assessment._id}`;
+      usedAssessmentIds.add(String(best.assessment._id));
+    } else {
+      mappings[String(blueprint._id)] = "create";
+    }
+
+    const type = getObeBlueprintCategory(blueprint);
+    createConfigs[String(blueprint._id)] = {
+      name:
+        courseType === "lab" && type === "mid"
+          ? "Lab Mid"
+          : courseType === "lab" && type === "final"
+            ? "Lab Final"
+            : String(blueprint.assessmentName || "Assessment").trim(),
+      fullMarks: Number(blueprint.totalMarks || 0),
+      useQuestionBreakdown:
+        courseType === "lab" && ["mid", "final"].includes(type),
+    };
+  });
+
+  return { mappings, createConfigs };
+}
+
+function buildMarksAssessmentFromObeBlueprint(blueprint, config, courseType, order) {
+  const type = getObeBlueprintCategory(blueprint);
+  const fullMarks = Number(config?.fullMarks ?? blueprint?.totalMarks ?? 0);
+  const name = String(config?.name || blueprint?.assessmentName || "Assessment").trim();
+
+  if (!name || !Number.isFinite(fullMarks) || fullMarks <= 0) {
+    throw new Error(`${blueprint?.assessmentName || "OBE assessment"} needs a valid marksheet name and full marks.`);
+  }
+
+  if (
+    courseType === "lab" &&
+    config?.useQuestionBreakdown &&
+    ["mid", "final"].includes(type)
+  ) {
+    const expected = type === "mid" ? 30 : 40;
+    if (fullMarks !== expected) {
+      throw new Error(`Lab ${type === "mid" ? "Mid" : "Final"} must be ${expected} marks.`);
+    }
+    const items = Array.isArray(blueprint?.items) ? blueprint.items : [];
+    const itemTotal = round2(items.reduce((sum, item) => sum + Number(item?.marks || 0), 0));
+    if (!items.length || Math.abs(itemTotal - expected) > 0.01) {
+      throw new Error(`${blueprint.assessmentName} cannot be created with question breakdown because its OBE items do not total ${expected}.`);
+    }
+
+    return {
+      name,
+      fullMarks,
+      order,
+      structureType: "lab_final",
+      labFinalConfig: {
+        period: type === "mid" ? "mid" : "final",
+        mode: "components",
+        totalMarks: expected,
+        projectMarks: 0,
+        labExamMarks: 0,
+        genericComponents: items.map((item, index) => ({
+          key: String(item.key || `q${index + 1}`),
+          name: String(item.label || item.coCode || `Q${index + 1}`),
+          marks: Number(item.marks || 0),
+          sourceType: "manual",
+        })),
+        projectComponents: [],
+        examQuestions: [],
+      },
+    };
+  }
+
+  return {
+    name,
+    fullMarks,
+    order,
+    structureType: "regular",
+  };
+}
+
+function ObeFetchModal({
+  open,
+  courseType,
+  blueprints,
+  assessments,
+  mappings,
+  createConfigs,
+  overwriteExisting,
+  setOverwriteExisting,
+  onMappingChange,
+  onCreateConfigChange,
+  onClose,
+  onFetch,
+  busy,
+}) {
+  if (!open) return null;
+
+  const selected = (blueprints || []).filter(
+    (blueprint) => mappings?.[String(blueprint._id)] && mappings[String(blueprint._id)] !== "skip"
+  );
+  const createCount = selected.filter(
+    (blueprint) => mappings[String(blueprint._id)] === "create"
+  ).length;
+  const mappedCount = selected.length - createCount;
+
+  return (
+    <div className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:p-5">
+      <div className="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white text-slate-900 shadow-2xl dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+        <div className="relative overflow-hidden border-b border-slate-200 bg-slate-50/80 px-5 py-5 sm:px-7 dark:border-slate-800 dark:bg-slate-900">
+          
+          <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex gap-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-600 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300">
+                <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <path d="M4 7h12M4 12h8M4 17h5" strokeLinecap="round" />
+                  <path d="M17 13v6m0 0 3-3m-3 3-3-3" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+              <div>
+                <div className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-indigo-600 dark:text-indigo-300">OBE → Marksheet</div>
+                <h3 className="mt-1 text-xl font-extrabold tracking-tight text-slate-900 sm:text-2xl dark:text-white">Review assessment mapping before fetching</h3>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-400">
+                  Match each OBE assessment to an existing marksheet field or create the missing field directly. OBE question/CO items are shown so you can verify the source before anything is changed.
+                </p>
+              </div>
+            </div>
+            <button type="button" onClick={onClose} disabled={busy} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-white disabled:opacity-50" aria-label="Close">
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" /></svg>
+            </button>
+          </div>
+
+          <div className="relative mt-5 grid grid-cols-3 gap-2 sm:max-w-xl">
+            {[
+              ["OBE assessments", blueprints?.length || 0, "text-indigo-700 dark:text-indigo-300"],
+              ["Mapped existing", mappedCount, "text-sky-700 dark:text-sky-300"],
+              ["Create missing", createCount, "text-emerald-700 dark:text-emerald-300"],
+            ].map(([label, value, color]) => (
+              <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-3 dark:border-slate-700 dark:bg-slate-800/70">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{label}</div>
+                <div className={`mt-1 text-xl font-black ${color}`}>{value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="overflow-y-auto px-5 py-5 sm:px-7">
+          {!blueprints?.length ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200">
+              No OBE assessment blueprint is available yet. Open OBE / CO-PO and create or import the setup/assessment blueprint first.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {blueprints.map((blueprint, index) => {
+                const id = String(blueprint._id);
+                const mapping = mappings?.[id] || "skip";
+                const config = createConfigs?.[id] || {};
+                const items = Array.isArray(blueprint.items) ? blueprint.items : [];
+                const category = getObeBlueprintCategory(blueprint);
+                return (
+                  <div key={id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800/40">
+                    <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(300px,.72fr)] lg:items-start">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-lg bg-indigo-50 px-2 text-[11px] font-black text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300">{index + 1}</span>
+                          <h4 className="text-base font-extrabold text-slate-900 dark:text-white">{blueprint.assessmentName}</h4>
+                          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600 dark:border-slate-600 dark:bg-slate-700/60 dark:text-slate-300">{category}</span>
+                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">{Number(blueprint.totalMarks || 0)} marks</span>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {items.length ? items.map((item) => (
+                            <span key={item.key} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-700 dark:border-slate-600 dark:bg-slate-900/70 dark:text-slate-300">
+                              <strong className="text-slate-900 dark:text-slate-100">{item.label || item.key}</strong>
+                              {item.coCode ? <span className="text-indigo-700 dark:text-indigo-300">{item.coCode}</span> : null}
+                              <span className="text-slate-500">·</span>
+                              <span>{Number(item.marks || 0)}</span>
+                            </span>
+                          )) : <span className="text-xs text-slate-500">No question/item breakdown saved.</span>}
+                        </div>
+                        {courseType !== "lab" && items.length > 0 && (
+                          <p className="mt-3 text-xs leading-5 text-slate-500">The question-wise OBE marks stay in OBE. The normal marksheet receives the saved total for this assessment.</p>
+                        )}
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3.5 dark:border-slate-700 dark:bg-slate-900/70">
+                        <label className="text-[10px] font-extrabold uppercase tracking-[0.15em] text-slate-500">Destination</label>
+                        <select value={mapping} onChange={(e) => onMappingChange(id, e.target.value)} className="mt-2 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100">
+                          <option value="skip">Skip this OBE assessment</option>
+                          <option value="create">＋ Create marksheet assessment from OBE</option>
+                          {(assessments || []).map((assessment) => (
+                            <option key={assessment._id} value={`assessment:${assessment._id}`}>
+                              {assessment.name} ({Number(assessment.fullMarks || 0)}){assessment.structureType === "lab_final" ? " · structured" : ""}
+                            </option>
+                          ))}
+                        </select>
+
+                        {mapping === "create" && (
+                          <div className="mt-3 space-y-3 border-t border-slate-200 pt-3 dark:border-slate-700">
+                            <div className="grid grid-cols-[minmax(0,1fr)_110px] gap-2">
+                              <input value={config.name || ""} onChange={(e) => onCreateConfigChange(id, "name", e.target.value)} placeholder="Assessment name" className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
+                              <input type="number" min="0.5" step="0.5" value={config.fullMarks ?? ""} onChange={(e) => onCreateConfigChange(id, "fullMarks", e.target.value)} className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
+                            </div>
+                            {courseType === "lab" && ["mid", "final"].includes(category) && items.length > 0 && (
+                              <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-indigo-200 bg-indigo-50/70 p-3 dark:border-indigo-500/20 dark:bg-indigo-500/10">
+                                <input type="checkbox" className="mt-0.5 h-4 w-4 accent-indigo-500" checked={config.useQuestionBreakdown !== false} onChange={(e) => onCreateConfigChange(id, "useQuestionBreakdown", e.target.checked)} />
+                                <span className="text-xs leading-5 text-slate-700 dark:text-slate-300"><strong className="text-indigo-700 dark:text-indigo-300">Create question/component breakdown</strong><br />Uses the OBE item marks so Lab Mid/Final stays question-wise in the marksheet too.</span>
+                              </label>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-800/40">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-sm font-extrabold text-slate-900 dark:text-white">Existing marks policy</div>
+                <div className="mt-1 text-xs text-slate-500">Choose whether fetched OBE totals may replace marks already saved in the marksheet.</div>
+              </div>
+              <div className="grid grid-cols-2 rounded-xl border border-slate-200 bg-slate-100 p-1 dark:border-slate-700 dark:bg-slate-900">
+                <button type="button" onClick={() => setOverwriteExisting(false)} className={`rounded-lg px-3 py-2 text-xs font-bold transition ${!overwriteExisting ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-800 dark:text-indigo-300" : "text-slate-500 dark:text-slate-400"}`}>Fill blanks only</button>
+                <button type="button" onClick={() => setOverwriteExisting(true)} className={`rounded-lg px-3 py-2 text-xs font-bold transition ${overwriteExisting ? "bg-white text-amber-700 shadow-sm dark:bg-slate-800 dark:text-amber-300" : "text-slate-500 dark:text-slate-400"}`}>Replace existing</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950/60 sm:flex-row sm:items-center sm:justify-between sm:px-7">
+          <div className="text-xs text-slate-500">Nothing is created or overwritten until you confirm this screen.</div>
+          <div className="flex gap-2 self-end">
+            <button type="button" onClick={onClose} disabled={busy} className="h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Cancel</button>
+            <button type="button" onClick={onFetch} disabled={busy || !selected.length} className="inline-flex h-11 items-center gap-2 rounded-xl bg-indigo-600 px-5 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
+              {busy ? "Fetching..." : "Create / Map & Fetch Marks"}
             </button>
           </div>
         </div>
@@ -1803,6 +1991,16 @@ export default function TabMarks({ courseId, course }) {
     showAllColumns: false,
     importPolicy: "blank_only",
     busy: false,
+  });
+
+  const [obeFetch, setObeFetch] = useState({
+    open: false,
+    busy: false,
+    blueprints: [],
+    setup: null,
+    mappings: {},
+    createConfigs: {},
+    overwriteExisting: true,
   });
 
   const topScrollbarRef = useRef(null);
@@ -2591,28 +2789,185 @@ export default function TabMarks({ courseId, course }) {
 
 
   const handleFetchFromObe = async () => {
-    const confirmation = await Swal.fire({
-      icon: "question",
-      title: "Fetch marks from OBE/CO-PO?",
-      text:
-        courseType === "lab"
-          ? "Lab Mid and Lab Final totals from OBE/CO-PO will be copied into the matching lab marksheet fields. Existing values in those fields will be replaced, and unsaved marksheet edits will be reloaded."
-          : "Question-wise OBE totals will be copied into matching marksheet fields. Existing values in matched fields will be replaced, and unsaved marksheet edits will be reloaded.",
-      showCancelButton: true,
-      confirmButtonText: "Fetch marks",
-      cancelButtonText: "Cancel",
-      reverseButtons: true,
-      focusCancel: true,
-    });
-
-    if (!confirmation.isConfirmed) return;
-
     try {
       setSyncingObeMarks(true);
       setMarksError("");
 
-      const result = await syncMarksFromObeRequest(courseId);
+      const [setupData, blueprintRows] = await Promise.all([
+        getObeSetup(courseId).catch(() => null),
+        getObeBlueprints(courseId),
+      ]);
+
+      const usableBlueprints = (Array.isArray(blueprintRows) ? blueprintRows : []).filter(
+        (blueprint) =>
+          courseType !== "lab" || ["mid", "final"].includes(String(blueprint?.assessmentType || "").toLowerCase())
+      );
+
+      if (!usableBlueprints.length) {
+        await premiumSwal({
+          icon: "info",
+          title: "No OBE assessment blueprint found",
+          html: `
+            <div class="premium-dialog-card" style="padding:16px">
+              <div class="premium-dialog-strong" style="font-weight:800">There is nothing to fetch yet.</div>
+              <div class="premium-dialog-muted" style="margin-top:7px">Create the OBE assessment blueprint first, or import the course outline / OBE Excel from the OBE / CO-PO tab. Once the blueprint exists, this marksheet can create missing assessment fields and fetch the saved totals.</div>
+            </div>
+          `,
+          confirmButtonText: "Open OBE / CO-PO",
+          showCancelButton: true,
+          cancelButtonText: "Close",
+        }).then((result) => {
+          if (result.isConfirmed && typeof window !== "undefined") {
+            const url = new URL(window.location.href);
+            url.searchParams.set("tab", "obe");
+            window.location.href = url.toString();
+          }
+        });
+        return;
+      }
+
+      const defaults = buildObeFetchDefaults(usableBlueprints, assessments, courseType);
+      setObeFetch({
+        open: true,
+        busy: false,
+        blueprints: usableBlueprints,
+        setup: setupData,
+        mappings: defaults.mappings,
+        createConfigs: defaults.createConfigs,
+        overwriteExisting: true,
+      });
+    } catch (error) {
+      console.error(error);
+      const message =
+        error?.response?.data?.message ||
+        error?.message ||
+        "Failed to load OBE/CO-PO assessments.";
+      setMarksError(message);
+      premiumSwal({
+        icon: "error",
+        title: "Could not prepare OBE fetch",
+        text: message,
+        confirmButtonText: "Close",
+      });
+    } finally {
+      setSyncingObeMarks(false);
+    }
+  };
+
+  const closeObeFetch = () => {
+    if (obeFetch.busy) return;
+    setObeFetch((prev) => ({ ...prev, open: false }));
+  };
+
+  const updateObeFetchMapping = (blueprintId, value) => {
+    setObeFetch((prev) => ({
+      ...prev,
+      mappings: { ...prev.mappings, [blueprintId]: value },
+    }));
+  };
+
+  const updateObeFetchCreateConfig = (blueprintId, field, value) => {
+    setObeFetch((prev) => ({
+      ...prev,
+      createConfigs: {
+        ...prev.createConfigs,
+        [blueprintId]: {
+          ...(prev.createConfigs?.[blueprintId] || {}),
+          [field]: value,
+        },
+      },
+    }));
+  };
+
+  const executeObeFetch = async () => {
+    const selectedBlueprints = (obeFetch.blueprints || []).filter((blueprint) => {
+      const mapping = obeFetch.mappings?.[String(blueprint._id)];
+      return mapping && mapping !== "skip";
+    });
+
+    if (!selectedBlueprints.length) {
+      premiumSwal({
+        icon: "warning",
+        title: "Select at least one OBE assessment",
+        text: "Choose an existing marksheet field or Create from OBE for at least one assessment.",
+      });
+      return;
+    }
+
+    const existingAssessmentIds = selectedBlueprints
+      .map((blueprint) => obeFetch.mappings[String(blueprint._id)])
+      .filter((value) => value?.startsWith("assessment:"))
+      .map((value) => value.replace("assessment:", ""));
+    const duplicateAssessment = existingAssessmentIds.find(
+      (id, index) => existingAssessmentIds.indexOf(id) !== index
+    );
+    if (duplicateAssessment) {
+      premiumSwal({
+        icon: "warning",
+        title: "Duplicate marksheet mapping",
+        text: "Two OBE assessments are mapped to the same marksheet field. Select a different destination for one of them.",
+      });
+      return;
+    }
+
+    setObeFetch((prev) => ({ ...prev, busy: true }));
+    setSyncingObeMarks(true);
+
+    let createdCount = 0;
+    try {
+      const mappingRows = [];
+      let nextOrder =
+        Math.max(0, ...(assessments || []).map((assessment) => Number(assessment.order || 0))) + 1;
+
+      for (const blueprint of selectedBlueprints) {
+        const blueprintId = String(blueprint._id);
+        const mapping = obeFetch.mappings[blueprintId];
+
+        if (mapping === "create") {
+          const payload = buildMarksAssessmentFromObeBlueprint(
+            blueprint,
+            obeFetch.createConfigs?.[blueprintId] || {},
+            courseType,
+            nextOrder
+          );
+          nextOrder += 1;
+
+          const response = await createAssessmentRequest(courseId, payload);
+          const created = Array.isArray(response?.assessments)
+            ? response.assessments.length === 1
+              ? response.assessments[0]
+              : null
+            : response;
+          if (!created?._id) {
+            throw new Error(
+              response?.assessments?.length > 1
+                ? `${blueprint.assessmentName} created more than one marksheet field. Open Assessments and map the OBE assessment manually.`
+                : `Could not create ${payload.name}.`
+            );
+          }
+          createdCount += 1;
+          mappingRows.push({ blueprintId, assessmentId: String(created._id) });
+          continue;
+        }
+
+        if (mapping?.startsWith("assessment:")) {
+          mappingRows.push({
+            blueprintId,
+            assessmentId: mapping.replace("assessment:", ""),
+          });
+        }
+      }
+
+      if (!mappingRows.length) {
+        throw new Error("No OBE-to-marksheet mapping was selected.");
+      }
+
+      const result = await syncMarksFromObeRequest(courseId, {
+        mappings: mappingRows,
+        overwriteExisting: obeFetch.overwriteExisting,
+      });
       await loadAllData();
+      setObeFetch((prev) => ({ ...prev, open: false, busy: false }));
 
       const matched = Array.isArray(result?.matchedAssessments)
         ? result.matchedAssessments
@@ -2621,29 +2976,39 @@ export default function TabMarks({ courseId, course }) {
         ? result.skippedBlueprints
         : [];
       const importedRecords = Number(result?.importedRecords || 0);
+      const protectedRecords = Number(result?.protectedExistingRecords || 0);
 
-      await Swal.fire({
-        icon: importedRecords > 0 ? "success" : "info",
-        title: importedRecords > 0 ? "OBE marks fetched" : "Nothing imported",
-        text:
-          (result?.message || "Fetch completed.") +
-          " Matched assessments: " +
-          matched.length +
-          ". Skipped: " +
-          skipped.length +
-          ".",
+      await premiumSwal({
+        icon: importedRecords > 0 || createdCount > 0 ? "success" : "info",
+        title:
+          importedRecords > 0 || createdCount > 0
+            ? "OBE fetch completed"
+            : "Nothing needed to change",
+        html: `
+          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">
+            <div class="premium-dialog-card" style="padding:13px"><div class="premium-dialog-muted" style="font-size:10px;font-weight:800;text-transform:uppercase">Marks imported</div><div class="premium-dialog-success" style="font-size:22px;font-weight:900;margin-top:3px">${importedRecords}</div></div>
+            <div class="premium-dialog-card" style="padding:13px"><div class="premium-dialog-muted" style="font-size:10px;font-weight:800;text-transform:uppercase">Assessments created</div><div class="premium-dialog-accent" style="font-size:22px;font-weight:900;margin-top:3px">${createdCount}</div></div>
+            <div class="premium-dialog-card" style="padding:13px"><div class="premium-dialog-muted" style="font-size:10px;font-weight:800;text-transform:uppercase">Mappings used</div><div class="premium-dialog-sky" style="font-size:22px;font-weight:900;margin-top:3px">${matched.length}</div></div>
+            <div class="premium-dialog-card" style="padding:13px"><div class="premium-dialog-muted" style="font-size:10px;font-weight:800;text-transform:uppercase">Existing protected</div><div style="font-size:22px;font-weight:900;margin-top:3px;color:#fde68a">${protectedRecords}</div></div>
+          </div>
+          ${skipped.length ? `<div class="premium-dialog-warning" style="margin-top:12px;padding:11px 13px"><strong>${skipped.length} OBE item(s) were not fetched.</strong> Review the selected mapping if something is missing.</div>` : ""}
+        `,
+        confirmButtonText: "Done",
       });
     } catch (error) {
       console.error(error);
+      if (createdCount) await loadAllData().catch(() => {});
       const message =
         error?.response?.data?.message ||
+        error?.message ||
         "Failed to fetch marks from OBE/CO-PO.";
-
       setMarksError(message);
-      Swal.fire({
+      setObeFetch((prev) => ({ ...prev, busy: false }));
+      premiumSwal({
         icon: "error",
-        title: "Fetch failed",
+        title: "OBE fetch could not be completed",
         text: message,
+        confirmButtonText: "Review mapping",
       });
     } finally {
       setSyncingObeMarks(false);
@@ -2928,7 +3293,7 @@ export default function TabMarks({ courseId, course }) {
       });
     } catch (error) {
       console.error(error);
-      Swal.fire({
+      premiumSwal({
         icon: "error",
         title: "Excel import failed",
         text: error?.message || "The workbook could not be read.",
@@ -3048,7 +3413,7 @@ export default function TabMarks({ courseId, course }) {
     });
 
     if (!activeColumns.length) {
-      Swal.fire({
+      premiumSwal({
         icon: "warning",
         title: "Nothing selected",
         text: "Map at least one Excel column to an assessment, or choose Create new assessment.",
@@ -3064,7 +3429,7 @@ export default function TabMarks({ courseId, course }) {
     );
     if (duplicateTarget) {
       const target = excelImportTargets.find((item) => item.key === duplicateTarget);
-      Swal.fire({
+      premiumSwal({
         icon: "warning",
         title: "Duplicate mapping",
         text: `${target?.label || "One marksheet field"} is mapped from more than one Excel column. Use one source column per target.`,
@@ -3100,7 +3465,7 @@ export default function TabMarks({ courseId, course }) {
       (key, index) => key && createNameKeys.indexOf(key) !== index
     );
     if (duplicateCreateName) {
-      Swal.fire({
+      premiumSwal({
         icon: "warning",
         title: "Duplicate new assessment",
         text: "Two Excel columns are trying to create the same assessment. Keep only one or use manual mapping.",
@@ -3113,7 +3478,7 @@ export default function TabMarks({ courseId, course }) {
       const name = String(config.name || "").trim();
       const fullMarks = Number(config.fullMarks);
       if (!name || !Number.isFinite(fullMarks) || fullMarks <= 0) {
-        Swal.fire({
+        premiumSwal({
           icon: "warning",
           title: "New assessment incomplete",
           text: `${column.sourceLabel} needs a valid assessment name and full marks.`,
@@ -3124,7 +3489,7 @@ export default function TabMarks({ courseId, course }) {
         courseType === "hybrid" &&
         ["mid", "final"].includes(column.category)
       ) {
-        Swal.fire({
+        premiumSwal({
           icon: "warning",
           title: "Hybrid exam needs setup first",
           text: "For a hybrid course, create the Theory/Lab Mid or Final fields from Assessments first, then map the Excel columns to those fields.",
@@ -3142,7 +3507,7 @@ export default function TabMarks({ courseId, course }) {
       studentByRoll.has(String(row.roll || "").trim())
     );
     if (!matchedRows.length) {
-      Swal.fire({
+      premiumSwal({
         icon: "error",
         title: "No students matched",
         text: "None of the Excel Roll/ID values match students enrolled in this course.",
@@ -3151,7 +3516,7 @@ export default function TabMarks({ courseId, course }) {
     }
 
     if (excelImport.importPolicy === "replace") {
-      const confirmation = await Swal.fire({
+      const confirmation = await premiumSwal({
         icon: "warning",
         title: "Replace existing marks?",
         text: "Mapped Excel values will replace marks that are already present. Blank Excel cells will still be ignored.",
@@ -3353,7 +3718,7 @@ export default function TabMarks({ courseId, course }) {
         skippedOverMax ? `${skippedOverMax} over-maximum value(s) skipped` : "",
       ].filter(Boolean);
 
-      Swal.fire({
+      premiumSwal({
         icon: importedCells || createdCount ? "success" : "info",
         title: importedCells || createdCount ? "Excel import complete" : "Nothing was changed",
         html: detailLines.map((line) => `<div>${line}</div>`).join(""),
@@ -3364,7 +3729,7 @@ export default function TabMarks({ courseId, course }) {
         await loadAllData().catch(() => {});
       }
       setExcelImport((prev) => ({ ...prev, busy: false }));
-      Swal.fire({
+      premiumSwal({
         icon: "error",
         title: "Import could not be completed",
         text:
@@ -4125,35 +4490,47 @@ export default function TabMarks({ courseId, course }) {
       </div>
 
       <div className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="border-b border-slate-100 px-6 py-4 dark:border-slate-800">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <h4 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-              Marks Table
-            </h4>
+        <div className="border-b border-slate-100 px-5 py-5 dark:border-slate-800 md:px-6">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div>
+              <h4 className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">Marks Table</h4>
+              <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">Import a workbook, prepare missing assessment fields from OBE, or enter marks manually in the table below.</p>
+            </div>
+
             <div className="flex flex-wrap items-center gap-2">
+              <input
+                ref={excelImportInputRef}
+                type="file"
+                accept=".xlsx,.xls,.xlsm"
+                onChange={handleExcelImportFileChange}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => excelImportInputRef.current?.click()}
+                disabled={loading || saving}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-xs font-bold text-slate-700 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-indigo-500/40 dark:hover:bg-indigo-500/10 dark:hover:text-indigo-300"
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M12 3v11m0 0 4-4m-4 4-4-4" strokeLinecap="round" strokeLinejoin="round"/><path d="M5 16v3h14v-3" strokeLinecap="round"/></svg>
+                Import Excel
+              </button>
 
               {["theory", "lab"].includes(courseType) && (
                 <button
                   type="button"
                   onClick={handleFetchFromObe}
                   disabled={loading || saving || syncingObeMarks}
-                  className="inline-flex items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
-                  title={
-                    courseType === "lab"
-                      ? "Copy saved Lab Mid and Lab Final OBE totals into the matching lab marksheet fields"
-                      : "Copy saved OBE assessment totals into matching marksheet fields"
-                  }
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/15"
+                  title="Review OBE questions, map or create marksheet assessments, then fetch saved OBE marks"
                 >
-                  {syncingObeMarks
-                    ? "Fetching OBE marks..."
-                    : courseType === "lab"
-                      ? "Fetch Lab Mid/Final from OBE"
-                      : "Fetch from OBE/CO-PO"}
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M4 6h10M4 12h7M4 18h4" strokeLinecap="round"/><path d="M17 8v10m0 0 3-3m-3 3-3-3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  {syncingObeMarks ? "Loading OBE..." : "Fetch OBE Marks"}
                 </button>
               )}
+
               <div
                 className={[
-                  "rounded-full border px-3 py-1 text-xs font-semibold",
+                  "inline-flex h-10 items-center rounded-xl border px-3 text-xs font-bold",
                   assessmentPlanSummary.errors.length
                     ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300"
                     : assessmentPlanSummary.total === 100
@@ -4580,31 +4957,12 @@ export default function TabMarks({ courseId, course }) {
 
             {!loading && sortedStudents.length > 0 && (
               <div className="mt-5 flex flex-wrap gap-3">
-                <input
-                  ref={excelImportInputRef}
-                  type="file"
-                  accept=".xlsx,.xls,.xlsm"
-                  onChange={handleExcelImportFileChange}
-                  className="hidden"
-                />
                 <button
                   onClick={handleSave}
                   disabled={saving || assessments.length === 0}
                   className="inline-flex items-center justify-center rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {saving ? "Saving..." : "Save Marks"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => excelImportInputRef.current?.click()}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
-                >
-                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
-                    <path d="M12 3v12m0 0 4-4m-4 4-4-4" strokeLinecap="round" strokeLinejoin="round" />
-                    <path d="M5 15v4h14v-4" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  Import Excel
                 </button>
 
                 <button
@@ -4626,6 +4984,24 @@ export default function TabMarks({ courseId, course }) {
             )}
           </div>
         </div>
+
+        <ObeFetchModal
+          open={obeFetch.open}
+          courseType={courseType}
+          blueprints={obeFetch.blueprints}
+          assessments={assessments}
+          mappings={obeFetch.mappings}
+          createConfigs={obeFetch.createConfigs}
+          overwriteExisting={obeFetch.overwriteExisting}
+          setOverwriteExisting={(overwriteExisting) =>
+            setObeFetch((prev) => ({ ...prev, overwriteExisting }))
+          }
+          onMappingChange={updateObeFetchMapping}
+          onCreateConfigChange={updateObeFetchCreateConfig}
+          onClose={closeObeFetch}
+          onFetch={executeObeFetch}
+          busy={obeFetch.busy}
+        />
 
         <MarksExcelImportModal
           open={excelImport.open}
