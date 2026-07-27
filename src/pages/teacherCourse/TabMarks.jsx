@@ -16,8 +16,16 @@ import {
   publishAssessmentRequest,
   unpublishAssessmentRequest,
   updateAssessmentStudentVisibilityRequest,
+  createAssessmentRequest,
 } from "../../services/assessmentService";
 import { fetchAttendanceSummary } from "../../services/attendanceSummaryService";
+import {
+  chooseDefaultMarksSheet,
+  importCategory,
+  normalizeImportLabel,
+  parseMarksSheet,
+  parseMarksWorkbook,
+} from "../../utils/marksheetExcelImport";
 
 function getCourseType(course) {
   const t = (course?.courseType || course?.type || "").toLowerCase();
@@ -708,6 +716,241 @@ function advancedAssessmentItems(assessment) {
   return items;
 }
 
+
+function normalizeStudentNameForImport(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildExcelImportTargets(assessments = []) {
+  const targets = [];
+
+  (assessments || []).forEach((assessment) => {
+    if (!assessment?._id || assessment?.structureType === "lab_submission") return;
+
+    if (assessment?.structureType === "lab_final") {
+      advancedAssessmentItems(assessment).forEach((item) => {
+        targets.push({
+          key: `sub:${assessment._id}:${item.key}`,
+          type: "submark",
+          assessmentId: String(assessment._id),
+          assessment,
+          subKey: String(item.key),
+          label: `${assessment.name} › ${item.label}`,
+          shortLabel: item.label,
+          fullMarks: Number(item.fullMarks || 0),
+          category:
+            importCategory(item.label) !== "other"
+              ? importCategory(item.label)
+              : importCategory(assessment.name),
+          locked: false,
+          synced: Boolean(item.synced),
+          lockedReason: item.synced
+            ? "This component is connected to a sync source; importing is still allowed and a later sync may replace it."
+            : "",
+        });
+      });
+      return;
+    }
+
+    targets.push({
+      key: `assessment:${assessment._id}`,
+      type: "assessment",
+      assessmentId: String(assessment._id),
+      assessment,
+      label: assessment.name,
+      shortLabel: assessment.name,
+      fullMarks: Number(assessment.fullMarks || 0),
+      category: importCategory(assessment.name),
+      locked: false,
+      synced: Boolean(assessment.syncLocked),
+      lockedReason: assessment.syncLocked
+        ? "This assessment is connected to a sync source; importing is still allowed and a later sync may replace it."
+        : "",
+    });
+  });
+
+  return targets;
+}
+
+function importTargetScore(column, target) {
+  if (!column || !target || target.locked) return -1;
+
+  const sourceName = normalizeImportLabel(
+    `${column.parentHeader || ""} ${column.childHeader || ""}`
+  );
+  const targetName = normalizeImportLabel(
+    `${target.assessment?.name || ""} ${target.shortLabel || ""}`
+  );
+  const sourceCategory = column.category;
+  const targetCategory = target.category;
+  const sourceMarks = Number(column.maxMarks);
+  const targetMarks = Number(target.fullMarks);
+  const sameMarks =
+    Number.isFinite(sourceMarks) &&
+    sourceMarks > 0 &&
+    Number.isFinite(targetMarks) &&
+    Math.abs(sourceMarks - targetMarks) < 1e-9;
+
+  let score = 0;
+
+  if (sourceName && targetName && sourceName === targetName) score += 120;
+
+  const sourceParent = normalizeImportLabel(column.parentHeader || "");
+  const targetAssessmentName = normalizeImportLabel(target.assessment?.name || target.label);
+  if (sourceParent && sourceParent === targetAssessmentName) score += 90;
+
+  const compatibleCategory =
+    sourceCategory !== "other" &&
+    (sourceCategory === targetCategory ||
+      (sourceCategory === "ct_aggregate" && targetCategory === "ct") ||
+      (sourceCategory === "ct" && targetCategory === "ct_aggregate"));
+
+  if (compatibleCategory) {
+    score += 60;
+  }
+
+  if (sameMarks) score += 35;
+
+  const sourceTokens = new Set(sourceName.split(" ").filter(Boolean));
+  const targetTokens = new Set(targetName.split(" ").filter(Boolean));
+  let common = 0;
+  sourceTokens.forEach((token) => {
+    if (targetTokens.has(token)) common += 1;
+  });
+  score += common * 8;
+
+  if (target.type === "submark") {
+    const child = normalizeImportLabel(column.childHeader || "");
+    const subLabel = normalizeImportLabel(target.shortLabel || "");
+    if (child && subLabel && child === subLabel) score += 100;
+    if (column.isAggregate) score -= 80;
+  } else if (column.isAggregate) {
+    score += 25;
+  }
+
+  if (sourceCategory === "grand_total") score = -1;
+
+  return score;
+}
+
+function buildAutoExcelImportMappings(columns = [], targets = []) {
+  const mappings = {};
+  const usedTargets = new Set();
+  const orderedColumns = [...columns].sort(
+    (a, b) => Number(b.priority || 0) - Number(a.priority || 0)
+  );
+
+  orderedColumns.forEach((column) => {
+    const candidates = targets
+      .filter((target) => !usedTargets.has(target.key))
+      .map((target) => ({ target, score: importTargetScore(column, target) }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score);
+
+    const best = candidates[0] || null;
+
+    // An aggregate CT value (for example “Best of Two CT”) must not be
+    // guessed into CT-01 when several individual CT fields exist. In that
+    // situation the detailed CT columns are allowed to match instead.
+    if (column.category === "ct_aggregate") {
+      const ctCandidates = candidates.filter((item) =>
+        ["ct", "ct_aggregate"].includes(item.target.category)
+      );
+      if (ctCandidates.length > 1 && Number(best?.score || 0) < 150) {
+        mappings[column.key] = "ignore";
+        return;
+      }
+    }
+
+    if (best && best.score >= 75) {
+      mappings[column.key] = best.target.key;
+      usedTargets.add(best.target.key);
+    } else {
+      mappings[column.key] = "ignore";
+    }
+  });
+
+  return mappings;
+}
+
+function getImportValueKind(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return { kind: "blank", value: null };
+  if (raw.toUpperCase() === "A" || raw.toLowerCase() === "absent") {
+    return { kind: "absent", value: 0 };
+  }
+
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return { kind: "invalid", value: null };
+  if (numeric < 0) return { kind: "invalid", value: numeric };
+  if (Math.abs(numeric * 2 - Math.round(numeric * 2)) > 1e-9) {
+    return { kind: "invalid_step", value: numeric };
+  }
+  return { kind: "number", value: numeric };
+}
+
+function isExistingImportTargetFilled(target, marksMap, studentId) {
+  const cell = marksMap?.[studentId]?.[target.assessmentId];
+  if (!cell) return false;
+
+  if (target.type === "submark") {
+    const subMarks = getSubMarkMap(cell);
+    return Object.prototype.hasOwnProperty.call(subMarks, target.subKey);
+  }
+
+  return isAssessmentCellFilled(target.assessment, cell);
+}
+
+function suggestedCreateFullMarks(column) {
+  const fullMarks = Number(column?.maxMarks);
+  if (Number.isFinite(fullMarks) && fullMarks > 0) return fullMarks;
+
+  const defaults = {
+    attendance: 5,
+    assignment: 10,
+    ct_aggregate: 15,
+    ct: 15,
+    mid: 30,
+    final: 40,
+    lab_evaluation: 25,
+  };
+
+  return defaults[column?.category] ?? "";
+}
+
+function getExcelImportSourceValue(row, column, columns = []) {
+  const direct = row?.values?.[column.key];
+  if (String(direct ?? "").trim() !== "") return direct;
+  if (!column?.isAggregate) return direct;
+
+  const parent = normalizeImportLabel(column.parentHeader || "");
+  const siblings = columns.filter(
+    (item) =>
+      item.key !== column.key &&
+      !item.isAggregate &&
+      normalizeImportLabel(item.parentHeader || "") === parent
+  );
+  if (!siblings.length) return direct;
+
+  const values = siblings
+    .map((item) => row?.values?.[item.key])
+    .filter((value) => String(value ?? "").trim() !== "");
+  if (!values.length) return direct;
+
+  const absentOnly = values.every(
+    (value) => ["a", "absent"].includes(String(value).trim().toLowerCase())
+  );
+  if (absentOnly) return "A";
+
+  const numericValues = values.map(Number).filter(Number.isFinite);
+  if (!numericValues.length) return direct;
+  return round2(numericValues.reduce((sum, value) => sum + value, 0));
+}
+
 function calculateAdvancedObtained(assessment, subMarksMap) {
   const items = advancedAssessmentItems(assessment);
   return round2(
@@ -1118,6 +1361,305 @@ function AdvancedBreakdownModal({
   );
 }
 
+
+function MarksExcelImportModal({
+  open,
+  fileName,
+  sheetNames,
+  sheetName,
+  onSheetChange,
+  preview,
+  targets,
+  mappings,
+  onMappingChange,
+  createConfigs,
+  onCreateConfigChange,
+  showAllColumns,
+  setShowAllColumns,
+  importPolicy,
+  setImportPolicy,
+  onAutoMatch,
+  onCreateRecommended,
+  onClose,
+  onImport,
+  busy,
+}) {
+  if (!open) return null;
+
+  const columns = preview?.columns || [];
+  const rows = preview?.rows || [];
+  const visibleColumns = columns.filter((column) => {
+    if (showAllColumns) return true;
+    const mapping = mappings[column.key];
+    return column.recommended || (mapping && mapping !== "ignore");
+  });
+
+  const mappedCount = Object.values(mappings || {}).filter(
+    (value) => value && value !== "ignore" && value !== "create"
+  ).length;
+  const createCount = Object.values(mappings || {}).filter(
+    (value) => value === "create"
+  ).length;
+
+  return (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm">
+      <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 px-6 py-5 dark:border-slate-800">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-indigo-600 dark:text-indigo-300">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <path d="M12 3v12m0 0 4-4m-4 4-4-4" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M5 15v4h14v-4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+              Excel Marks Import
+            </div>
+            <h3 className="mt-2 text-xl font-bold text-slate-950 dark:text-white">
+              Map Excel columns to the marksheet
+            </h3>
+            <p className="mt-1 max-w-3xl text-sm text-slate-500 dark:text-slate-400">
+              Auto-match existing assessments, adjust any mapping manually, or create missing assessments and import their marks in the same operation.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            aria-label="Close import modal"
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="overflow-y-auto px-6 py-5">
+          <div className="grid gap-3 md:grid-cols-4">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">File</div>
+              <div className="mt-1 truncate text-sm font-semibold text-slate-800 dark:text-slate-100" title={fileName}>
+                {fileName || "Excel workbook"}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Students detected</div>
+              <div className="mt-1 text-xl font-bold text-slate-900 dark:text-white">{rows.length}</div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Mapped columns</div>
+              <div className="mt-1 text-xl font-bold text-slate-900 dark:text-white">{mappedCount}</div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">New assessments</div>
+              <div className="mt-1 text-xl font-bold text-slate-900 dark:text-white">{createCount}</div>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.45fr)]">
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Worksheet</span>
+              <select
+                value={sheetName}
+                onChange={(e) => onSheetChange(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800 outline-none transition focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              >
+                {sheetNames.map((name) => (
+                  <option value={name} key={name}>{name}</option>
+                ))}
+              </select>
+            </label>
+
+            <div>
+              <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Existing marks</span>
+              <div className="grid grid-cols-2 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-950">
+                <button
+                  type="button"
+                  onClick={() => setImportPolicy("blank_only")}
+                  className={[
+                    "rounded-lg px-3 py-2 text-xs font-bold transition",
+                    importPolicy === "blank_only"
+                      ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-800 dark:text-indigo-300"
+                      : "text-slate-500 dark:text-slate-400",
+                  ].join(" ")}
+                >
+                  Fill blanks only
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImportPolicy("replace")}
+                  className={[
+                    "rounded-lg px-3 py-2 text-xs font-bold transition",
+                    importPolicy === "replace"
+                      ? "bg-amber-50 text-amber-700 shadow-sm dark:bg-amber-500/10 dark:text-amber-300"
+                      : "text-slate-500 dark:text-slate-400",
+                  ].join(" ")}
+                >
+                  Replace existing
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {preview?.error ? (
+            <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
+              {preview.error}
+            </div>
+          ) : (
+            <>
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={onAutoMatch}
+                    className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-sky-700"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      <path d="M7 7h10M7 12h7M7 17h4" strokeLinecap="round" />
+                      <path d="M17 14l2 2 3-4" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    Auto Match
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onCreateRecommended}
+                    className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-indigo-700"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+                    </svg>
+                    Create Missing Recommended
+                  </button>
+                </div>
+
+                <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  <input
+                    type="checkbox"
+                    checked={showAllColumns}
+                    onChange={(e) => setShowAllColumns(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                  />
+                  Show detailed CO/Lab columns
+                </label>
+              </div>
+
+              <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">
+                <div className="grid grid-cols-[minmax(220px,1fr)_130px_minmax(270px,1.1fr)] gap-3 bg-slate-100 px-4 py-3 text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:bg-slate-800/80 dark:text-slate-300">
+                  <div>Excel column</div>
+                  <div>Detected max</div>
+                  <div>Import into</div>
+                </div>
+
+                <div className="max-h-[42vh] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                  {visibleColumns.map((column) => {
+                    const mapping = mappings[column.key] || "ignore";
+                    const config = createConfigs[column.key] || {};
+                    return (
+                      <div key={column.key} className="grid grid-cols-[minmax(220px,1fr)_130px_minmax(270px,1.1fr)] gap-3 px-4 py-3.5">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100" title={column.sourceLabel}>
+                            {column.sourceLabel}
+                          </div>
+                          <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-400">
+                            {column.recommended && (
+                              <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-bold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
+                                Recommended
+                              </span>
+                            )}
+                            <span>{column.category.replace(/_/g, " ")}</span>
+                          </div>
+                        </div>
+
+                        <div className="pt-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                          {column.maxMarks ?? "—"}
+                        </div>
+
+                        <div>
+                          <select
+                            value={mapping}
+                            onChange={(e) => onMappingChange(column.key, e.target.value)}
+                            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                          >
+                            <option value="ignore">Ignore this column</option>
+                            <option value="create">＋ Create new assessment</option>
+                            {targets.map((target) => (
+                              <option key={target.key} value={target.key} disabled={target.locked}>
+                                {target.label} ({target.fullMarks}){target.synced ? " — sync connected" : ""}
+                              </option>
+                            ))}
+                          </select>
+
+                          {mapping === "create" && (
+                            <div className="mt-2 grid grid-cols-[minmax(0,1fr)_96px] gap-2">
+                              <input
+                                value={config.name || ""}
+                                onChange={(e) => onCreateConfigChange(column.key, "name", e.target.value)}
+                                placeholder="Assessment name"
+                                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                              />
+                              <input
+                                type="number"
+                                min="0.5"
+                                step="0.5"
+                                value={config.fullMarks ?? ""}
+                                onChange={(e) => onCreateConfigChange(column.key, "fullMarks", e.target.value)}
+                                placeholder="Marks"
+                                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {!visibleColumns.length && (
+                <div className="mt-4 rounded-2xl border border-slate-200 p-5 text-center text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                  No useful marks columns were detected. Turn on “Show detailed CO/Lab columns” to inspect every column.
+                </div>
+              )}
+
+              {!!preview?.duplicateRolls?.length && (
+                <div className="mt-3 text-xs font-semibold text-amber-600 dark:text-amber-300">
+                  {preview.duplicateRolls.length} duplicate student row(s) in the Excel sheet will be ignored.
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4 dark:border-slate-800 dark:bg-slate-950/50">
+          <div className="text-xs text-slate-500 dark:text-slate-400">
+            Roll/ID is used as the primary student match. Excel blank cells never clear portal marks.
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={busy}
+              className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onImport}
+              disabled={busy || Boolean(preview?.error)}
+              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {busy ? "Importing..." : "Import Marks"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AssessmentPublishingControls({
   assessment,
   publishingAssessmentId,
@@ -1247,6 +1789,21 @@ export default function TabMarks({ courseId, course }) {
 
   const inputRefs = useRef([]);
   const originalStudentsRef = useRef([]);
+  const excelImportInputRef = useRef(null);
+
+  const [excelImport, setExcelImport] = useState({
+    open: false,
+    fileName: "",
+    workbook: null,
+    sheetNames: [],
+    sheetName: "",
+    preview: null,
+    mappings: {},
+    createConfigs: {},
+    showAllColumns: false,
+    importPolicy: "blank_only",
+    busy: false,
+  });
 
   const topScrollbarRef = useRef(null);
   const bottomScrollRef = useRef(null);
@@ -1499,6 +2056,11 @@ export default function TabMarks({ courseId, course }) {
   const markInputAssessments = useMemo(() => {
     return getMarkInputAssessments(courseType, sortedAssessments);
   }, [courseType, sortedAssessments]);
+
+  const excelImportTargets = useMemo(
+    () => buildExcelImportTargets(sortedAssessments),
+    [sortedAssessments]
+  );
 
   const assessmentPlanSummary = useMemo(() => {
     return getAssessmentPlanSummary(course, sortedAssessments);
@@ -2302,6 +2864,514 @@ export default function TabMarks({ courseId, course }) {
       });
     } finally {
       setVisibilityAssessmentId(null);
+    }
+  };
+
+
+  const buildExcelCreateConfigs = (preview) => {
+    const configs = {};
+    (preview?.columns || []).forEach((column) => {
+      configs[column.key] = {
+        name: column.createName || "Assessment",
+        fullMarks: suggestedCreateFullMarks(column),
+      };
+    });
+    return configs;
+  };
+
+  const openExcelImportForSheet = (workbook, sheetName, extra = {}) => {
+    const preview = parseMarksSheet(workbook, sheetName, { courseType });
+    const mappings = preview?.error
+      ? {}
+      : buildAutoExcelImportMappings(preview.columns, excelImportTargets);
+    const createConfigs = buildExcelCreateConfigs(preview);
+
+    if (!preview?.error && excelImportTargets.length === 0) {
+      (preview.columns || []).forEach((column) => {
+        if (column.recommended && column.category !== "grand_total") {
+          mappings[column.key] = "create";
+        }
+      });
+    }
+
+    setExcelImport((prev) => ({
+      ...prev,
+      ...extra,
+      open: true,
+      workbook,
+      sheetName,
+      preview,
+      mappings,
+      createConfigs,
+      showAllColumns: false,
+      busy: false,
+    }));
+  };
+
+  const handleExcelImportFileChange = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const parsed = parseMarksWorkbook(buffer);
+      if (!parsed.sheetNames.length) {
+        throw new Error("The Excel workbook does not contain any worksheet.");
+      }
+
+      const defaultSheet = chooseDefaultMarksSheet(parsed.sheetNames, course);
+      openExcelImportForSheet(parsed.workbook, defaultSheet, {
+        fileName: file.name,
+        sheetNames: parsed.sheetNames,
+        importPolicy: "blank_only",
+      });
+    } catch (error) {
+      console.error(error);
+      Swal.fire({
+        icon: "error",
+        title: "Excel import failed",
+        text: error?.message || "The workbook could not be read.",
+      });
+    }
+  };
+
+  const handleExcelImportSheetChange = (sheetName) => {
+    if (!excelImport.workbook) return;
+    openExcelImportForSheet(excelImport.workbook, sheetName, {
+      fileName: excelImport.fileName,
+      sheetNames: excelImport.sheetNames,
+      importPolicy: excelImport.importPolicy,
+    });
+  };
+
+  const handleExcelImportMappingChange = (columnKey, value) => {
+    setExcelImport((prev) => ({
+      ...prev,
+      mappings: { ...prev.mappings, [columnKey]: value },
+    }));
+  };
+
+  const handleExcelImportCreateConfigChange = (columnKey, field, value) => {
+    setExcelImport((prev) => ({
+      ...prev,
+      createConfigs: {
+        ...prev.createConfigs,
+        [columnKey]: {
+          ...(prev.createConfigs?.[columnKey] || {}),
+          [field]: value,
+        },
+      },
+    }));
+  };
+
+  const handleExcelImportAutoMatch = () => {
+    const columns = excelImport.preview?.columns || [];
+    setExcelImport((prev) => ({
+      ...prev,
+      mappings: buildAutoExcelImportMappings(columns, excelImportTargets),
+    }));
+  };
+
+  const handleExcelImportCreateRecommended = () => {
+    const columns = excelImport.preview?.columns || [];
+    setExcelImport((prev) => {
+      const nextMappings = { ...(prev.mappings || {}) };
+      const nextConfigs = { ...(prev.createConfigs || {}) };
+
+      const alreadyMappedColumns = columns.filter((column) => {
+        const mapping = nextMappings[column.key];
+        return mapping && mapping !== "ignore" && mapping !== "create";
+      });
+
+      columns.forEach((column) => {
+        if (!column.recommended || column.category === "grand_total") return;
+        if (nextMappings[column.key] && nextMappings[column.key] !== "ignore") return;
+
+        const sameCategoryAlreadyMapped = alreadyMappedColumns.some(
+          (other) =>
+            other.key !== column.key &&
+            other.category === column.category
+        );
+        const compatibleExistingTarget = excelImportTargets.some((target) =>
+          target.category === column.category ||
+          (column.category === "ct_aggregate" && target.category === "ct") ||
+          (column.category === "ct" && target.category === "ct_aggregate")
+        );
+        const aggregateCtAlreadyCovered =
+          column.category === "ct_aggregate" &&
+          alreadyMappedColumns.some((other) => other.category === "ct");
+        const aggregateGroupAlreadyCovered =
+          column.isAggregate &&
+          alreadyMappedColumns.some(
+            (other) =>
+              normalizeImportLabel(other.parentHeader || "") ===
+              normalizeImportLabel(column.parentHeader || "")
+          );
+
+        if (
+          sameCategoryAlreadyMapped ||
+          compatibleExistingTarget ||
+          aggregateCtAlreadyCovered ||
+          aggregateGroupAlreadyCovered
+        ) {
+          return;
+        }
+
+        nextMappings[column.key] = "create";
+        nextConfigs[column.key] = nextConfigs[column.key] || {
+          name: column.createName || "Assessment",
+          fullMarks: suggestedCreateFullMarks(column),
+        };
+      });
+
+      return {
+        ...prev,
+        mappings: nextMappings,
+        createConfigs: nextConfigs,
+      };
+    });
+  };
+
+  const closeExcelImport = () => {
+    if (excelImport.busy) return;
+    setExcelImport((prev) => ({ ...prev, open: false }));
+  };
+
+  const executeExcelMarksImport = async () => {
+    const preview = excelImport.preview;
+    if (!preview || preview.error) return;
+
+    const activeColumns = (preview.columns || []).filter((column) => {
+      const mapping = excelImport.mappings?.[column.key];
+      return mapping && mapping !== "ignore";
+    });
+
+    if (!activeColumns.length) {
+      Swal.fire({
+        icon: "warning",
+        title: "Nothing selected",
+        text: "Map at least one Excel column to an assessment, or choose Create new assessment.",
+      });
+      return;
+    }
+
+    const existingTargetKeys = activeColumns
+      .map((column) => excelImport.mappings[column.key])
+      .filter((value) => value && value !== "create" && value !== "ignore");
+    const duplicateTarget = existingTargetKeys.find(
+      (key, index) => existingTargetKeys.indexOf(key) !== index
+    );
+    if (duplicateTarget) {
+      const target = excelImportTargets.find((item) => item.key === duplicateTarget);
+      Swal.fire({
+        icon: "warning",
+        title: "Duplicate mapping",
+        text: `${target?.label || "One marksheet field"} is mapped from more than one Excel column. Use one source column per target.`,
+      });
+      return;
+    }
+
+    const createOrder = {
+      ct_aggregate: 10,
+      lab_component: 10,
+      ct: 11,
+      lab_evaluation: 12,
+      mid: 20,
+      attendance: 30,
+      assignment: 40,
+      presentation: 41,
+      project: 42,
+      final: 50,
+      other: 60,
+    };
+    const createColumns = activeColumns
+      .filter((column) => excelImport.mappings[column.key] === "create")
+      .sort(
+        (a, b) =>
+          Number(createOrder[a.category] ?? 60) -
+          Number(createOrder[b.category] ?? 60)
+      );
+
+    const createNameKeys = createColumns.map((column) =>
+      normalizeImportLabel(excelImport.createConfigs?.[column.key]?.name || "")
+    );
+    const duplicateCreateName = createNameKeys.find(
+      (key, index) => key && createNameKeys.indexOf(key) !== index
+    );
+    if (duplicateCreateName) {
+      Swal.fire({
+        icon: "warning",
+        title: "Duplicate new assessment",
+        text: "Two Excel columns are trying to create the same assessment. Keep only one or use manual mapping.",
+      });
+      return;
+    }
+
+    for (const column of createColumns) {
+      const config = excelImport.createConfigs?.[column.key] || {};
+      const name = String(config.name || "").trim();
+      const fullMarks = Number(config.fullMarks);
+      if (!name || !Number.isFinite(fullMarks) || fullMarks <= 0) {
+        Swal.fire({
+          icon: "warning",
+          title: "New assessment incomplete",
+          text: `${column.sourceLabel} needs a valid assessment name and full marks.`,
+        });
+        return;
+      }
+      if (
+        courseType === "hybrid" &&
+        ["mid", "final"].includes(column.category)
+      ) {
+        Swal.fire({
+          icon: "warning",
+          title: "Hybrid exam needs setup first",
+          text: "For a hybrid course, create the Theory/Lab Mid or Final fields from Assessments first, then map the Excel columns to those fields.",
+        });
+        return;
+      }
+    }
+
+    const studentByRoll = new Map(
+      (students || [])
+        .filter((student) => student?.roll != null)
+        .map((student) => [String(student.roll).trim(), student])
+    );
+    const matchedRows = (preview.rows || []).filter((row) =>
+      studentByRoll.has(String(row.roll || "").trim())
+    );
+    if (!matchedRows.length) {
+      Swal.fire({
+        icon: "error",
+        title: "No students matched",
+        text: "None of the Excel Roll/ID values match students enrolled in this course.",
+      });
+      return;
+    }
+
+    if (excelImport.importPolicy === "replace") {
+      const confirmation = await Swal.fire({
+        icon: "warning",
+        title: "Replace existing marks?",
+        text: "Mapped Excel values will replace marks that are already present. Blank Excel cells will still be ignored.",
+        showCancelButton: true,
+        confirmButtonText: "Yes, replace marks",
+        cancelButtonText: "Cancel",
+        confirmButtonColor: "#d97706",
+      });
+      if (!confirmation.isConfirmed) return;
+    }
+
+    setExcelImport((prev) => ({ ...prev, busy: true }));
+
+    let createdCount = 0;
+    let anyAssessmentCreated = false;
+
+    try {
+      const targetMap = new Map(excelImportTargets.map((target) => [target.key, target]));
+      const effectiveMappings = { ...(excelImport.mappings || {}) };
+      let nextOrder =
+        Math.max(0, ...(sortedAssessments || []).map((item) => Number(item.order || 0))) + 1;
+
+      for (const column of createColumns) {
+        const config = excelImport.createConfigs[column.key];
+        const response = await createAssessmentRequest(courseId, {
+          name: String(config.name).trim(),
+          fullMarks: Number(config.fullMarks),
+          order: nextOrder,
+          structureType: "regular",
+        });
+        nextOrder += 1;
+
+        const created = response?.assessments
+          ? response.assessments.length === 1
+            ? response.assessments[0]
+            : null
+          : response;
+
+        if (!created?._id) {
+          throw new Error(
+            response?.assessments?.length > 1
+              ? "One Excel column produced multiple assessment fields. Please create those assessment fields manually and map them instead."
+              : `Could not create ${config.name}.`
+          );
+        }
+
+        anyAssessmentCreated = true;
+        createdCount += 1;
+        const target = {
+          key: `assessment:${created._id}`,
+          type: "assessment",
+          assessmentId: String(created._id),
+          assessment: created,
+          label: created.name,
+          shortLabel: created.name,
+          fullMarks: Number(created.fullMarks || 0),
+          category: importCategory(created.name),
+          locked: false,
+        };
+        targetMap.set(target.key, target);
+        effectiveMappings[column.key] = target.key;
+      }
+
+      const recordMap = new Map();
+      let importedCells = 0;
+      let skippedExisting = 0;
+      let skippedInvalid = 0;
+      let skippedOverMax = 0;
+      let nameMismatchCount = 0;
+      const unmatchedStudentRolls = new Set();
+      const overwrittenCells = { count: 0 };
+
+      const ensureRecord = (studentId, target) => {
+        const key = `${studentId}:${target.assessmentId}`;
+        if (!recordMap.has(key)) {
+          recordMap.set(key, {
+            studentId,
+            assessmentId: target.assessmentId,
+            assessment: target.assessment,
+            regularValue: null,
+            regularStatus: "present",
+            subMarks: new Map(),
+          });
+        }
+        return recordMap.get(key);
+      };
+
+      (preview.rows || []).forEach((row) => {
+        const student = studentByRoll.get(String(row.roll || "").trim());
+        if (!student) {
+          unmatchedStudentRolls.add(String(row.roll || ""));
+          return;
+        }
+
+        if (
+          row.name &&
+          student.name &&
+          normalizeStudentNameForImport(row.name) !==
+            normalizeStudentNameForImport(student.name)
+        ) {
+          nameMismatchCount += 1;
+        }
+
+        activeColumns.forEach((column) => {
+          const targetKey = effectiveMappings[column.key];
+          const target = targetMap.get(targetKey);
+          if (!target || target.locked) return;
+
+          const parsedValue = getImportValueKind(
+            getExcelImportSourceValue(row, column, preview.columns || [])
+          );
+          if (parsedValue.kind === "blank") {
+            return;
+          }
+          if (["invalid", "invalid_step"].includes(parsedValue.kind)) {
+            skippedInvalid += 1;
+            return;
+          }
+          if (target.type === "submark" && parsedValue.kind === "absent") {
+            skippedInvalid += 1;
+            return;
+          }
+          if (
+            parsedValue.kind === "number" &&
+            Number.isFinite(Number(target.fullMarks)) &&
+            Number(target.fullMarks) >= 0 &&
+            Number(parsedValue.value) > Number(target.fullMarks)
+          ) {
+            skippedOverMax += 1;
+            return;
+          }
+
+          const alreadyFilled = isExistingImportTargetFilled(
+            target,
+            marksMap,
+            student.id
+          );
+          if (alreadyFilled && excelImport.importPolicy === "blank_only") {
+            skippedExisting += 1;
+            return;
+          }
+          if (alreadyFilled && excelImport.importPolicy === "replace") {
+            overwrittenCells.count += 1;
+          }
+
+          const record = ensureRecord(student.id, target);
+          if (target.type === "submark") {
+            record.subMarks.set(target.subKey, Number(parsedValue.value || 0));
+          } else {
+            record.regularStatus = parsedValue.kind === "absent" ? "absent" : "present";
+            record.regularValue = Number(parsedValue.value || 0);
+          }
+          importedCells += 1;
+        });
+      });
+
+      const payload = [];
+      recordMap.forEach((record) => {
+        if (record.assessment?.structureType === "lab_final") {
+          if (!record.subMarks.size) return;
+          payload.push({
+            studentId: record.studentId,
+            assessmentId: record.assessmentId,
+            obtainedMarks: 0,
+            status: "present",
+            subMarks: [...record.subMarks.entries()].map(([key, obtainedMarks]) => ({
+              key,
+              obtainedMarks,
+            })),
+          });
+          return;
+        }
+
+        if (record.regularValue == null) return;
+        payload.push({
+          studentId: record.studentId,
+          assessmentId: record.assessmentId,
+          obtainedMarks: record.regularValue,
+          status: record.regularStatus,
+          subMarks: [],
+        });
+      });
+
+      if (payload.length) {
+        await saveMarksForCourseRequest(courseId, payload);
+      }
+
+      await loadAllData();
+      setExcelImport((prev) => ({ ...prev, open: false, busy: false }));
+
+      const detailLines = [
+        `${importedCells} Excel mark cell(s) imported`,
+        createdCount ? `${createdCount} assessment(s) created` : "",
+        overwrittenCells.count ? `${overwrittenCells.count} existing mark(s) replaced` : "",
+        skippedExisting ? `${skippedExisting} existing mark(s) protected` : "",
+        unmatchedStudentRolls.size ? `${unmatchedStudentRolls.size} student roll(s) not enrolled` : "",
+        nameMismatchCount ? `${nameMismatchCount} name difference(s); matched safely by roll` : "",
+        skippedInvalid ? `${skippedInvalid} invalid/non-.5 value(s) skipped` : "",
+        skippedOverMax ? `${skippedOverMax} over-maximum value(s) skipped` : "",
+      ].filter(Boolean);
+
+      Swal.fire({
+        icon: importedCells || createdCount ? "success" : "info",
+        title: importedCells || createdCount ? "Excel import complete" : "Nothing was changed",
+        html: detailLines.map((line) => `<div>${line}</div>`).join(""),
+      });
+    } catch (error) {
+      console.error(error);
+      if (anyAssessmentCreated) {
+        await loadAllData().catch(() => {});
+      }
+      setExcelImport((prev) => ({ ...prev, busy: false }));
+      Swal.fire({
+        icon: "error",
+        title: "Import could not be completed",
+        text:
+          error?.response?.data?.message ||
+          error?.message ||
+          "The selected assessments or marks could not be imported.",
+      });
     }
   };
 
@@ -3508,26 +4578,47 @@ export default function TabMarks({ courseId, course }) {
             </div>
 
 
-            {!loading && sortedStudents.length > 0 && assessments.length > 0 && (
+            {!loading && sortedStudents.length > 0 && (
               <div className="mt-5 flex flex-wrap gap-3">
+                <input
+                  ref={excelImportInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.xlsm"
+                  onChange={handleExcelImportFileChange}
+                  className="hidden"
+                />
                 <button
                   onClick={handleSave}
-                  disabled={saving}
+                  disabled={saving || assessments.length === 0}
                   className="inline-flex items-center justify-center rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {saving ? "Saving..." : "Save Marks"}
                 </button>
 
                 <button
+                  type="button"
+                  onClick={() => excelImportInputRef.current?.click()}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
+                >
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <path d="M12 3v12m0 0 4-4m-4 4-4-4" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M5 15v4h14v-4" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  Import Excel
+                </button>
+
+                <button
                   onClick={handleExportExcel}
-                  className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                  disabled={assessments.length === 0}
+                  className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
                 >
                   Export Excel
                 </button>
 
                 <button
                   onClick={handleExportPdf}
-                  className="inline-flex items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 px-5 py-3 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300"
+                  disabled={assessments.length === 0}
+                  className="inline-flex items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 px-5 py-3 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300"
                 >
                   Export Result PDF
                 </button>
@@ -3535,6 +4626,33 @@ export default function TabMarks({ courseId, course }) {
             )}
           </div>
         </div>
+
+        <MarksExcelImportModal
+          open={excelImport.open}
+          fileName={excelImport.fileName}
+          sheetNames={excelImport.sheetNames}
+          sheetName={excelImport.sheetName}
+          onSheetChange={handleExcelImportSheetChange}
+          preview={excelImport.preview}
+          targets={excelImportTargets}
+          mappings={excelImport.mappings}
+          onMappingChange={handleExcelImportMappingChange}
+          createConfigs={excelImport.createConfigs}
+          onCreateConfigChange={handleExcelImportCreateConfigChange}
+          showAllColumns={excelImport.showAllColumns}
+          setShowAllColumns={(showAllColumns) =>
+            setExcelImport((prev) => ({ ...prev, showAllColumns }))
+          }
+          importPolicy={excelImport.importPolicy}
+          setImportPolicy={(importPolicy) =>
+            setExcelImport((prev) => ({ ...prev, importPolicy }))
+          }
+          onAutoMatch={handleExcelImportAutoMatch}
+          onCreateRecommended={handleExcelImportCreateRecommended}
+          onClose={closeExcelImport}
+          onImport={executeExcelMarksImport}
+          busy={excelImport.busy}
+        />
 
         <AdvancedBreakdownModal
           open={advancedModal.open}
