@@ -635,44 +635,72 @@ export default function TabObe({ courseId, course }) {
     }));
   };
 
-  // const addMappingRow = () => {
-  //   setSetup((prev) => ({
-  //     ...prev,
-  //     mappings: [
-  //       ...(prev.mappings || []),
-  //       { coCode: "", targetType: "PO", targetCode: "", strength: 1 },
-  //     ],
-  //   }));
-  // };
+  const getMappedPoCodes = (coCode, sourceSetup = setup) =>
+    (sourceSetup?.mappings || [])
+      .filter(
+        (row) =>
+          String(row?.coCode || "").trim().toUpperCase() ===
+            String(coCode || "").trim().toUpperCase() &&
+          String(row?.targetType || "PO").trim().toUpperCase() !== "PSO"
+      )
+      .map((row) => String(row?.targetCode || "").trim().toUpperCase())
+      .filter(Boolean)
+      .filter((code, index, values) => values.indexOf(code) === index);
 
-const addMappingRow = () => {
-  setSetup((prev) => ({
-    ...prev,
-    mappings: [
-      ...(prev.mappings || []),
-      {
-        coCode: "",
-        targetType: "PO",
-        targetCode: "",
-        strength: 1,
-      },
-    ],
-  }));
-};
+  const toggleCoPoMapping = (coCode, poCode) => {
+    const normalizedCo = String(coCode || "").trim().toUpperCase();
+    const normalizedPo = String(poCode || "").trim().toUpperCase();
+    if (!normalizedCo || !normalizedPo) return;
 
-  const updateMappingRow = (index, key, value) => {
-    setSetup((prev) => ({
-      ...prev,
-      mappings: (prev.mappings || []).map((row, rowIndex) =>
-        rowIndex === index ? { ...row, [key]: value } : row
-      ),
-    }));
+    setSetup((prev) => {
+      const mappings = Array.isArray(prev.mappings) ? prev.mappings : [];
+      const existing = mappings.find(
+        (row) =>
+          String(row?.coCode || "").trim().toUpperCase() === normalizedCo &&
+          String(row?.targetType || "PO").trim().toUpperCase() !== "PSO" &&
+          String(row?.targetCode || "").trim().toUpperCase() === normalizedPo
+      );
+
+      if (existing) {
+        return {
+          ...prev,
+          mappings: mappings.filter(
+            (row) =>
+              !(
+                String(row?.coCode || "").trim().toUpperCase() === normalizedCo &&
+                String(row?.targetType || "PO").trim().toUpperCase() !== "PSO" &&
+                String(row?.targetCode || "").trim().toUpperCase() === normalizedPo
+              )
+          ),
+        };
+      }
+
+      return {
+        ...prev,
+        mappings: [
+          ...mappings,
+          {
+            coCode: normalizedCo,
+            targetType: "PO",
+            targetCode: normalizedPo,
+            strength: 1,
+          },
+        ],
+      };
+    });
   };
 
-  const removeMappingRow = (index) => {
+  const clearCoPoMappings = (coCode) => {
+    const normalizedCo = String(coCode || "").trim().toUpperCase();
     setSetup((prev) => ({
       ...prev,
-      mappings: (prev.mappings || []).filter((_, rowIndex) => rowIndex !== index),
+      mappings: (prev.mappings || []).filter(
+        (row) =>
+          !(
+            String(row?.coCode || "").trim().toUpperCase() === normalizedCo &&
+            String(row?.targetType || "PO").trim().toUpperCase() !== "PSO"
+          )
+      ),
     }));
   };
 
@@ -680,14 +708,20 @@ const saveSetup = async () => {
   try {
     setSetupSaving(true);
 
-    const cleanedMappings = (setup.mappings || [])
+    const mappingMap = new Map();
+    (setup.mappings || [])
       .map((row) => ({
         coCode: String(row.coCode || "").trim().toUpperCase(),
         targetType: "PO",
         targetCode: String(row.targetCode || "").trim().toUpperCase(),
-        strength: Number(row.strength || 1),
+        strength: [1, 2, 3].includes(Number(row.strength)) ? Number(row.strength) : 1,
       }))
-      .filter((row) => row.coCode && row.targetCode);
+      .filter((row) => row.coCode && row.targetCode)
+      .forEach((row) => {
+        const key = `${row.coCode}__${row.targetCode}`;
+        if (!mappingMap.has(key)) mappingMap.set(key, row);
+      });
+    const cleanedMappings = [...mappingMap.values()];
 
     const payload = {
       ...setup,
@@ -2214,13 +2248,13 @@ const saveSetup = async () => {
                 <strong class="premium-dialog-strong" style="display:block;font-size:12px">Optional: fill missing mapping from Course Outline PDF</strong>
                 <span class="premium-dialog-muted" style="display:block;margin-top:3px;font-size:11px">Select the outline and the importer will use its CO statements, PO statements and CO→PO rows wherever the fields below are still blank.</span>
                 <input id="obe-missing-outline-pdf" type="file" accept=".pdf,application/pdf" style="display:block;width:100%;margin-top:9px;padding:8px 9px" />
+                <div id="obe-missing-outline-status" class="premium-dialog-muted" style="margin-top:7px;font-size:11px">Choose a PDF to read its CO statements and every CO→PO relationship automatically.</div>
               </div>
               ${setupQuestions
                 .map((question, index) => {
                   const row = coMap.get(question.coCode) || {};
-                  const defaultPo =
-                    (directMappingMap.get(question.coCode) || [])[0] ||
-                    (analysis.detectedPoCodes.length === 1 ? analysis.detectedPoCodes[0] : "");
+                  const defaultPos = directMappingMap.get(question.coCode) ||
+                    (analysis.detectedPoCodes.length === 1 ? [analysis.detectedPoCodes[0]] : []);
                   return `
                     <div class="premium-dialog-card" style="padding:12px;margin-bottom:10px">
                       <div class="premium-dialog-strong" style="font-weight:800;margin-bottom:8px">${escapeHtml(question.coCode)}</div>
@@ -2230,17 +2264,19 @@ const saveSetup = async () => {
                         </label>
                       ` : ""}
                       ${question.missingMapping ? `
-                        <label class="premium-dialog-label" style="display:block;margin-top:9px">Map ${escapeHtml(question.coCode)} to
-                          <select id="obe-setup-po-${index}" class="premium-dialog-field" style="display:block;width:100%;margin-top:4px">
-                            <option value="">Select PO</option>
-                            ${orderedPoCodes
-                              .map(
-                                (poCode) =>
-                                  `<option value="${poCode}" ${poCode === defaultPo ? "selected" : ""}>${poCode}</option>`
-                              )
-                              .join("")}
-                          </select>
-                        </label>
+                        <div class="premium-dialog-label" style="display:block;margin-top:10px">Map ${escapeHtml(question.coCode)} to one or more Program Outcomes</div>
+                        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:7px">
+                          ${orderedPoCodes
+                            .map(
+                              (poCode) => `
+                                <label style="display:flex;align-items:center;gap:7px;padding:8px 9px;border:1px solid var(--premium-border,#dbe3ef);border-radius:10px;cursor:pointer">
+                                  <input type="checkbox" name="obe-setup-po-${index}" value="${poCode}" ${defaultPos.includes(poCode) ? "checked" : ""} />
+                                  <span class="premium-dialog-strong" style="font-size:12px">${poCode}</span>
+                                </label>`
+                            )
+                            .join("")}
+                        </div>
+                        <div class="premium-dialog-muted" style="margin-top:6px;font-size:11px">If a Course Outline PDF is attached above, every PO mapped to ${escapeHtml(question.coCode)} in that outline will also be added automatically.</div>
                       ` : ""}
                     </div>
                   `;
@@ -2253,11 +2289,64 @@ const saveSetup = async () => {
           cancelButtonText: "Cancel",
           confirmButtonColor: "#4f46e5",
           focusConfirm: false,
+          didOpen: () => {
+            const input = document.getElementById("obe-missing-outline-pdf");
+            const status = document.getElementById("obe-missing-outline-status");
+            input?.addEventListener("change", async () => {
+              const outlineFile = input.files?.[0] || null;
+              input._obeParsedOutline = null;
+              if (!outlineFile) {
+                if (status) status.textContent = "Choose a PDF to read its CO statements and every CO→PO relationship automatically.";
+                return;
+              }
+              if (status) status.textContent = "Reading Course Outline PDF…";
+              try {
+                const parsedOutline = await parseObeCourseOutlinePdf(outlineFile, workingSetup || {});
+                input._obeParsedOutline = parsedOutline;
+                const outlineSetup = parsedOutline.setup || {};
+
+                setupQuestions.forEach((question, index) => {
+                  const pdfCo = (outlineSetup.courseOutcomes || []).find(
+                    (item) => String(item.code || "").toUpperCase() === question.coCode
+                  );
+                  const statementInput = document.getElementById(`obe-setup-co-statement-${index}`);
+                  if (statementInput && !String(statementInput.value || "").trim() && pdfCo?.statement) {
+                    statementInput.value = pdfCo.statement;
+                  }
+
+                  const mappedPos = (outlineSetup.mappings || [])
+                    .filter(
+                      (item) =>
+                        String(item.coCode || "").toUpperCase() === question.coCode &&
+                        String(item.targetType || "PO").toUpperCase() !== "PSO"
+                    )
+                    .map((item) => String(item.targetCode || "").toUpperCase());
+                  mappedPos.forEach((poCode) => {
+                    const checkbox = document.querySelector(
+                      `input[name="obe-setup-po-${index}"][value="${poCode}"]`
+                    );
+                    if (checkbox) checkbox.checked = true;
+                  });
+                });
+
+                if (status) {
+                  const mappingCount = Number(parsedOutline.detected?.mappingCount || 0);
+                  const poCount = Number(parsedOutline.detected?.poCount || 0);
+                  status.innerHTML = mappingCount
+                    ? `<span style="color:#059669;font-weight:800">Loaded ${mappingCount} CO→PO mapping${mappingCount === 1 ? "" : "s"} across ${poCount} used PO${poCount === 1 ? "" : "s"}.</span> Review the checked POs below, then continue.`
+                    : `<span style="color:#b45309;font-weight:800">The PDF was read, but no CO→PO mapping was detected.</span> You can select the POs manually below.`;
+                }
+              } catch (error) {
+                if (status) status.innerHTML = `<span style="color:#be123c;font-weight:800">${escapeHtml(error?.message || "Could not read this Course Outline PDF.")}</span>`;
+              }
+            });
+          },
           preConfirm: async () => {
             try {
-              const outlineFile = document.getElementById("obe-missing-outline-pdf")?.files?.[0] || null;
-              let outlineSetup = null;
-              if (outlineFile) {
+              const outlineInput = document.getElementById("obe-missing-outline-pdf");
+              const outlineFile = outlineInput?.files?.[0] || null;
+              let outlineSetup = outlineInput?._obeParsedOutline?.setup || null;
+              if (outlineFile && !outlineSetup) {
                 const parsedOutline = await parseObeCourseOutlinePdf(outlineFile, workingSetup || {});
                 outlineSetup = parsedOutline.setup || null;
               }
@@ -2286,48 +2375,65 @@ const saveSetup = async () => {
                 }
 
                 if (question.missingMapping) {
-                  const manualPo = String(
-                    document.getElementById(`obe-setup-po-${index}`)?.value || ""
-                  ).trim().toUpperCase();
-                  const pdfMapping = (outlineSetup?.mappings || []).find(
+                  const manualPos = Array.from(
+                    document.querySelectorAll(`input[name="obe-setup-po-${index}"]:checked`)
+                  )
+                    .map((input) => String(input.value || "").trim().toUpperCase())
+                    .filter((code) => /^PO\d{1,2}$/.test(code));
+
+                  const pdfMappings = (outlineSetup?.mappings || []).filter(
                     (item) =>
                       String(item.coCode || "").toUpperCase() === question.coCode &&
-                      String(item.targetType || "PO").toUpperCase() !== "PSO"
+                      String(item.targetType || "PO").toUpperCase() !== "PSO" &&
+                      /^PO\d{1,2}$/.test(String(item.targetCode || "").toUpperCase())
                   );
-                  const poCode = manualPo || String(pdfMapping?.targetCode || "").toUpperCase();
-                  if (!/^PO\d{1,2}$/.test(poCode)) {
-                    throw new Error(`${question.coCode}: select the mapped PO or attach a Course Outline PDF containing the mapping.`);
+                  const poCodes = [
+                    ...new Set([
+                      ...manualPos,
+                      ...pdfMappings.map((item) => String(item.targetCode || "").toUpperCase()),
+                    ]),
+                  ];
+
+                  if (!poCodes.length) {
+                    throw new Error(`${question.coCode}: select at least one mapped PO or attach a Course Outline PDF containing the mapping.`);
                   }
-                  if (!poMap.has(poCode)) {
-                    const pdfPoStatement = String(
-                      (outlineSetup?.poStatements || []).find(
-                        (item) => String(item.code || "").toUpperCase() === poCode
-                      )?.statement || ""
-                    ).trim();
-                    poMap.set(poCode, {
-                      code: poCode,
-                      statement:
-                        pdfPoStatement ||
-                        analysis.metadata?.poStatements?.[poCode] ||
-                        poCode,
-                      order: poMap.size,
-                      isActive: true,
-                    });
-                  }
-                  if (
-                    !nextMappings.some(
-                      (item) =>
-                        String(item.coCode || "").toUpperCase() === question.coCode &&
-                        String(item.targetCode || "").toUpperCase() === poCode
-                    )
-                  ) {
-                    nextMappings.push({
-                      coCode: question.coCode,
-                      targetType: "PO",
-                      targetCode: poCode,
-                      strength: Number(pdfMapping?.strength || 1) || 1,
-                    });
-                  }
+
+                  poCodes.forEach((poCode) => {
+                    const pdfMapping = pdfMappings.find(
+                      (item) => String(item.targetCode || "").toUpperCase() === poCode
+                    );
+                    if (!poMap.has(poCode)) {
+                      const pdfPoStatement = String(
+                        (outlineSetup?.poStatements || []).find(
+                          (item) => String(item.code || "").toUpperCase() === poCode
+                        )?.statement || ""
+                      ).trim();
+                      poMap.set(poCode, {
+                        code: poCode,
+                        statement:
+                          pdfPoStatement ||
+                          analysis.metadata?.poStatements?.[poCode] ||
+                          poCode,
+                        order: poMap.size,
+                        isActive: true,
+                      });
+                    }
+                    if (
+                      !nextMappings.some(
+                        (item) =>
+                          String(item.coCode || "").toUpperCase() === question.coCode &&
+                          String(item.targetType || "PO").toUpperCase() !== "PSO" &&
+                          String(item.targetCode || "").toUpperCase() === poCode
+                      )
+                    ) {
+                      nextMappings.push({
+                        coCode: question.coCode,
+                        targetType: "PO",
+                        targetCode: poCode,
+                        strength: Number(pdfMapping?.strength || 1) || 1,
+                      });
+                    }
+                  });
                 }
               });
               return true;
@@ -3071,98 +3177,125 @@ const saveSetup = async () => {
 
           <SectionCard
             title="CO to PO Mapping"
-            subtitle="Connect each Course Outcome to the Program Outcomes used by this course."
+            subtitle="A Course Outcome can contribute to one or several Program Outcomes. Select every PO that applies."
           >
-            <div className="space-y-4">
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={addMappingRow}
-                  className={`${addButtonClass} inline-flex items-center gap-2`}
-                >
-                  <ObeIcon name="plus" className="h-4 w-4" />
-                  Add Mapping
-                </button>
-              </div>
-
-              {(setup.mappings || []).length ? (
-                <div className="grid gap-3">
-                  {(setup.mappings || []).map((row, index) => (
-                    <div
-                      key={`mapping-${index}`}
-                      className="grid gap-3 rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50/80 to-white p-3 shadow-sm transition hover:border-indigo-200 dark:border-slate-800 dark:from-slate-950/60 dark:to-slate-900 dark:hover:border-indigo-500/30 lg:grid-cols-[64px_minmax(150px,1fr)_56px_minmax(150px,1fr)_auto] lg:items-end"
-                    >
-                      <div className="hidden h-11 items-center justify-center rounded-xl bg-indigo-100 text-sm font-black text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300 lg:flex">
-                        {index + 1}
-                      </div>
-
-                      <FormField label="Course Outcome">
-                        <select
-                          value={row.coCode}
-                          onChange={(e) =>
-                            updateMappingRow(index, "coCode", e.target.value)
-                          }
-                          className={inputClass}
-                        >
-                          <option value="">Select CO</option>
-                          {coOptions.map((co) => (
-                            <option key={co.code} value={co.code}>
-                              {co.code}
-                            </option>
-                          ))}
-                        </select>
-                      </FormField>
-
-                      <div className="hidden h-11 items-center justify-center text-xl font-black text-indigo-400 lg:flex">
-                        →
-                      </div>
-
-                      <FormField label="Program Outcome">
-                        <select
-                          value={row.targetCode}
-                          onChange={(e) =>
-                            updateMappingRow(index, "targetCode", e.target.value)
-                          }
-                          className={inputClass}
-                        >
-                          <option value="">Select PO</option>
-                          {targetCodeOptions().map((target) => (
-                            <option key={target.code} value={target.code}>
-                              {target.code}
-                            </option>
-                          ))}
-                        </select>
-                      </FormField>
-
-
-                      <button
-                        type="button"
-                        onClick={() => removeMappingRow(index)}
-                        className={`${iconDangerButtonClass} h-11 w-11 self-end`}
-                        title="Remove mapping"
-                        aria-label="Remove mapping"
-                      >
-                        <ObeIcon name="trash" className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ))}
+            <div className="space-y-3">
+              {!coOptions.length ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 px-5 py-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-400">
+                  Add at least one Course Outcome before creating CO-PO mappings.
+                </div>
+              ) : !targetCodeOptions().length ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
+                  Add the Program Outcomes used by this course first. You can also import them from the Course Outline PDF.
                 </div>
               ) : (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 px-5 py-8 text-center dark:border-slate-700 dark:bg-slate-950/40">
-                  <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300">
-                    <ObeIcon name="setup" className="h-5 w-5" />
-                  </div>
-                  <div className="mt-3 text-sm font-bold text-slate-700 dark:text-slate-200">
-                    No CO-PO mapping added yet
-                  </div>
-                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Add mappings manually or import them directly from a course outline PDF.
-                  </div>
-                </div>
+                coOptions.map((co, index) => {
+                  const selectedCodes = getMappedPoCodes(co.code);
+                  return (
+                    <div
+                      key={`co-po-group-${co.code}-${index}`}
+                      className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/40"
+                    >
+                      <div className="grid gap-4 lg:grid-cols-[minmax(180px,0.7fr)_minmax(0,1.3fr)] lg:items-start">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex h-9 min-w-14 items-center justify-center rounded-xl bg-indigo-50 px-3 text-sm font-black text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300">
+                              {co.code}
+                            </span>
+                            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                              {selectedCodes.length
+                                ? `${selectedCodes.length} PO${selectedCodes.length > 1 ? "s" : ""} selected`
+                                : "No PO selected"}
+                            </span>
+                          </div>
+                          {co.statement ? (
+                            <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                              {co.statement}
+                            </p>
+                          ) : null}
+                        </div>
+
+                        <div>
+                          <details className="group relative">
+                            <summary className={`${inputClass} flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 select-none`}>
+                              <span className={selectedCodes.length ? "font-semibold text-slate-800 dark:text-slate-100" : "text-slate-500 dark:text-slate-400"}>
+                                {selectedCodes.length
+                                  ? selectedCodes.join(", ")
+                                  : "Select one or more Program Outcomes"}
+                              </span>
+                              <ObeIcon name="chevronDown" className="h-4 w-4 shrink-0 transition group-open:rotate-180" />
+                            </summary>
+                            <div className="absolute z-30 mt-2 w-full min-w-[280px] rounded-2xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+                              <div className="max-h-64 overflow-auto p-1">
+                                {targetCodeOptions().map((target) => {
+                                  const checked = selectedCodes.includes(String(target.code || "").toUpperCase());
+                                  return (
+                                    <label
+                                      key={`${co.code}-${target.code}`}
+                                      className="flex cursor-pointer items-start gap-3 rounded-xl px-3 py-2.5 transition hover:bg-slate-50 dark:hover:bg-slate-800"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={() => toggleCoPoMapping(co.code, target.code)}
+                                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-900"
+                                      />
+                                      <span className="min-w-0">
+                                        <span className="block text-sm font-bold text-slate-800 dark:text-slate-100">
+                                          {target.code}
+                                        </span>
+                                        {target.statement ? (
+                                          <span className="mt-0.5 block line-clamp-2 text-xs leading-4 text-slate-500 dark:text-slate-400">
+                                            {target.statement}
+                                          </span>
+                                        ) : null}
+                                      </span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                              {selectedCodes.length ? (
+                                <div className="border-t border-slate-200 p-2 dark:border-slate-700">
+                                  <button
+                                    type="button"
+                                    onClick={() => clearCoPoMappings(co.code)}
+                                    className="w-full rounded-xl px-3 py-2 text-xs font-bold text-rose-600 transition hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                                  >
+                                    Clear selections for {co.code}
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+                          </details>
+
+                          {selectedCodes.length ? (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {selectedCodes.map((poCode) => (
+                                <button
+                                  type="button"
+                                  key={`${co.code}-${poCode}-chip`}
+                                  onClick={() => toggleCoPoMapping(co.code, poCode)}
+                                  className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-700 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:border-rose-500/20 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
+                                  title={`Remove ${co.code} → ${poCode}`}
+                                >
+                                  {poCode}
+                                  <span aria-hidden="true">×</span>
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
               )}
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs leading-5 text-slate-500 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-400">
+                Example: CO2 can be mapped to both PO1 and PO2. The same relationships are used automatically in OBE Output, PO attainment, Course Report, and Excel export.
+              </div>
             </div>
           </SectionCard>
-
 
           <div className="flex justify-end">
             <button
@@ -4189,6 +4322,8 @@ function ObeIcon({ name, className = "h-4 w-4" }) {
       return <svg {...common}><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13"/><path d="M10 11v5M14 11v5"/></svg>;
     case "drag":
       return <svg {...common}><circle cx="8" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="17" r="1" fill="currentColor" stroke="none"/></svg>;
+    case "chevronDown":
+      return <svg {...common}><path d="m6 9 6 6 6-6"/></svg>;
     default:
       return <svg {...common}><circle cx="12" cy="12" r="8"/><path d="M9 12h6"/></svg>;
   }

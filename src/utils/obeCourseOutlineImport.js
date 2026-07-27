@@ -99,9 +99,12 @@ const parseCourseOutcomes = (text) => {
         /Course\s+Outcomes\s*\(COs?\)/i,
       ],
       [
-        /\b\d+\s+Mapping\s+of\s+(?:CLO|CO)\s*[–—-]\s*(?:PLO|PO)/i,
-        /\bMapping\s+of\s+(?:CLO|CO)\s*[–—-]\s*(?:PLO|PO)/i,
+        /\b\d+\s+Mapping\s+of\s+(?:CLO|CO)s?\s*[–—-]\s*(?:PLO|PO)s?/i,
+        /\bMapping\s+of\s+(?:CLO|CO)s?\s*[–—-]\s*(?:PLO|PO)s?/i,
+        /\bMapping\s+of\s+(?:CLO|CO)s?\s+to\s+(?:PLO|PO)s?/i,
+        /\bMapping\s+of\s+(?:Course\s+)?Learning\s+Outcomes?/i,
         /\bTeaching[-\s]+Learning\b/i,
+        /\bTeaching\s+Strategy\b/i,
       ]
     )
   );
@@ -127,66 +130,82 @@ const parseCourseOutcomes = (text) => {
   return uniqueBy(rows, (row) => row.code);
 };
 
+const extractPoCodes = (value = "") => {
+  const codes = [];
+  const source = String(value || "");
+  for (const match of source.matchAll(/\b(?:PLO|PO)\s*[-_ ]?0*(\d{1,2})\b/gi)) {
+    const numeric = Number(match[1]);
+    if (numeric < 1 || numeric > 12) continue;
+    const code = `PO${numeric}`;
+    if (!codes.includes(code)) codes.push(code);
+  }
+  return codes;
+};
+
+const extractCoCode = (value = "") => {
+  const match = String(value || "").match(/\b(?:CLO|CO)\s*[-_ ]?0*(\d{1,2})\b/i);
+  if (!match) return "";
+  return `CO${Number(match[1])}`;
+};
+
+const makeMapping = (coCode, targetCode, currentSetup = {}, importedStrength = null) => {
+  const numericStrength = Number(importedStrength);
+  const existingStrength = getExistingMappingStrength(
+    currentSetup.mappings,
+    coCode,
+    targetCode
+  );
+  return {
+    coCode,
+    targetType: "PO",
+    targetCode,
+    strength: [1, 2, 3].includes(numericStrength)
+      ? numericStrength
+      : existingStrength || 1,
+  };
+};
+
 const parseMappingsFromText = (text, currentSetup = {}) => {
   const mappingText = findSection(
     text,
     [
-      /\bMapping\s+of\s+(?:CLO|CO)\s*[–—-]\s*(?:PLO|PO)\b/i,
-      /\bMapping\s+of\s+(?:CLO|CO)\s+to\s+(?:PLO|PO)\b/i,
+      /\bMapping\s+of\s+(?:CLO|CO)s?\s*[–—-]\s*(?:PLO|PO)s?\b/i,
+      /\bMapping\s+of\s+(?:CLO|CO)s?\s+to\s+(?:PLO|PO)s?\b/i,
+      /\bMapping\s+of\s+(?:Course\s+)?Learning\s+Outcomes?\s*\((?:CLO|CO)s?\)\s+to\s+Program\s+Learning\s+Outcomes?/i,
     ],
     [
-      /\bCorrelation\s+of\s+(?:CLO|CO)s?\s+to\s+(?:PLO|PO)s?\b/i,
-      /\*\s*PPP\s*:/i,
       /\bTeaching[-\s]+Learning\b/i,
+      /\bTeaching\s+Strategy\b/i,
+      /\bAssessment\s+and\s+Marks\s+Distribution\b/i,
+      /\bCourse\s+Plan\b/i,
     ]
   );
 
   if (!mappingText) return [];
 
-  const coMatches = [...mappingText.matchAll(/\b(?:CLO|CO)\s*(\d+)\b/gi)];
   const mappings = [];
+  const coMatches = [...mappingText.matchAll(/\b(?:CLO|CO)\s*[-_ ]?0*(\d{1,2})\b/gi)];
 
   coMatches.forEach((coMatch, index) => {
     const coCode = `CO${Number(coMatch[1])}`;
-    const position = Number(coMatch.index || 0);
-    const nextPosition =
+    const start = Number(coMatch.index || 0);
+    const end =
       index + 1 < coMatches.length
         ? Number(coMatches[index + 1].index || mappingText.length)
         : mappingText.length;
+    const chunk = mappingText.slice(start, Math.min(end, start + 420));
 
-    const before = mappingText.slice(Math.max(0, position - 180), position);
-    const after = mappingText.slice(position, Math.min(mappingText.length, nextPosition));
+    // Explicit row formats are common in newer outlines:
+    // CO2  PO1, PO2  Cognitive / Analyzing ...
+    const poCodes = extractPoCodes(chunk);
+    if (!poCodes.length) return;
 
-    const precedingPoMatches = [...before.matchAll(/\b(?:PLO|PO)\s*(\d+)\b/gi)];
-    let poNumber = precedingPoMatches.at(-1)?.[1] || "";
-
-    if (!poNumber) {
-      poNumber = after.match(/\b(?:PLO|PO)\s*(\d+)\b/i)?.[1] || "";
-    }
-    if (!poNumber) return;
-
-    const targetCode = `PO${Number(poNumber)}`;
-    const cfMatch =
-      after.match(/\bCF\s*=?\s*([0-3])\b/i) ||
-      before.slice(-90).match(/\bCF\s*=?\s*([0-3])\b/i);
-
+    const cfMatch = chunk.match(/\bCF\s*=?\s*([0-3])\b/i);
     const importedStrength = Number(cfMatch?.[1]);
     if (importedStrength === 0) return;
 
-    const existingStrength = getExistingMappingStrength(
-      currentSetup.mappings,
-      coCode,
-      targetCode
-    );
-    const strength = [1, 2, 3].includes(importedStrength)
-      ? importedStrength
-      : existingStrength || 1;
-
-    mappings.push({
-      coCode,
-      targetType: "PO",
-      targetCode,
-      strength,
+    poCodes.forEach((targetCode) => {
+      mappings.push(makeMapping(coCode, targetCode, currentSetup, importedStrength));
     });
   });
 
@@ -357,26 +376,96 @@ const codeFromToken = (value, type = "co") => {
   return `${type === "po" ? "PO" : "CO"}${Number(match[1])}`;
 };
 
+const isMappingMark = (value = "") => {
+  const token = safeText(value).toLowerCase();
+  return ["√", "✓", "✔", "☑", "x", "yes", "y", "1", "true"].includes(token);
+};
+
 const parseMappingsFromPages = (pages = [], currentSetup = {}) => {
   const mappings = [];
+
+  const pushMapping = (coCode, poCode, importedStrength = null) => {
+    if (!coCode || !poCode) return;
+    mappings.push(makeMapping(coCode, poCode, currentSetup, importedStrength));
+  };
 
   for (const page of pages || []) {
     const rows = page?.rows || [];
     const headingIndex = rows.findIndex((row) =>
-      /\bMapping\s+of\s+(?:CLO|CO)\s*[–—-]\s*(?:PLO|PO)\b/i.test(row.text)
+      /\bMapping\s+of\s+(?:CLO|CO)s?\s*(?:[–—-]\s*|to\s+)(?:PLO|PO)s?\b/i.test(row.text) ||
+      /\bMapping\s+of\s+(?:Course\s+)?Learning\s+Outcomes?/i.test(row.text)
     );
     if (headingIndex < 0) continue;
 
     let endIndex = rows.findIndex(
       (row, index) =>
         index > headingIndex &&
-        /\bCorrelation\s+of\s+(?:CLO|CO)s?\s+to\s+(?:PLO|PO)s?\b/i.test(row.text)
+        (/\bTeaching[-\s]+Learning\b/i.test(row.text) ||
+          /\bTeaching\s+Strategy\b/i.test(row.text) ||
+          /\bAssessment\s+and\s+Marks\s+Distribution\b/i.test(row.text) ||
+          /\bCourse\s+Plan\b/i.test(row.text))
     );
     if (endIndex < 0) endIndex = rows.length;
 
     const sectionRows = rows.slice(headingIndex + 1, endIndex);
-    const poCandidates = [];
 
+    // 1) Parse explicit table rows such as "CO2  PO1, PO2". This is the
+    // most reliable format for outlines that allow one CO to map to many POs.
+    sectionRows.forEach((row, rowIndex) => {
+      const coCode = extractCoCode(row.text);
+      if (!coCode) return;
+      const poCodes = extractPoCodes(row.text);
+      if (!poCodes.length) return;
+
+      let importedStrength = null;
+      const localText = [
+        sectionRows[rowIndex - 1]?.text || "",
+        row.text,
+        sectionRows[rowIndex + 1]?.text || "",
+      ].join(" ");
+      const cfMatch = normalizeSpaces(localText).match(/\bCF\s*=?\s*([0-3])\b/i);
+      if (cfMatch) importedStrength = Number(cfMatch[1]);
+      if (importedStrength === 0) return;
+      poCodes.forEach((poCode) => pushMapping(coCode, poCode, importedStrength));
+    });
+
+    // 2) Parse CO x PO matrix layouts. PO codes are across a header row and
+    // check marks are placed at each mapped intersection.
+    const matrixHeaders = sectionRows
+      .map((row, index) => {
+        const poItems = row.items
+          .map((item) => ({ ...item, code: codeFromToken(item.text, "po") }))
+          .filter((item) => item.code);
+        return { row, index, poItems };
+      })
+      .filter((entry) => entry.poItems.length >= 2);
+
+    matrixHeaders.forEach((header) => {
+      const columns = uniqueBy(header.poItems, (item) => item.code).sort((a, b) => a.x - b.x);
+      const xTolerance = columns.length > 1
+        ? Math.max(10, Math.min(28, Math.abs(columns[1].x - columns[0].x) * 0.45))
+        : 18;
+
+      for (let index = header.index + 1; index < Math.min(sectionRows.length, header.index + 18); index += 1) {
+        const row = sectionRows[index];
+        if (/\bCO\s*No\.?\b|\bCLO\s*No\.?\b/i.test(row.text)) break;
+        const coCode = extractCoCode(row.text);
+        if (!coCode) continue;
+
+        const markItems = row.items.filter((item) => isMappingMark(item.text));
+        markItems.forEach((mark) => {
+          const nearest = columns
+            .map((column) => ({ ...column, distance: Math.abs(column.x - mark.x) }))
+            .filter((column) => column.distance <= xTolerance)
+            .sort((a, b) => a.distance - b.distance)[0];
+          if (nearest) pushMapping(coCode, nearest.code, null);
+        });
+      }
+    });
+
+    // 3) Legacy fallback: some PDFs split a CO and its single PO across
+    // separate text items on almost the same horizontal row.
+    const poCandidates = [];
     sectionRows.forEach((row) => {
       row.items.forEach((item) => {
         const code = codeFromToken(item.text, "po");
@@ -388,50 +477,29 @@ const parseMappingsFromPages = (pages = [], currentSetup = {}) => {
       row.items.forEach((item) => {
         const coCode = codeFromToken(item.text, "co");
         if (!coCode) return;
+        const alreadyMapped = mappings.some((mapping) => mapping.coCode === coCode);
+        if (alreadyMapped) return;
 
         const nearestPo = poCandidates
-          .map((candidate) => ({
-            ...candidate,
-            distance: Math.abs(candidate.y - row.y),
-          }))
+          .map((candidate) => ({ ...candidate, distance: Math.abs(candidate.y - row.y) }))
           .filter((candidate) => candidate.distance <= 18)
           .sort((a, b) => a.distance - b.distance)[0];
-
         if (!nearestPo) return;
 
-        const cfRows = sectionRows
-          .map((candidate) => ({
-            row: candidate,
-            distance: Math.abs(candidate.y - row.y),
-          }))
+        const localRows = sectionRows
+          .map((candidate) => ({ row: candidate, distance: Math.abs(candidate.y - row.y) }))
           .filter((candidate) => candidate.distance <= 18)
           .sort((a, b) => a.distance - b.distance);
-
         let importedStrength = null;
-        for (const candidate of cfRows) {
+        for (const candidate of localRows) {
           const match = normalizeSpaces(candidate.row.text).match(/\bCF\s*=?\s*([0-3])\b/i);
           if (match) {
             importedStrength = Number(match[1]);
             break;
           }
         }
-
         if (importedStrength === 0) return;
-        const existingStrength = getExistingMappingStrength(
-          currentSetup.mappings,
-          coCode,
-          nearestPo.code
-        );
-        const strength = [1, 2, 3].includes(importedStrength)
-          ? importedStrength
-          : existingStrength || 1;
-
-        mappings.push({
-          coCode,
-          targetType: "PO",
-          targetCode: nearestPo.code,
-          strength,
-        });
+        pushMapping(coCode, nearestPo.code, importedStrength);
       });
     });
   }
