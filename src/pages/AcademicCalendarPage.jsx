@@ -3,6 +3,22 @@ import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import { academicCalendarService } from "../services/academicCalendarService";
 import { getAuthItem } from "../utils/authStorage";
+import {
+  buildMonthDays,
+  dateFromIso,
+  daysBetween,
+  formatClock,
+  formatFriendlyDate,
+  getMonthLabel,
+  getVisibleRange,
+  isoFromDate,
+  makeLocalDate,
+  monthLabel,
+  normalizeFacultyType,
+  parseAcademicDateRange,
+  toDateInput,
+  weekDays,
+} from "../utils/calendarUtils";
 
 const CATEGORIES = [
   "All",
@@ -17,281 +33,111 @@ const CATEGORIES = [
   "Other",
 ];
 
-const FACULTY_CALENDAR_HIDDEN_OFFICIAL_CATEGORIES = new Set([
-  "Payment",
-  "Registration",
-  "Event",
-]);
-
-const FACULTY_EVENT_TYPES = [
-  "Class",
-  "Exam",
-  "Meeting",
-  "Task",
-  "Reminder",
-  "Deadline",
-  "Payment",
-  "Registration",
-  "Holiday",
-  "Event",
-  "Other",
+const FACULTY_EVENT_TYPES = ["Task", "Exam", "Event"];
+const VISIBILITY_OPTIONS = [
+  {
+    value: "personal",
+    title: "Only me",
+    description: "Visible only in your teacher account.",
+  },
+  {
+    value: "university",
+    title: "All teachers",
+    description: "Publish this as a university-wide teacher event.",
+  },
 ];
 
-const PRIORITIES = ["Low", "Normal", "High"];
+const MAX_EVENT_LANES = 3;
 
 const categoryStyles = {
   Holiday:
-    "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/20",
+    "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-400/40 dark:bg-rose-950/80 dark:text-rose-100",
   Exam:
-    "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20",
+    "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-400/40 dark:bg-amber-950/80 dark:text-amber-100",
   Payment:
-    "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/20",
+    "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/40 dark:bg-emerald-950/80 dark:text-emerald-100",
   Registration:
-    "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-500/10 dark:text-sky-300 dark:border-sky-500/20",
+    "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-400/40 dark:bg-sky-950/80 dark:text-sky-100",
   Class:
-    "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/20",
+    "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-400/40 dark:bg-violet-950/80 dark:text-violet-100",
   Result:
-    "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-300 dark:border-indigo-500/20",
+    "border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-400/40 dark:bg-indigo-950/80 dark:text-indigo-100",
   Event:
-    "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200 dark:bg-fuchsia-500/10 dark:text-fuchsia-300 dark:border-fuchsia-500/20",
+    "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-400/40 dark:bg-blue-950/80 dark:text-blue-100",
   Attendance:
-    "bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-300 dark:border-cyan-500/20",
+    "border-cyan-200 bg-cyan-50 text-cyan-700 dark:border-cyan-400/40 dark:bg-cyan-950/80 dark:text-cyan-100",
   Meeting:
-    "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/20",
+    "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-400/40 dark:bg-blue-950/80 dark:text-blue-100",
   Task:
-    "bg-lime-50 text-lime-700 border-lime-200 dark:bg-lime-500/10 dark:text-lime-300 dark:border-lime-500/20",
+    "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/40 dark:bg-emerald-950/80 dark:text-emerald-100",
   Reminder:
-    "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-500/10 dark:text-purple-300 dark:border-purple-500/20",
+    "border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-400/40 dark:bg-purple-950/80 dark:text-purple-100",
   Deadline:
-    "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-500/10 dark:text-orange-300 dark:border-orange-500/20",
+    "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-400/40 dark:bg-orange-950/80 dark:text-orange-100",
   Other:
-    "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
+    "border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-500/50 dark:bg-slate-800 dark:text-slate-100",
 };
 
-const monthShort = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
-
-const monthLong = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
-
-const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-const monthMap = {
-  jan: 0,
-  january: 0,
-  feb: 1,
-  february: 1,
-  mar: 2,
-  march: 2,
-  apr: 3,
-  april: 3,
-  may: 4,
-  jun: 5,
-  june: 5,
-  jul: 6,
-  july: 6,
-  aug: 7,
-  august: 7,
-  sep: 8,
-  sept: 8,
-  september: 8,
-  oct: 9,
-  october: 9,
-  nov: 10,
-  november: 10,
-  dec: 11,
-  december: 11,
+const typeDotStyles = {
+  Task: "bg-emerald-500",
+  Exam: "bg-amber-500",
+  Event: "bg-blue-500",
+  Holiday: "bg-rose-500",
+  Class: "bg-violet-500",
+  Other: "bg-slate-500",
 };
 
-function pad2(value) {
-  return String(value).padStart(2, "0");
+function createAcademicCalendarItems(events = []) {
+  return events
+    .map((event, index) => {
+      const range = parseAcademicDateRange(event.dateText);
+      if (!range) return null;
+
+      return {
+        source: "academic",
+        id: `academic-${event._id || index}`,
+        originalId: event._id,
+        title: event.title,
+        type: event.category || "Other",
+        details: event.note || "",
+        startDate: isoFromDate(range.start),
+        endDate: isoFromDate(range.end),
+        startTime: "",
+        endTime: "",
+        visibility: "university",
+        canEdit: false,
+        dateText: event.dateText,
+        dayText: event.dayText,
+        isHighlighted: Boolean(event.isHighlighted),
+        raw: event,
+      };
+    })
+    .filter(Boolean);
 }
 
-function toDateInput(date) {
-  if (!date) return "";
+function createFacultyCalendarItems(events = []) {
+  return events
+    .map((event) => {
+      const startDate = toDateInput(event.date);
+      if (!startDate) return null;
 
-  if (typeof date === "string" && /^\d{4}-\d{2}-\d{2}/.test(date)) {
-    return date.slice(0, 10);
-  }
-
-  const d = new Date(date);
-  if (Number.isNaN(d.getTime())) return "";
-
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
-
-function makeLocalDate(year, monthIndex, day) {
-  return new Date(year, monthIndex, day, 12, 0, 0, 0);
-}
-
-function isoFromDate(date) {
-  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(
-    date.getDate()
-  )}`;
-}
-
-function addDays(date, amount) {
-  return makeLocalDate(date.getFullYear(), date.getMonth(), date.getDate() + amount);
-}
-
-function monthLabel(date) {
-  return `${monthLong[date.getMonth()]} ${date.getFullYear()}`;
-}
-
-function getMonthLabel(dateText = "") {
-  const text = String(dateText);
-  const match = text.match(
-    /(Jan|Feb|Mar|Apr|May|Jun|June|Jul|July|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{4}/i
-  );
-  if (match) return match[0];
-
-  const monthOnly = text.match(
-    /(Jan|Feb|Mar|Apr|May|Jun|June|Jul|July|Aug|Sep|Sept|Oct|Nov|Dec)/i
-  );
-  return monthOnly ? monthOnly[0] : "Other Dates";
-}
-
-function parseDatePart(part = "", defaults = {}) {
-  const cleaned = String(part)
-    .replace(/,/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  const match = cleaned.match(/(\d{1,2})(?:\s+([A-Za-z]+))?(?:\s+(\d{4}))?/);
-  if (!match) return null;
-
-  const day = Number(match[1]);
-  const monthText = match[2]?.toLowerCase();
-  const monthIndex = monthText ? monthMap[monthText] : defaults.monthIndex;
-  const year = match[3] ? Number(match[3]) : defaults.year;
-
-  if (!day || monthIndex === undefined || !year) return null;
-
-  const date = makeLocalDate(year, monthIndex, day);
-  if (Number.isNaN(date.getTime())) return null;
-
-  return date;
-}
-
-function parseAcademicDateRange(dateText = "") {
-  const normalized = String(dateText)
-    .replace(/[—–]/g, "-")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (!normalized) return null;
-
-  const pieces = normalized.split(/\s*-\s*/);
-
-  if (pieces.length >= 2) {
-    const end = parseDatePart(pieces.slice(1).join(" - "));
-    const start = parseDatePart(pieces[0], {
-      monthIndex: end?.getMonth(),
-      year: end?.getFullYear(),
-    });
-
-    if (start && end) {
-      return start <= end ? { start, end } : { start, end: start };
-    }
-  }
-
-  const single = parseDatePart(normalized);
-  return single ? { start: single, end: single } : null;
-}
-
-function buildMonthDays(currentMonth) {
-  const firstDay = makeLocalDate(
-    currentMonth.getFullYear(),
-    currentMonth.getMonth(),
-    1
-  );
-  const gridStart = addDays(firstDay, -firstDay.getDay());
-  const days = [];
-
-  for (let i = 0; i < 42; i += 1) {
-    const date = addDays(gridStart, i);
-    days.push({
-      date,
-      iso: isoFromDate(date),
-      inCurrentMonth: date.getMonth() === currentMonth.getMonth(),
-      isToday: isoFromDate(date) === isoFromDate(new Date()),
-    });
-  }
-
-  return days;
-}
-
-function getVisibleRange(currentMonth) {
-  const days = buildMonthDays(currentMonth);
-
-  return {
-    startDate: days[0]?.iso,
-    endDate: days[days.length - 1]?.iso,
-  };
-}
-
-function createAcademicInstances(events = [], range) {
-  const startLimit = range?.startDate ? new Date(`${range.startDate}T12:00:00`) : null;
-  const endLimit = range?.endDate ? new Date(`${range.endDate}T12:00:00`) : null;
-  const result = [];
-
-  events.forEach((event, index) => {
-    const parsed = parseAcademicDateRange(event.dateText);
-    if (!parsed) return;
-
-    let cursor = parsed.start;
-    let safety = 0;
-
-    while (cursor <= parsed.end && safety < 70) {
-      const iso = isoFromDate(cursor);
-      const insideStart = !startLimit || cursor >= startLimit;
-      const insideEnd = !endLimit || cursor <= endLimit;
-
-      if (insideStart && insideEnd) {
-        result.push({
-          source: "academic",
-          id: `academic-${event._id || index}-${iso}`,
-          originalId: event._id,
-          date: iso,
-          title: event.title,
-          type: event.category || "Other",
-          details: event.note || "",
-          dateText: event.dateText,
-          dayText: event.dayText,
-          isHighlighted: Boolean(event.isHighlighted),
-        });
-      }
-
-      cursor = addDays(cursor, 1);
-      safety += 1;
-    }
-  });
-
-  return result;
+      return {
+        source: "faculty",
+        id: event._id,
+        title: event.title,
+        type: normalizeFacultyType(event.type),
+        details: event.details || "",
+        startDate,
+        endDate: toDateInput(event.endDate) || startDate,
+        startTime: event.startTime || "",
+        endTime: event.endTime || "",
+        visibility: event.visibility || "personal",
+        canEdit: event.canEdit !== false,
+        creatorName: event.creatorName || event.faculty?.name || "",
+        raw: event,
+      };
+    })
+    .filter(Boolean);
 }
 
 function getDefaultFacultyForm(date = isoFromDate(new Date())) {
@@ -299,25 +145,118 @@ function getDefaultFacultyForm(date = isoFromDate(new Date())) {
     title: "",
     type: "Task",
     date,
+    endDate: date,
     startTime: "",
     endTime: "",
     details: "",
-    priority: "Normal",
-    completed: false,
+    visibility: "personal",
   };
 }
 
 function sortCalendarItems(a, b) {
+  if (a.startDate !== b.startDate) return a.startDate.localeCompare(b.startDate);
+
   const aTime = a.startTime || "99:99";
   const bTime = b.startTime || "99:99";
-
   if (aTime !== bTime) return aTime.localeCompare(bTime);
+
+  const aDuration = daysBetween(dateFromIso(a.startDate), dateFromIso(a.endDate));
+  const bDuration = daysBetween(dateFromIso(b.startDate), dateFromIso(b.endDate));
+  if (aDuration !== bDuration) return bDuration - aDuration;
+
   return String(a.title || "").localeCompare(String(b.title || ""));
+}
+
+function itemCoversDate(item, iso) {
+  return item.startDate <= iso && item.endDate >= iso;
+}
+
+function getWeekLayout(days, items) {
+  const weekStart = days[0].date;
+  const weekEnd = days[6].date;
+  const weekStartIso = days[0].iso;
+  const weekEndIso = days[6].iso;
+
+  const segments = items
+    .filter((item) => item.startDate <= weekEndIso && item.endDate >= weekStartIso)
+    .map((item) => {
+      const itemStart = dateFromIso(item.startDate);
+      const itemEnd = dateFromIso(item.endDate);
+      if (!itemStart || !itemEnd) return null;
+
+      const segmentStart = itemStart < weekStart ? weekStart : itemStart;
+      const segmentEnd = itemEnd > weekEnd ? weekEnd : itemEnd;
+      const startColumn = Math.max(0, daysBetween(weekStart, segmentStart));
+      const endColumn = Math.min(6, daysBetween(weekStart, segmentEnd));
+
+      return {
+        ...item,
+        startColumn,
+        endColumn,
+        span: endColumn - startColumn + 1,
+        startsBeforeWeek: itemStart < weekStart,
+        endsAfterWeek: itemEnd > weekEnd,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => {
+      if (a.startColumn !== b.startColumn) return a.startColumn - b.startColumn;
+      if (a.span !== b.span) return b.span - a.span;
+      return sortCalendarItems(a, b);
+    });
+
+  const occupiedLanes = [];
+  const laidOutSegments = segments.map((segment) => {
+    let lane = 0;
+
+    while (true) {
+      if (!occupiedLanes[lane]) occupiedLanes[lane] = Array(7).fill(false);
+
+      const isFree = occupiedLanes[lane]
+        .slice(segment.startColumn, segment.endColumn + 1)
+        .every((occupied) => !occupied);
+
+      if (isFree) {
+        for (let column = segment.startColumn; column <= segment.endColumn; column += 1) {
+          occupiedLanes[lane][column] = true;
+        }
+        break;
+      }
+
+      lane += 1;
+    }
+
+    return { ...segment, lane };
+  });
+
+  const hiddenByDate = {};
+  laidOutSegments
+    .filter((segment) => segment.lane >= MAX_EVENT_LANES)
+    .forEach((segment) => {
+      for (let column = segment.startColumn; column <= segment.endColumn; column += 1) {
+        const iso = days[column].iso;
+        hiddenByDate[iso] = (hiddenByDate[iso] || 0) + 1;
+      }
+    });
+
+  return {
+    visibleSegments: laidOutSegments.filter((segment) => segment.lane < MAX_EVENT_LANES),
+    hiddenByDate,
+  };
+}
+
+function formatRange(item) {
+  const start = formatFriendlyDate(item.startDate, { includeYear: true });
+  const end = formatFriendlyDate(item.endDate, { includeYear: true });
+  const dateText = item.startDate === item.endDate ? start : `${start} – ${end}`;
+  const timeText = item.startTime
+    ? `${formatClock(item.startTime)}${item.endTime ? ` – ${formatClock(item.endTime)}` : ""}`
+    : "All day";
+  return `${dateText} · ${timeText}`;
 }
 
 export default function AcademicCalendarPage() {
   const navigate = useNavigate();
-
   const [role] = useState(() => getAuthItem("marksPortalRole"));
   const isTeacher = role === "teacher";
 
@@ -325,10 +264,7 @@ export default function AcademicCalendarPage() {
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState("All");
   const [search, setSearch] = useState("");
-  const [viewMode, setViewMode] = useState(() =>
-    isTeacher ? "calendar" : "serial"
-  );
-
+  const [viewMode, setViewMode] = useState(() => (isTeacher ? "calendar" : "serial"));
   const [currentMonth, setCurrentMonth] = useState(() => {
     const today = new Date();
     return makeLocalDate(today.getFullYear(), today.getMonth(), 1);
@@ -336,13 +272,15 @@ export default function AcademicCalendarPage() {
 
   const [facultyEvents, setFacultyEvents] = useState([]);
   const [facultyEventsLoading, setFacultyEventsLoading] = useState(false);
-
   const [eventModalOpen, setEventModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState("create");
   const [editingEvent, setEditingEvent] = useState(null);
   const [eventForm, setEventForm] = useState(getDefaultFacultyForm());
   const [savingEvent, setSavingEvent] = useState(false);
+  const [agendaDate, setAgendaDate] = useState("");
 
   const dateInputRef = useRef(null);
+  const endDateInputRef = useRef(null);
   const startTimeInputRef = useRef(null);
   const endTimeInputRef = useRef(null);
 
@@ -358,9 +296,7 @@ export default function AcademicCalendarPage() {
   }, [isTeacher, visibleRange.startDate, visibleRange.endDate]);
 
   useEffect(() => {
-    if (!isTeacher && viewMode === "calendar") {
-      setViewMode("serial");
-    }
+    if (!isTeacher && viewMode === "calendar") setViewMode("serial");
   }, [isTeacher, viewMode]);
 
   const loadCalendar = async () => {
@@ -389,109 +325,101 @@ export default function AcademicCalendarPage() {
   };
 
   const filteredEvents = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const query = search.trim().toLowerCase();
 
     return (calendar?.events || []).filter((event) => {
-      const matchCategory =
-        activeCategory === "All" || event.category === activeCategory;
-
-      const matchSearch =
-        !q ||
-        event.title?.toLowerCase().includes(q) ||
-        event.dateText?.toLowerCase().includes(q) ||
-        event.dayText?.toLowerCase().includes(q) ||
-        event.note?.toLowerCase().includes(q);
-
-      return matchCategory && matchSearch;
+      const matchesCategory = activeCategory === "All" || event.category === activeCategory;
+      const matchesSearch =
+        !query ||
+        [event.title, event.dateText, event.dayText, event.note]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(query);
+      return matchesCategory && matchesSearch;
     });
   }, [calendar, activeCategory, search]);
 
   const groupedEvents = useMemo(() => {
-    return filteredEvents.reduce((acc, event) => {
+    return filteredEvents.reduce((result, event) => {
       const month = getMonthLabel(event.dateText);
-      if (!acc[month]) acc[month] = [];
-      acc[month].push(event);
-      return acc;
+      if (!result[month]) result[month] = [];
+      result[month].push(event);
+      return result;
     }, {});
   }, [filteredEvents]);
 
   const counts = useMemo(() => {
     const result = {};
-    for (const c of CATEGORIES) result[c] = 0;
+    CATEGORIES.forEach((category) => {
+      result[category] = 0;
+    });
     result.All = calendar?.events?.length || 0;
-
-    for (const event of calendar?.events || []) {
+    (calendar?.events || []).forEach((event) => {
       result[event.category] = (result[event.category] || 0) + 1;
-    }
-
+    });
     return result;
   }, [calendar]);
 
   const calendarDays = useMemo(() => buildMonthDays(currentMonth), [currentMonth]);
-
-  const calendarItemsByDate = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const officialItems = createAcademicInstances(calendar?.events || [], visibleRange).filter(
-      (item) => !FACULTY_CALENDAR_HIDDEN_OFFICIAL_CATEGORIES.has(item.type)
+  const calendarWeeks = useMemo(() => {
+    return Array.from({ length: 6 }, (_, index) =>
+      calendarDays.slice(index * 7, index * 7 + 7)
     );
-    const personalItems = (facultyEvents || []).map((item) => ({
-      source: "faculty",
-      id: item._id,
-      date: toDateInput(item.date),
-      title: item.title,
-      type: item.type || "Task",
-      details: item.details || "",
-      startTime: item.startTime || "",
-      endTime: item.endTime || "",
-      priority: item.priority || "Normal",
-      completed: Boolean(item.completed),
-      raw: item,
-    }));
+  }, [calendarDays]);
 
-    return [...officialItems, ...personalItems].reduce((acc, item) => {
-      const searchable = [
-        item.title,
-        item.type,
-        item.details,
-        item.dateText,
-        item.dayText,
-        item.startTime,
-        item.endTime,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
+  const calendarItems = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const officialItems = createAcademicCalendarItems(calendar?.events || []);
+    const teacherItems = createFacultyCalendarItems(facultyEvents || []);
 
-      if (q && !searchable.includes(q)) return acc;
+    return [...officialItems, ...teacherItems]
+      .filter((item) => {
+        if (!query) return true;
+        return [
+          item.title,
+          item.type,
+          item.details,
+          item.startDate,
+          item.endDate,
+          item.startTime,
+          item.creatorName,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(query);
+      })
+      .sort(sortCalendarItems);
+  }, [calendar, facultyEvents, search]);
 
-      if (!acc[item.date]) acc[item.date] = [];
-      acc[item.date].push(item);
-      acc[item.date].sort(sortCalendarItems);
-      return acc;
-    }, {});
-  }, [calendar, facultyEvents, search, visibleRange]);
+  const agendaItems = useMemo(() => {
+    if (!agendaDate) return [];
+    return calendarItems.filter((item) => itemCoversDate(item, agendaDate));
+  }, [agendaDate, calendarItems]);
 
-  const openCreateModal = (date) => {
+  const openCreateModal = (date = isoFromDate(new Date())) => {
     if (!isTeacher) return;
+    setAgendaDate("");
+    setModalMode("create");
     setEditingEvent(null);
     setEventForm(getDefaultFacultyForm(date));
     setEventModalOpen(true);
   };
 
-  const openEditModal = (item) => {
-    if (!isTeacher || item.source !== "faculty") return;
-
-    const raw = item.raw || item;
-    setEditingEvent(raw);
+  const openCalendarItem = (item) => {
+    setAgendaDate("");
+    setEditingEvent(item);
+    setModalMode(item.source === "faculty" && item.canEdit ? "edit" : "view");
     setEventForm({
-      title: raw.title || "",
-      type: raw.type || "Task",
-      date: toDateInput(raw.date),
-      startTime: raw.startTime || "",
-      endTime: raw.endTime || "",
-      details: raw.details || "",
-      priority: raw.priority || "Normal",
-      completed: Boolean(raw.completed),
+      title: item.title || "",
+      type: normalizeFacultyType(item.type),
+      date: item.startDate || isoFromDate(new Date()),
+      endDate: item.endDate || item.startDate || isoFromDate(new Date()),
+      startTime: item.startTime || "",
+      endTime: item.endTime || "",
+      details: item.details || "",
+      visibility: item.visibility || "personal",
     });
     setEventModalOpen(true);
   };
@@ -499,46 +427,70 @@ export default function AcademicCalendarPage() {
   const closeEventModal = () => {
     if (savingEvent) return;
     setEventModalOpen(false);
+    setModalMode("create");
     setEditingEvent(null);
     setEventForm(getDefaultFacultyForm());
   };
 
   const updateEventForm = (field, value) => {
-    setEventForm((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+    setEventForm((previous) => {
+      const next = { ...previous, [field]: value };
+
+      if (field === "date" && (!previous.endDate || previous.endDate < value)) {
+        next.endDate = value;
+      }
+
+      return next;
+    });
   };
 
-  const handleSaveFacultyEvent = async (e) => {
-    e.preventDefault();
+  const handleSaveFacultyEvent = async (event) => {
+    event.preventDefault();
+    if (modalMode === "view") return;
 
     if (!eventForm.title.trim()) {
       Swal.fire("Title required", "Please write a title for this calendar item.", "warning");
       return;
     }
 
-    if (!eventForm.date) {
-      Swal.fire("Date required", "Please select a date for this calendar item.", "warning");
+    if (!eventForm.date || !eventForm.endDate) {
+      Swal.fire("Date required", "Please select the start and end date.", "warning");
+      return;
+    }
+
+    if (eventForm.endDate < eventForm.date) {
+      Swal.fire("Invalid date range", "The end date cannot be before the start date.", "warning");
+      return;
+    }
+
+    if (
+      eventForm.date === eventForm.endDate &&
+      eventForm.startTime &&
+      eventForm.endTime &&
+      eventForm.endTime < eventForm.startTime
+    ) {
+      Swal.fire("Invalid time", "The end time cannot be before the start time.", "warning");
       return;
     }
 
     try {
       setSavingEvent(true);
 
-      if (editingEvent?._id) {
-        await academicCalendarService.updateFacultyEvent(editingEvent._id, eventForm);
+      if (modalMode === "edit" && editingEvent?.id) {
+        await academicCalendarService.updateFacultyEvent(editingEvent.id, eventForm);
       } else {
         await academicCalendarService.createFacultyEvent(eventForm);
       }
 
       await loadFacultyEvents();
-      closeEventModal();
+      setEventModalOpen(false);
+      setEditingEvent(null);
+      setModalMode("create");
 
       Swal.fire({
         icon: "success",
-        title: editingEvent?._id ? "Calendar item updated" : "Calendar item created",
-        timer: 1400,
+        title: modalMode === "edit" ? "Calendar item updated" : "Calendar item created",
+        timer: 1300,
         showConfirmButton: false,
       });
     } catch (error) {
@@ -554,15 +506,18 @@ export default function AcademicCalendarPage() {
   };
 
   const handleDeleteFacultyEvent = async () => {
-    if (!editingEvent?._id) return;
+    if (modalMode !== "edit" || !editingEvent?.id) return;
 
     const result = await Swal.fire({
       title: "Delete this calendar item?",
-      text: "This will remove it from your personal faculty calendar only.",
+      text:
+        editingEvent.visibility === "university"
+          ? "It will be removed from every teacher's calendar."
+          : "It will be removed from your calendar.",
       icon: "warning",
       showCancelButton: true,
-      confirmButtonText: "Yes, delete",
-      cancelButtonText: "Cancel",
+      confirmButtonText: "Delete item",
+      cancelButtonText: "Keep item",
       confirmButtonColor: "#dc2626",
     });
 
@@ -570,14 +525,16 @@ export default function AcademicCalendarPage() {
 
     try {
       setSavingEvent(true);
-      await academicCalendarService.deleteFacultyEvent(editingEvent._id);
+      await academicCalendarService.deleteFacultyEvent(editingEvent.id);
       await loadFacultyEvents();
-      closeEventModal();
+      setEventModalOpen(false);
+      setEditingEvent(null);
+      setModalMode("create");
 
       Swal.fire({
         icon: "success",
         title: "Calendar item deleted",
-        timer: 1200,
+        timer: 1100,
         showConfirmButton: false,
       });
     } catch (error) {
@@ -601,7 +558,7 @@ export default function AcademicCalendarPage() {
         input.showPicker();
         return;
       } catch (error) {
-        // Some browsers may block showPicker in a few edge cases.
+        // Browser fallback below.
       }
     }
 
@@ -610,11 +567,15 @@ export default function AcademicCalendarPage() {
   };
 
   const goToPreviousMonth = () => {
-    setCurrentMonth((prev) => makeLocalDate(prev.getFullYear(), prev.getMonth() - 1, 1));
+    setCurrentMonth((previous) =>
+      makeLocalDate(previous.getFullYear(), previous.getMonth() - 1, 1)
+    );
   };
 
   const goToNextMonth = () => {
-    setCurrentMonth((prev) => makeLocalDate(prev.getFullYear(), prev.getMonth() + 1, 1));
+    setCurrentMonth((previous) =>
+      makeLocalDate(previous.getFullYear(), previous.getMonth() + 1, 1)
+    );
   };
 
   const goToToday = () => {
@@ -624,56 +585,57 @@ export default function AcademicCalendarPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center text-slate-600 dark:text-slate-300">
-        Loading academic calendar...
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-semibold text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-violet-500 border-t-transparent" />
+          Loading academic calendar...
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-300">
-              Academic Timeline
-            </p>
-            <h1 className="mt-1 text-2xl font-bold text-slate-950 dark:text-white">
+    <div className="space-y-5">
+      <section className="relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+        <div className="pointer-events-none absolute -right-24 -top-28 h-64 w-64 rounded-full bg-violet-200/45 blur-3xl dark:bg-violet-500/10" />
+        <div className="relative flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-violet-600 dark:text-violet-300">
+              <CalendarSmallIcon />
+              Academic timeline
+            </div>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-3xl">
               {calendar?.title || "Academic Calendar"}
             </h1>
-            {/* {isTeacher && viewMode === "calendar" && (
-              <p className="mt-2 max-w-3xl text-sm text-slate-500 dark:text-slate-400">
-                Monthly calendar view shows the official academic events and your own personal faculty tasks. Your personal calendar items are private to your account.
-              </p>
-            )} */}
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
+              Official academic dates, personal tasks and university-wide teacher events in one organised calendar.
+            </p>
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             {isTeacher && (
-              <div className="inline-flex rounded-2xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-950">
+              <div className="inline-flex rounded-2xl border border-slate-200 bg-slate-100/80 p-1 dark:border-slate-700 dark:bg-slate-950">
                 <button
                   type="button"
                   onClick={() => setViewMode("serial")}
-                  className={[
-                    "rounded-xl px-4 py-2 text-sm font-semibold transition",
+                  className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
                     viewMode === "serial"
-                      ? "bg-violet-600 text-white shadow-sm"
-                      : "text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-800",
-                  ].join(" ")}
+                      ? "bg-white text-slate-950 shadow-sm dark:bg-slate-800 dark:text-white"
+                      : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+                  }`}
                 >
-                  Serial View
+                  List
                 </button>
                 <button
                   type="button"
                   onClick={() => setViewMode("calendar")}
-                  className={[
-                    "rounded-xl px-4 py-2 text-sm font-semibold transition",
+                  className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
                     viewMode === "calendar"
-                      ? "bg-violet-600 text-white shadow-sm"
-                      : "text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-800",
-                  ].join(" ")}
+                      ? "bg-white text-slate-950 shadow-sm dark:bg-slate-800 dark:text-white"
+                      : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+                  }`}
                 >
-                  Calendar View
+                  Month
                 </button>
               </div>
             )}
@@ -682,119 +644,70 @@ export default function AcademicCalendarPage() {
               <button
                 type="button"
                 onClick={() => navigate("/teacher/academic-calendar/manage")}
-                className="rounded-2xl bg-violet-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-semibold text-violet-700 transition hover:bg-violet-100 dark:border-violet-500/25 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/15"
               >
-                Create / Update Academic Calendar
+                <SettingsIcon />
+                Manage academic dates
               </button>
             )}
           </div>
         </div>
-
-        {/* <div className="mt-6 grid gap-3 md:grid-cols-4">
-          <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-800/70">
-            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-              Total Events
-            </p>
-            <p className="mt-1 text-2xl font-bold text-slate-950 dark:text-white">
-              {calendar?.events?.length || 0}
-            </p>
-          </div>
-
-          <div className="rounded-2xl bg-amber-50 p-4 dark:bg-amber-500/10">
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
-              Exam Related
-            </p>
-            <p className="mt-1 text-2xl font-bold text-amber-800 dark:text-amber-200">
-              {counts.Exam || 0}
-            </p>
-          </div>
-
-          <div className="rounded-2xl bg-rose-50 p-4 dark:bg-rose-500/10">
-            <p className="text-xs font-semibold text-rose-700 dark:text-rose-300">
-              Holidays
-            </p>
-            <p className="mt-1 text-2xl font-bold text-rose-800 dark:text-rose-200">
-              {counts.Holiday || 0}
-            </p>
-          </div>
-
-          {isTeacher && (
-            <div className="rounded-2xl bg-violet-50 p-4 dark:bg-violet-500/10">
-              <p className="text-xs font-semibold text-violet-700 dark:text-violet-300">
-                My Items This Month
-              </p>
-              <p className="mt-1 text-2xl font-bold text-violet-800 dark:text-violet-200">
-                {facultyEvents.length || 0}
-              </p>
-            </div>
-          )}
-        </div> */}
       </section>
 
       {viewMode === "serial" && (
-        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <section className="rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex flex-wrap gap-2">
               {CATEGORIES.map((category) => (
                 <button
                   key={category}
                   type="button"
                   onClick={() => setActiveCategory(category)}
-                  className={[
-                    "rounded-full border px-4 py-2 text-sm font-semibold transition",
+                  className={`rounded-full border px-3.5 py-2 text-xs font-semibold transition ${
                     activeCategory === category
-                      ? "border-violet-600 bg-violet-600 text-white"
-                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800",
-                  ].join(" ")}
+                      ? "border-slate-900 bg-slate-900 text-white dark:border-violet-500 dark:bg-violet-600"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  }`}
                 >
-                  {category} ({counts[category] || 0})
+                  {category} <span className="opacity-65">{counts[category] || 0}</span>
                 </button>
               ))}
             </div>
 
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search calendar..."
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-violet-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white lg:w-72"
-            />
+            <SearchField value={search} onChange={setSearch} />
           </div>
 
-          <div className="mt-6 space-y-6">
+          <div className="mt-6 space-y-7">
             {Object.keys(groupedEvents).length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                No academic calendar events found.
-              </div>
+              <EmptyState text="No academic calendar events match your search." />
             ) : (
               Object.entries(groupedEvents).map(([month, events]) => (
                 <div key={month}>
                   <h2 className="mb-3 text-lg font-bold text-slate-950 dark:text-white">
                     {month}
                   </h2>
-
                   <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">
-                    <div className="hidden grid-cols-[180px_150px_160px_1fr] bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500 dark:bg-slate-800 dark:text-slate-400 md:grid">
+                    <div className="hidden grid-cols-[190px_140px_150px_1fr] bg-slate-50 px-4 py-3 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-800/80 dark:text-slate-400 md:grid">
                       <div>Date</div>
                       <div>Day</div>
-                      <div>Category</div>
-                      <div>Activity / Holiday</div>
+                      <div>Type</div>
+                      <div>Academic activity</div>
                     </div>
 
                     {events.map((event) => (
                       <div
                         key={event._id}
-                        className={[
-                          "grid gap-2 border-t border-slate-200 px-4 py-4 dark:border-slate-800 md:grid-cols-[180px_150px_160px_1fr]",
+                        className={`grid gap-3 border-t border-slate-200 px-4 py-4 first:border-t-0 dark:border-slate-800 md:grid-cols-[190px_140px_150px_1fr] ${
                           event.isHighlighted
-                            ? "bg-amber-50/70 dark:bg-amber-500/10"
-                            : "bg-white dark:bg-slate-900",
-                        ].join(" ")}
+                            ? "bg-amber-50/45 dark:bg-amber-500/5"
+                            : "bg-white dark:bg-slate-900"
+                        }`}
                       >
                         <div className="text-sm font-semibold text-slate-950 dark:text-white">
                           {event.dateText}
                         </div>
-                        <div className="text-sm text-slate-600 dark:text-slate-300">
-                          {event.dayText || "-"}
+                        <div className="text-sm text-slate-500 dark:text-slate-400">
+                          {event.dayText || "—"}
                         </div>
                         <div>
                           <span
@@ -806,11 +719,11 @@ export default function AcademicCalendarPage() {
                           </span>
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-slate-800 dark:text-slate-100">
+                          <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
                             {event.title}
                           </p>
                           {event.note && (
-                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
                               {event.note}
                             </p>
                           )}
@@ -826,380 +739,739 @@ export default function AcademicCalendarPage() {
       )}
 
       {isTeacher && viewMode === "calendar" && (
-        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <h2 className="text-xl font-bold text-slate-950 dark:text-white">
-                {monthLabel(currentMonth)}
-              </h2>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Click any date to add your own event, task, reminder, or deadline.
-              </p>
-            </div>
+        <section className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-sm dark:border-slate-700/70 dark:bg-[#0b1220] dark:shadow-[0_18px_55px_rgba(0,0,0,0.28)]">
+          <div className="border-b border-slate-200 p-4 dark:border-slate-700/70 dark:bg-[#0d1626] sm:p-5">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex items-center gap-3">
+                <div>
+                  <h2 className="text-xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-2xl">
+                    {monthLabel(currentMonth)}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Click a date to add an item. Multi-day events appear as one continuous bar.
+                  </p>
+                </div>
+                {facultyEventsLoading && (
+                  <span className="hidden h-4 w-4 animate-spin rounded-full border-2 border-violet-500 border-t-transparent sm:block" />
+                )}
+              </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search calendar..."
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-violet-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white sm:w-72"
-              />
+              <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                <SearchField value={search} onChange={setSearch} compact />
 
-              <div className="flex rounded-2xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-950">
+                <div className="inline-flex items-center rounded-2xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-950">
+                  <button
+                    type="button"
+                    onClick={goToPreviousMonth}
+                    className="rounded-xl p-2.5 text-slate-600 transition hover:bg-white hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+                    aria-label="Previous month"
+                  >
+                    <ChevronLeftIcon />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={goToToday}
+                    className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-white dark:text-slate-200 dark:hover:bg-slate-800"
+                  >
+                    Today
+                  </button>
+                  <button
+                    type="button"
+                    onClick={goToNextMonth}
+                    className="rounded-xl p-2.5 text-slate-600 transition hover:bg-white hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+                    aria-label="Next month"
+                  >
+                    <ChevronRightIcon />
+                  </button>
+                </div>
+
                 <button
                   type="button"
-                  onClick={goToPreviousMonth}
-                  className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-white dark:text-slate-200 dark:hover:bg-slate-800"
+                  onClick={() => openCreateModal()}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-violet-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700"
                 >
-                  Prev
-                </button>
-                <button
-                  type="button"
-                  onClick={goToToday}
-                  className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-white dark:text-slate-200 dark:hover:bg-slate-800"
-                >
-                  Today
-                </button>
-                <button
-                  type="button"
-                  onClick={goToNextMonth}
-                  className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-white dark:text-slate-200 dark:hover:bg-slate-800"
-                >
-                  Next
+                  <PlusIcon />
+                  New item
                 </button>
               </div>
             </div>
-          </div>
 
-          <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold">
-            {/* <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
-              Academic events are read-only
-            </span>
-            <span className="rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
-              My personal items are editable
-            </span> */}
-            {facultyEventsLoading && (
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
-                Loading your items...
+            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+              <LegendItem type="Task" label="Task" />
+              <LegendItem type="Exam" label="Exam" />
+              <LegendItem type="Event" label="Event" />
+              <span className="inline-flex items-center gap-1.5">
+                <UniversityIcon className="h-3.5 w-3.5" /> All teachers
               </span>
-            )}
+              <span className="ml-auto hidden text-slate-400 dark:text-slate-500 lg:inline">
+                {calendarItems.length} visible items
+              </span>
+            </div>
           </div>
 
-          <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
-            <div className="grid min-w-[980px] grid-cols-7 bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-              {weekDays.map((day) => (
-                <div key={day} className="border-r border-slate-200 px-3 py-3 last:border-r-0 dark:border-slate-700">
-                  {day}
-                </div>
-              ))}
-            </div>
-
-            <div className="grid min-w-[980px] grid-cols-7 bg-white dark:bg-slate-950">
-              {calendarDays.map((day) => {
-                const dayItems = calendarItemsByDate[day.iso] || [];
-                const visibleItems = dayItems.slice(0, 5);
-                const hiddenCount = dayItems.length - visibleItems.length;
-
-                return (
-                  <button
-                    key={day.iso}
-                    type="button"
-                    onClick={() => openCreateModal(day.iso)}
-                    className={[
-                      "min-h-[155px] border-r border-t border-slate-200 p-3 text-left align-top transition hover:bg-violet-50/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-violet-500 dark:border-slate-800 dark:hover:bg-violet-500/10",
-                      !day.inCurrentMonth
-                        ? "bg-slate-50/70 text-slate-400 dark:bg-slate-900/50 dark:text-slate-600"
-                        : "bg-white text-slate-900 dark:bg-slate-950 dark:text-white",
-                    ].join(" ")}
+          <div className="overflow-x-auto">
+            <div className="min-w-[1050px]">
+              <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50/90 text-[11px] font-bold uppercase tracking-[0.13em] text-slate-500 dark:border-slate-700/70 dark:bg-[#182235] dark:text-slate-300">
+                {weekDays.map((day, index) => (
+                  <div
+                    key={day}
+                    className={`px-3 py-3.5 ${index < 6 ? "border-r border-slate-200 dark:border-slate-700/70" : ""}`}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <span
-                        className={[
-                          "flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold",
-                          day.isToday
-                            ? "bg-violet-600 text-white"
-                            : day.inCurrentMonth
-                            ? "text-slate-900 dark:text-white"
-                            : "text-slate-400 dark:text-slate-600",
-                        ].join(" ")}
-                      >
-                        {day.date.getDate()}
-                      </span>
-                      {dayItems.length > 0 && (
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                          {dayItems.length}
-                        </span>
-                      )}
-                    </div>
+                    {day}
+                  </div>
+                ))}
+              </div>
 
-                    <div className="mt-2 space-y-1.5">
-                      {visibleItems.map((item) => {
-                        const style = categoryStyles[item.type] || categoryStyles.Other;
-                        const isPersonal = item.source === "faculty";
-
-                        return (
-                          <div
-                            key={item.id}
-                            role="button"
-                            tabIndex={0}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (isPersonal) openEditModal(item);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.stopPropagation();
-                                if (isPersonal) openEditModal(item);
-                              }
-                            }}
-                            className={[
-                              "rounded-xl border px-2 py-1.5 text-xs leading-snug",
-                              style,
-                              isPersonal
-                                ? "cursor-pointer ring-1 ring-violet-500/10 hover:ring-violet-500/40"
-                                : "cursor-default opacity-90",
-                              item.completed ? "line-through opacity-70" : "",
-                            ].join(" ")}
-                            title={item.details || item.title}
-                          >
-                            <div className="flex items-center gap-1">
-                              <span className="shrink-0 font-bold">
-                                {isPersonal ? "My" : "Academic"}
-                              </span>
-                              {item.startTime && (
-                                <span className="shrink-0 opacity-80">{item.startTime}</span>
-                              )}
-                            </div>
-                            <div className="line-clamp-2 font-semibold">{item.title}</div>
-                          </div>
-                        );
-                      })}
-
-                      {hiddenCount > 0 && (
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-                          +{hiddenCount} more
-                        </div>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
+              {calendarWeeks.map((week, index) => (
+                <CalendarWeek
+                  key={week[0].iso}
+                  days={week}
+                  items={calendarItems}
+                  isLast={index === calendarWeeks.length - 1}
+                  onCreate={openCreateModal}
+                  onOpenItem={openCalendarItem}
+                  onOpenAgenda={setAgendaDate}
+                />
+              ))}
             </div>
           </div>
         </section>
       )}
 
+      {agendaDate && (
+        <DayAgendaModal
+          date={agendaDate}
+          items={agendaItems}
+          onClose={() => setAgendaDate("")}
+          onCreate={() => openCreateModal(agendaDate)}
+          onOpenItem={openCalendarItem}
+        />
+      )}
+
       {eventModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-          <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-            <form onSubmit={handleSaveFacultyEvent}>
-              <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-5 dark:border-slate-800">
-                <div>
-                  <p className="text-sm font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-300">
-                    Personal Faculty Calendar
-                  </p>
-                  <h3 className="mt-1 text-xl font-bold text-slate-950 dark:text-white">
-                    {editingEvent?._id ? "Update Calendar Item" : "Create Calendar Item"}
-                  </h3>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    This item will be visible only in your teacher account.
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={closeEventModal}
-                  className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-                >
-                  Close
-                </button>
-              </div>
-
-              <div className="grid gap-4 p-5 md:grid-cols-2">
-                <label className="md:col-span-2">
-                  <span className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    Title
-                  </span>
-                  <input
-                    value={eventForm.title}
-                    onChange={(e) => updateEventForm("title", e.target.value)}
-                    placeholder="Example: Check CT scripts / Meeting / Class task"
-                    className="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-violet-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                  />
-                </label>
-
-                <label>
-                  <span className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    Type
-                  </span>
-                  <select
-                    value={eventForm.type}
-                    onChange={(e) => updateEventForm("type", e.target.value)}
-                    className="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-violet-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                  >
-                    {FACULTY_EVENT_TYPES.map((type) => (
-                      <option key={type} value={type}>
-                        {type}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label>
-                  <span className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    Date
-                  </span>
-                  <div className="relative mt-1">
-                    <input
-                      ref={dateInputRef}
-                      type="date"
-                      value={eventForm.date}
-                      onChange={(e) => updateEventForm("date", e.target.value)}
-                      onClick={() => openNativePicker(dateInputRef)}
-                      className="w-full cursor-pointer rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-violet-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => openNativePicker(dateInputRef)}
-                      className="absolute inset-y-0 right-3 flex items-center text-violet-500"
-                      aria-label="Open date picker"
-                    >
-                      📅
-                    </button>
-                  </div>
-                </label>
-
-                <label>
-                  <span className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    Start Time
-                  </span>
-                  <div className="relative mt-1">
-                    <input
-                      ref={startTimeInputRef}
-                      type="time"
-                      value={eventForm.startTime}
-                      onChange={(e) => updateEventForm("startTime", e.target.value)}
-                      onClick={() => openNativePicker(startTimeInputRef)}
-                      className="w-full cursor-pointer rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-violet-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => openNativePicker(startTimeInputRef)}
-                      className="absolute inset-y-0 right-3 flex items-center text-violet-500"
-                      aria-label="Open start time picker"
-                    >
-                      🕒
-                    </button>
-                  </div>
-                </label>
-
-                <label>
-                  <span className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    End Time
-                  </span>
-                  <div className="relative mt-1">
-                    <input
-                      ref={endTimeInputRef}
-                      type="time"
-                      value={eventForm.endTime}
-                      onChange={(e) => updateEventForm("endTime", e.target.value)}
-                      onClick={() => openNativePicker(endTimeInputRef)}
-                      className="w-full cursor-pointer rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-violet-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => openNativePicker(endTimeInputRef)}
-                      className="absolute inset-y-0 right-3 flex items-center text-violet-500"
-                      aria-label="Open end time picker"
-                    >
-                      🕒
-                    </button>
-                  </div>
-                </label>
-
-                <label>
-                  <span className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    Priority
-                  </span>
-                  <select
-                    value={eventForm.priority}
-                    onChange={(e) => updateEventForm("priority", e.target.value)}
-                    className="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-violet-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                  >
-                    {PRIORITIES.map((priority) => (
-                      <option key={priority} value={priority}>
-                        {priority}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-950">
-                  <input
-                    type="checkbox"
-                    checked={eventForm.completed}
-                    onChange={(e) => updateEventForm("completed", e.target.checked)}
-                    className="h-4 w-4 accent-violet-600"
-                  />
-                  <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                    Mark as completed
-                  </span>
-                </label>
-
-                <label className="md:col-span-2">
-                  <span className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    Details
-                  </span>
-                  <textarea
-                    value={eventForm.details}
-                    onChange={(e) => updateEventForm("details", e.target.value)}
-                    placeholder="Write details, task notes, room number, reminder note, or any instruction..."
-                    rows={5}
-                    className="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-violet-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                  />
-                </label>
-              </div>
-
-              <div className="flex flex-col-reverse gap-3 border-t border-slate-200 p-5 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  {editingEvent?._id && (
-                    <button
-                      type="button"
-                      onClick={handleDeleteFacultyEvent}
-                      disabled={savingEvent}
-                      className="rounded-2xl border border-rose-200 px-5 py-3 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-500/30 dark:text-rose-300 dark:hover:bg-rose-500/10"
-                    >
-                      Delete
-                    </button>
-                  )}
-                </div>
-
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <button
-                    type="button"
-                    onClick={closeEventModal}
-                    disabled={savingEvent}
-                    className="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={savingEvent}
-                    className="rounded-2xl bg-violet-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {savingEvent
-                      ? "Saving..."
-                      : editingEvent?._id
-                      ? "Update Item"
-                      : "Create Item"}
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
+        <CalendarItemModal
+          mode={modalMode}
+          item={editingEvent}
+          form={eventForm}
+          saving={savingEvent}
+          dateInputRef={dateInputRef}
+          endDateInputRef={endDateInputRef}
+          startTimeInputRef={startTimeInputRef}
+          endTimeInputRef={endTimeInputRef}
+          onChange={updateEventForm}
+          onOpenPicker={openNativePicker}
+          onClose={closeEventModal}
+          onSubmit={handleSaveFacultyEvent}
+          onDelete={handleDeleteFacultyEvent}
+        />
       )}
     </div>
+  );
+}
+
+function CalendarWeek({ days, items, isLast, onCreate, onOpenItem, onOpenAgenda }) {
+  const { visibleSegments, hiddenByDate } = useMemo(
+    () => getWeekLayout(days, items),
+    [days, items]
+  );
+
+  return (
+    <div
+      className={`relative h-[170px] bg-white dark:bg-[#08111f] ${
+        isLast ? "" : "border-b border-slate-200 dark:border-slate-700/70"
+      }`}
+    >
+      <div className="absolute inset-0 grid grid-cols-7">
+        {days.map((day, index) => {
+          const hiddenCount = hiddenByDate[day.iso] || 0;
+
+          return (
+            <button
+              key={day.iso}
+              type="button"
+              onClick={() => onCreate(day.iso)}
+              className={`relative block p-2.5 text-left transition focus:outline-none focus:ring-2 focus:ring-inset focus:ring-violet-500 ${
+                index < 6 ? "border-r border-slate-200 dark:border-slate-700/70" : ""
+              } ${
+                day.inCurrentMonth
+                  ? "bg-white hover:bg-violet-50/45 dark:bg-[#08111f] dark:hover:bg-[#101b2e]"
+                  : "bg-slate-50/65 hover:bg-slate-100 dark:bg-[#060d18] dark:hover:bg-[#0b1424]"
+              }`}
+            >
+              <span
+                className={`absolute left-2.5 top-2.5 z-30 inline-flex h-7 min-w-7 items-center justify-center rounded-full px-1.5 text-xs font-bold ${
+                  day.isToday
+                    ? "bg-violet-600 text-white shadow-sm"
+                    : day.inCurrentMonth
+                    ? "text-slate-800 dark:text-slate-100"
+                    : "text-slate-400 dark:text-slate-600"
+                }`}
+              >
+                {day.date.getDate()}
+              </span>
+
+              {hiddenCount > 0 && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpenAgenda(day.iso);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.stopPropagation();
+                      onOpenAgenda(day.iso);
+                    }
+                  }}
+                  className="absolute bottom-2 left-2 right-2 rounded-lg border border-transparent px-2 py-1 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800/80 dark:hover:text-white"
+                >
+                  +{hiddenCount} more
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <div
+        className="pointer-events-none absolute inset-x-0 z-20 grid grid-cols-7 auto-rows-[27px] gap-y-1"
+        style={{ top: "44px" }}
+      >
+        {visibleSegments.map((segment) => {
+          const style = categoryStyles[segment.type] || categoryStyles.Other;
+          const showTime = segment.startColumn === segment.endColumn && segment.startTime;
+
+          return (
+            <button
+              key={`${segment.id}-${days[0].iso}`}
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpenItem(segment);
+              }}
+              className={`pointer-events-auto mx-1 flex min-w-0 items-center gap-1.5 overflow-hidden border px-2 py-1 text-left text-[11px] font-semibold leading-none shadow-[0_1px_1px_rgba(15,23,42,0.04)] transition hover:-translate-y-px hover:brightness-[1.04] hover:shadow-sm dark:shadow-[0_5px_16px_rgba(0,0,0,0.22)] dark:hover:brightness-110 ${style} ${
+                segment.startsBeforeWeek ? "rounded-l-sm" : "rounded-l-lg"
+              } ${segment.endsAfterWeek ? "rounded-r-sm" : "rounded-r-lg"}`}
+              style={{
+                gridColumn: `${segment.startColumn + 1} / span ${segment.span}`,
+                gridRow: segment.lane + 1,
+              }}
+              title={`${segment.title}\n${formatRange(segment)}${
+                segment.details ? `\n${segment.details}` : ""
+              }`}
+            >
+              <span
+                className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                  typeDotStyles[segment.type] || typeDotStyles.Other
+                }`}
+              />
+              {showTime && (
+                <span className="shrink-0 font-medium opacity-75">
+                  {formatClock(segment.startTime)}
+                </span>
+              )}
+              <span className="truncate">{segment.title}</span>
+              {segment.visibility === "university" && segment.source === "faculty" && (
+                <UniversityIcon className="ml-auto h-3 w-3 shrink-0 opacity-70" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DayAgendaModal({ date, items, onClose, onCreate, onOpenItem }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
+      <div className="max-h-[88vh] w-full max-w-xl overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-5 dark:border-slate-800">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-violet-600 dark:text-violet-300">
+              Day schedule
+            </p>
+            <h3 className="mt-1 text-xl font-bold text-slate-950 dark:text-white">
+              {formatFriendlyDate(date, { includeYear: true })}
+            </h3>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              {items.length} {items.length === 1 ? "item" : "items"}
+            </p>
+          </div>
+          <IconButton label="Close" onClick={onClose}>
+            <CloseIcon />
+          </IconButton>
+        </div>
+
+        <div className="max-h-[60vh] space-y-2 overflow-y-auto p-5">
+          {items.length === 0 ? (
+            <EmptyState text="Nothing is scheduled for this day." />
+          ) : (
+            items.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onOpenItem(item)}
+                className="flex w-full items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-violet-300 hover:bg-violet-50/40 dark:border-slate-700 dark:bg-slate-950 dark:hover:border-violet-500/40 dark:hover:bg-violet-500/5"
+              >
+                <span
+                  className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
+                    typeDotStyles[item.type] || typeDotStyles.Other
+                  }`}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-slate-900 dark:text-white">
+                      {item.title}
+                    </span>
+                    {item.visibility === "university" && item.source === "faculty" && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 dark:bg-blue-500/10 dark:text-blue-200">
+                        <UniversityIcon className="h-3 w-3" /> All teachers
+                      </span>
+                    )}
+                  </span>
+                  <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
+                    {item.startTime ? formatClock(item.startTime) : "All day"} · {item.type}
+                  </span>
+                  {item.details && (
+                    <span className="mt-1 line-clamp-2 block text-xs leading-5 text-slate-500 dark:text-slate-400">
+                      {item.details}
+                    </span>
+                  )}
+                </span>
+                <ChevronRightIcon className="mt-1 h-4 w-4 shrink-0 text-slate-400" />
+              </button>
+            ))
+          )}
+        </div>
+
+        <div className="flex justify-end gap-3 border-t border-slate-200 p-5 dark:border-slate-800">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-2xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            Close
+          </button>
+          <button
+            type="button"
+            onClick={onCreate}
+            className="inline-flex items-center gap-2 rounded-2xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700"
+          >
+            <PlusIcon /> Add item
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CalendarItemModal({
+  mode,
+  item,
+  form,
+  saving,
+  dateInputRef,
+  endDateInputRef,
+  startTimeInputRef,
+  endTimeInputRef,
+  onChange,
+  onOpenPicker,
+  onClose,
+  onSubmit,
+  onDelete,
+}) {
+  const readOnly = mode === "view";
+  const isOfficial = item?.source === "academic";
+  const heading =
+    mode === "create"
+      ? "Create calendar item"
+      : mode === "edit"
+      ? "Update calendar item"
+      : "Calendar item details";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[30px] border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+        <form onSubmit={onSubmit}>
+          <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-5 dark:border-slate-800 sm:p-6">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-violet-600 dark:text-violet-300">
+                  {isOfficial
+                    ? "Official academic calendar"
+                    : form.visibility === "university"
+                    ? "University teacher calendar"
+                    : "Personal teacher calendar"}
+                </p>
+                {readOnly && (
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                    Read only
+                  </span>
+                )}
+              </div>
+              <h3 className="mt-1 text-xl font-bold text-slate-950 dark:text-white sm:text-2xl">
+                {heading}
+              </h3>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                {readOnly
+                  ? item?.creatorName
+                    ? `Created by ${item.creatorName}`
+                    : "Review the schedule details below."
+                  : "Add a task, examination or event with an optional date range and time."}
+              </p>
+            </div>
+            <IconButton label="Close" onClick={onClose}>
+              <CloseIcon />
+            </IconButton>
+          </div>
+
+          <div className="space-y-5 p-5 sm:p-6">
+            <label className="block">
+              <FieldLabel>Title</FieldLabel>
+              <input
+                value={form.title}
+                onChange={(event) => onChange("title", event.target.value)}
+                disabled={readOnly}
+                placeholder="Example: Submit question paper / Department meeting"
+                className="mt-1.5 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10 disabled:cursor-default disabled:bg-slate-50 disabled:text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:disabled:bg-slate-950 dark:disabled:text-slate-200"
+              />
+            </label>
+
+            <div>
+              <FieldLabel>Type</FieldLabel>
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                {FACULTY_EVENT_TYPES.map((type) => {
+                  const selected = form.type === type;
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      disabled={readOnly}
+                      onClick={() => onChange("type", type)}
+                      className={`flex items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-sm font-semibold transition disabled:cursor-default ${
+                        selected
+                          ? categoryStyles[type]
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800"
+                      }`}
+                    >
+                      <span className={`h-2 w-2 rounded-full ${typeDotStyles[type]}`} />
+                      {type}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <PickerField
+                label="Start date"
+                type="date"
+                value={form.date}
+                inputRef={dateInputRef}
+                disabled={readOnly}
+                onChange={(value) => onChange("date", value)}
+                onOpen={() => onOpenPicker(dateInputRef)}
+                icon={<CalendarSmallIcon />}
+              />
+              <PickerField
+                label="End date"
+                type="date"
+                value={form.endDate}
+                min={form.date}
+                inputRef={endDateInputRef}
+                disabled={readOnly}
+                onChange={(value) => onChange("endDate", value)}
+                onOpen={() => onOpenPicker(endDateInputRef)}
+                icon={<CalendarSmallIcon />}
+              />
+              <PickerField
+                label="Start time (optional)"
+                type="time"
+                value={form.startTime}
+                inputRef={startTimeInputRef}
+                disabled={readOnly}
+                onChange={(value) => onChange("startTime", value)}
+                onOpen={() => onOpenPicker(startTimeInputRef)}
+                icon={<ClockIcon />}
+              />
+              <PickerField
+                label="End time (optional)"
+                type="time"
+                value={form.endTime}
+                inputRef={endTimeInputRef}
+                disabled={readOnly}
+                onChange={(value) => onChange("endTime", value)}
+                onOpen={() => onOpenPicker(endTimeInputRef)}
+                icon={<ClockIcon />}
+              />
+            </div>
+
+            {!isOfficial && (
+              <div>
+                <FieldLabel>Visibility</FieldLabel>
+                <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                  {VISIBILITY_OPTIONS.map((option) => {
+                    const selected = form.visibility === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        disabled={readOnly}
+                        onClick={() => onChange("visibility", option.value)}
+                        className={`rounded-2xl border p-4 text-left transition disabled:cursor-default ${
+                          selected
+                            ? "border-violet-300 bg-violet-50 ring-4 ring-violet-500/5 dark:border-violet-500/40 dark:bg-violet-500/10"
+                            : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:hover:bg-slate-800"
+                        }`}
+                      >
+                        <span className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+                          {option.value === "university" ? <UniversityIcon /> : <LockIcon />}
+                          {option.title}
+                        </span>
+                        <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400">
+                          {option.description}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <label className="block">
+              <FieldLabel>Details</FieldLabel>
+              <textarea
+                value={form.details}
+                onChange={(event) => onChange("details", event.target.value)}
+                disabled={readOnly}
+                placeholder="Add room number, instructions, preparation notes or other useful details..."
+                rows={4}
+                className="mt-1.5 w-full resize-y rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10 disabled:cursor-default disabled:bg-slate-50 disabled:text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:disabled:bg-slate-950 dark:disabled:text-slate-200"
+              />
+            </label>
+          </div>
+
+          <div className="flex flex-col-reverse gap-3 border-t border-slate-200 p-5 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+            <div>
+              {mode === "edit" && (
+                <button
+                  type="button"
+                  onClick={onDelete}
+                  disabled={saving}
+                  className="rounded-2xl border border-rose-200 px-4 py-2.5 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-60 dark:border-rose-500/30 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                >
+                  Delete item
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={saving}
+                className="rounded-2xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                {readOnly ? "Close" : "Cancel"}
+              </button>
+              {!readOnly && (
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {saving && (
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                  )}
+                  {saving ? "Saving..." : mode === "edit" ? "Save changes" : "Create item"}
+                </button>
+              )}
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function PickerField({
+  label,
+  type,
+  value,
+  min,
+  inputRef,
+  disabled,
+  onChange,
+  onOpen,
+  icon,
+}) {
+  return (
+    <label className="block">
+      <FieldLabel>{label}</FieldLabel>
+      <div className="relative mt-1.5">
+        <input
+          ref={inputRef}
+          type={type}
+          min={min}
+          value={value}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.value)}
+          onClick={() => !disabled && onOpen()}
+          className="w-full cursor-pointer rounded-2xl border border-slate-200 bg-white px-4 py-3 pr-11 text-sm font-medium text-slate-900 outline-none transition focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10 disabled:cursor-default disabled:bg-slate-50 disabled:text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:[color-scheme:dark] dark:disabled:bg-slate-950 dark:disabled:text-slate-200"
+        />
+        {!disabled && (
+          <button
+            type="button"
+            onClick={onOpen}
+            className="absolute inset-y-0 right-3 flex items-center text-slate-400 transition hover:text-violet-600 dark:hover:text-violet-300"
+            aria-label={`Open ${label.toLowerCase()} picker`}
+          >
+            {icon}
+          </button>
+        )}
+      </div>
+    </label>
+  );
+}
+
+function SearchField({ value, onChange, compact = false }) {
+  return (
+    <label className={`relative block w-full ${compact ? "md:w-64" : "xl:w-72"}`}>
+      <SearchIcon />
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Search calendar..."
+        className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+      />
+    </label>
+  );
+}
+
+function LegendItem({ type, label }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={`h-2 w-2 rounded-full ${typeDotStyles[type]}`} />
+      {label}
+    </span>
+  );
+}
+
+function FieldLabel({ children }) {
+  return (
+    <span className="text-xs font-bold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">
+      {children}
+    </span>
+  );
+}
+
+function EmptyState({ text }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-950/50 dark:text-slate-400">
+      <CalendarSmallIcon className="mx-auto mb-3 h-6 w-6 text-slate-400" />
+      {text}
+    </div>
+  );
+}
+
+function IconButton({ label, onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 text-slate-500 transition hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+      aria-label={label}
+      title={label}
+    >
+      {children}
+    </button>
+  );
+}
+
+function CalendarSmallIcon({ className = "h-4 w-4" }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M16 3v4M8 3v4M3 10h18" />
+    </svg>
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.97 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3v-4h.08A1.7 1.7 0 0 0 4.6 8.94a1.7 1.7 0 0 0-.34-1.88L4.2 7l2.83-2.83.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 10 3.01V3h4v.08a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06L19.8 7l-.06.06a1.7 1.7 0 0 0-.34 1.88A1.7 1.7 0 0 0 20.96 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15z" />
+    </svg>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </svg>
+  );
+}
+
+function ChevronLeftIcon({ className = "h-4 w-4" }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="m15 18-6-6 6-6" />
+    </svg>
+  );
+}
+
+function ChevronRightIcon({ className = "h-4 w-4" }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="m9 18 6-6-6-6" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M6 6l12 12M18 6 6 18" />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+function UniversityIcon({ className = "h-4 w-4" }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="m3 10 9-5 9 5-9 5-9-5z" />
+      <path d="M5 12v6M9 14v4M15 14v4M19 12v6M3 20h18" />
+    </svg>
+  );
+}
+
+function LockIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="5" y="10" width="14" height="10" rx="2" />
+      <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+    </svg>
   );
 }

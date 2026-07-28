@@ -4,6 +4,17 @@ import { fetchTeacherCourses } from "../services/courseService";
 import { fetchTeacherComplaints } from "../services/complaintService";
 import { getTeacherCounsellingBookings } from "../services/routineService";
 import { getAuthItem } from "../utils/authStorage";
+import { academicCalendarService } from "../services/academicCalendarService";
+import {
+  addDays,
+  formatClock,
+  formatFriendlyDate,
+  isoFromDate,
+  normalizeFacultyType,
+  parseAcademicDateRange,
+  relativeDayLabel,
+  toDateInput,
+} from "../utils/calendarUtils";
 
 function getCounsellingRequestText(request = {}) {
   const course = request.course || request.student?.course || {};
@@ -23,6 +34,91 @@ function getCounsellingRequestText(request = {}) {
     : "";
 
   return `${studentText}${academicText ? ` · ${academicText}` : ""} requested ${request.date || "a counselling date"}${timeText}.`;
+}
+
+function buildUpcomingSchedule(calendar, facultyEvents, startDate, endDate) {
+  const officialItems = (calendar?.events || [])
+    .map((event, index) => {
+      const range = parseAcademicDateRange(event.dateText);
+      if (!range) return null;
+
+      const rangeStart = isoFromDate(range.start);
+      const rangeEnd = isoFromDate(range.end);
+      if (rangeEnd < startDate || rangeStart > endDate) return null;
+
+      return {
+        id: `academic-${event._id || index}`,
+        source: "academic",
+        title: event.title,
+        type: event.category || "Event",
+        startDate: rangeStart,
+        endDate: rangeEnd,
+        displayDate: rangeStart < startDate ? startDate : rangeStart,
+        startTime: "",
+        visibility: "university",
+      };
+    })
+    .filter(Boolean);
+
+  const teacherItems = (facultyEvents || [])
+    .map((event) => {
+      const eventStart = toDateInput(event.date);
+      if (!eventStart) return null;
+      const eventEnd = toDateInput(event.endDate) || eventStart;
+
+      return {
+        id: event._id,
+        source: "faculty",
+        title: event.title,
+        type: normalizeFacultyType(event.type),
+        startDate: eventStart,
+        endDate: eventEnd,
+        displayDate: eventStart < startDate ? startDate : eventStart,
+        startTime: event.startTime || "",
+        visibility: event.visibility || "personal",
+      };
+    })
+    .filter(Boolean);
+
+  return [...officialItems, ...teacherItems]
+    .sort((a, b) => {
+      if (a.displayDate !== b.displayDate) return a.displayDate.localeCompare(b.displayDate);
+      const aTime = a.startTime || "99:99";
+      const bTime = b.startTime || "99:99";
+      if (aTime !== bTime) return aTime.localeCompare(bTime);
+      return a.title.localeCompare(b.title);
+    })
+    .slice(0, 5);
+}
+
+function getScheduleTimingLabel(item, now = new Date()) {
+  const fallback = relativeDayLabel(item.displayDate, now);
+  if (item.displayDate !== isoFromDate(now) || !item.startTime) return fallback;
+
+  const [startHour, startMinute] = item.startTime.split(":").map(Number);
+  if (!Number.isFinite(startHour) || !Number.isFinite(startMinute)) return fallback;
+
+  const start = new Date(now);
+  start.setHours(startHour, startMinute, 0, 0);
+  const minutesUntil = Math.round((start.getTime() - now.getTime()) / 60000);
+
+  if (item.endTime) {
+    const [endHour, endMinute] = item.endTime.split(":").map(Number);
+    const end = new Date(now);
+    end.setHours(endHour, endMinute, 0, 0);
+    if (now >= start && now <= end) return "Happening now";
+  }
+
+  if (minutesUntil >= 0 && minutesUntil < 60) {
+    return minutesUntil <= 1 ? "Starting now" : `In ${minutesUntil} min`;
+  }
+
+  if (minutesUntil >= 60 && minutesUntil <= 360) {
+    const hours = Math.round(minutesUntil / 60);
+    return `In ${hours} ${hours === 1 ? "hour" : "hours"}`;
+  }
+
+  return fallback;
 }
 
 export default function TeacherDashboard() {
@@ -50,6 +146,7 @@ useEffect(() => {
   const [pendingComplaintsCount, setPendingComplaintsCount] = useState(0);
   const [pendingCounsellingCount, setPendingCounsellingCount] = useState(0);
   const [latestCounsellingRequest, setLatestCounsellingRequest] = useState(null);
+  const [upcomingSchedule, setUpcomingSchedule] = useState([]);
 
   useEffect(() => {
 if (role !== "teacher") return;
@@ -57,10 +154,19 @@ if (role !== "teacher") return;
     const loadStats = async () => {
       setStatsLoading(true);
       try {
-        const [courses, complaints, counsellingData] = await Promise.all([
+        const today = new Date();
+        const upcomingStartDate = isoFromDate(today);
+        const upcomingEndDate = isoFromDate(addDays(today, 3));
+
+        const [courses, complaints, counsellingData, facultyCalendarData, academicCalendarData] = await Promise.all([
           fetchTeacherCourses(),
           fetchTeacherComplaints(),
           getTeacherCounsellingBookings(),
+          academicCalendarService.getFacultyEvents({
+            startDate: upcomingStartDate,
+            endDate: upcomingEndDate,
+          }),
+          academicCalendarService.getLatest(),
         ]);
 
         setCoursesCount(Array.isArray(courses) ? courses.length : 0);
@@ -80,12 +186,21 @@ if (role !== "teacher") return;
         setPendingComplaintsCount(pendingComplaints);
         setPendingCounsellingCount(pendingCounselling.length);
         setLatestCounsellingRequest(pendingCounselling[0] || null);
+        setUpcomingSchedule(
+          buildUpcomingSchedule(
+            academicCalendarData?.calendar,
+            facultyCalendarData?.events || [],
+            upcomingStartDate,
+            upcomingEndDate
+          )
+        );
       } catch (err) {
         console.error("Dashboard stats error:", err);
         setCoursesCount(0);
         setPendingComplaintsCount(0);
         setPendingCounsellingCount(0);
         setLatestCounsellingRequest(null);
+        setUpcomingSchedule([]);
       } finally {
         setStatsLoading(false);
       }
@@ -147,6 +262,13 @@ if (role !== "teacher") return;
             accent="indigo"
           />
         </div>
+
+        <UpcomingScheduleCard
+          items={upcomingSchedule}
+          loading={statsLoading}
+          compact
+          onOpenCalendar={() => navigate("/academic-calendar")}
+        />
       </section>
 
       <div className="hidden space-y-5 md:block md:space-y-6">
@@ -236,51 +358,12 @@ if (role !== "teacher") return;
         </section>
       )}
 
-      {/* Hero overview */}
-      <section className="relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-gradient-to-br from-white via-violet-50/60 to-sky-50/70 shadow-sm dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-slate-950">
-        <div className="pointer-events-none absolute -top-16 right-0 h-44 w-44 rounded-full bg-violet-300/20 blur-3xl dark:bg-violet-500/10" />
-        <div className="pointer-events-none absolute -bottom-16 left-0 h-44 w-44 rounded-full bg-sky-300/20 blur-3xl dark:bg-sky-500/10" />
-
-        <div className="relative p-4 sm:p-6 lg:p-8">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="min-w-0">
-              <div className="inline-flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-[11px] font-semibold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
-                <SparkIcon />
-                BUBT Marks Portal • Teacher Panel
-              </div>
-
-              <h2 className="mt-4 text-xl font-semibold text-slate-900 dark:text-white sm:text-2xl">
-                Quick Actions & Overview
-              </h2>
-
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-                Create courses, manage students and assessments, take daily
-                attendance, and handle complaints from one dashboard.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-              <MiniActionButton
-                label="Open Courses"
-                primary
-                onClick={() => navigate("/teacher/courses")}
-              />
-              <MiniActionButton
-                label="Open Attendance"
-                onClick={() => navigate("/teacher/attendance")}
-              />
-              <MiniActionButton
-                label="Attendance Sheet"
-                onClick={() => navigate("/teacher/attendance-sheet")}
-              />
-              <MiniActionButton
-                label="View Complaints"
-                onClick={() => navigate("/teacher/complaints")}
-              />
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* Upcoming tasks and events */}
+      <UpcomingScheduleCard
+        items={upcomingSchedule}
+        loading={statsLoading}
+        onOpenCalendar={() => navigate("/academic-calendar")}
+      />
 
       {/* Stats */}
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -360,6 +443,103 @@ if (role !== "teacher") return;
   );
 }
 
+function UpcomingScheduleCard({ items, loading, onOpenCalendar, compact = false }) {
+  const typeStyles = {
+    Task: "bg-emerald-500",
+    Exam: "bg-amber-500",
+    Event: "bg-blue-500",
+    Holiday: "bg-rose-500",
+    Class: "bg-violet-500",
+    Other: "bg-slate-500",
+  };
+
+  return (
+    <section className={`relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 ${compact ? "p-4" : "p-5 sm:p-6"}`}>
+      <div className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-violet-200/35 blur-3xl dark:bg-violet-500/10" />
+      <div className="relative">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-violet-600 dark:text-violet-300">
+              <CalendarIcon />
+              Upcoming schedule
+            </div>
+            <h2 className={`${compact ? "mt-1 text-lg" : "mt-2 text-xl sm:text-2xl"} font-bold tracking-tight text-slate-950 dark:text-white`}>
+              Tasks and events near you
+            </h2>
+            {!compact && (
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Items scheduled for today and the next three days.
+              </p>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={onOpenCalendar}
+            className="inline-flex shrink-0 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-700 transition hover:border-violet-300 hover:bg-violet-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-violet-500/40 dark:hover:bg-violet-500/10"
+          >
+            Calendar
+            <ArrowIcon />
+          </button>
+        </div>
+
+        <div className={`${compact ? "mt-4" : "mt-5"} grid gap-2 ${compact ? "grid-cols-1" : "lg:grid-cols-2"}`}>
+          {loading ? (
+            Array.from({ length: compact ? 2 : 4 }, (_, index) => (
+              <div key={index} className="h-[74px] animate-pulse rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950" />
+            ))
+          ) : items.length === 0 ? (
+            <div className={`${compact ? "" : "lg:col-span-2"} rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 p-5 text-center dark:border-slate-700 dark:bg-slate-950/60`}>
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">No urgent calendar items</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                Your next three days are currently clear.
+              </p>
+            </div>
+          ) : (
+            items.slice(0, compact ? 3 : 4).map((item) => {
+              const relativeDate = getScheduleTimingLabel(item);
+              const isRange = item.startDate !== item.endDate;
+              const type = item.type || "Other";
+
+              return (
+                <button
+                  key={`${item.source}-${item.id}`}
+                  type="button"
+                  onClick={onOpenCalendar}
+                  className="group flex w-full items-start gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 text-left transition hover:border-violet-300 hover:bg-violet-50/45 dark:border-slate-700 dark:bg-slate-950 dark:hover:border-violet-500/40 dark:hover:bg-violet-500/5"
+                  title={`${formatFriendlyDate(item.startDate, { includeYear: true })}${isRange ? ` – ${formatFriendlyDate(item.endDate, { includeYear: true })}` : ""}`}
+                >
+                  <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${typeStyles[type] || typeStyles.Other}`} />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="truncate text-sm font-semibold text-slate-900 dark:text-white">
+                        {item.title}
+                      </span>
+                      {item.visibility === "university" && item.source === "faculty" && (
+                        <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 dark:bg-blue-500/10 dark:text-blue-200">
+                          All teachers
+                        </span>
+                      )}
+                    </span>
+                    <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">{relativeDate}</span>
+                      {item.startTime ? ` · ${formatClock(item.startTime)}` : " · All day"}
+                      {isRange ? ` · Until ${formatFriendlyDate(item.endDate)}` : ""}
+                    </span>
+                  </span>
+                  <span className="mt-1 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-violet-500 dark:text-slate-600">
+                    <ArrowIcon />
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function MobileCountCard({ title, value, icon, accent = "violet" }) {
   const accentMap = {
     violet: "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300",
@@ -417,23 +597,6 @@ function QuickButton({ label, icon, onClick, primary = false }) {
     >
       {icon}
       <span>{label}</span>
-    </button>
-  );
-}
-
-function MiniActionButton({ label, onClick, primary = false }) {
-  return (
-    <button
-      onClick={onClick}
-      type="button"
-      className={[
-        "inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold transition",
-        primary
-          ? "bg-slate-900 text-white hover:bg-slate-800 dark:bg-violet-600 dark:hover:bg-violet-700"
-          : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:bg-slate-800",
-      ].join(" ")}
-    >
-      {label}
     </button>
   );
 }
@@ -513,6 +676,21 @@ function ActionCard({ title, desc, buttonText, onClick, icon, accent }) {
 
 /* ---------- Icons ---------- */
 
+function CalendarIcon() {
+  return (
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M16 3v4M8 3v4M3 10h18" />
+    </svg>
+  );
+}
+
 function PlusIcon() {
   return (
     <svg
@@ -537,20 +715,6 @@ function ArrowIcon() {
       strokeWidth="2"
     >
       <path d="M5 12h14M13 5l7 7-7 7" />
-    </svg>
-  );
-}
-
-function SparkIcon() {
-  return (
-    <svg
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M12 2l1.5 5L19 9l-5.5 2L12 16l-1.5-5L5 9l5.5-2L12 2z" />
     </svg>
   );
 }
@@ -611,21 +775,6 @@ function MessageIcon() {
     >
       <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
       <path d="M8 9h8M8 13h5" />
-    </svg>
-  );
-}
-
-function UserIcon() {
-  return (
-    <svg
-      className="h-5 w-5"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M20 21a8 8 0 0 0-16 0" />
-      <path d="M12 11a4 4 0 1 0-4-4 4 4 0 0 0 4 4z" />
     </svg>
   );
 }
