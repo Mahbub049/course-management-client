@@ -37,6 +37,8 @@ function App() {
 
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/routine-reference" element={<PublicRoutineReferencePage />} />
+      <Route path="/submit" element={<PublicSubmissionPage useDefaultPortal />} />
+      <Route path="/submit/:token" element={<PublicSubmissionPage />} />
       <Route path="/:token" element={<PublicSubmissionPage />} />
       <Route path="/public-submission/:token" element={<PublicSubmissionPage />} />
 

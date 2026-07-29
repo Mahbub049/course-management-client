@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import Swal from "sweetalert2";
 import SmartFileActions from "../components/SmartFileActions";
 import {
+  fetchCurrentPublicSubmissionPage,
   fetchPublicSubmissionPage,
   submitPublicLabAssessmentFile,
   verifyPublicSubmissionRoll,
@@ -105,8 +106,9 @@ function PublicBadge({ children, className = "" }) {
   );
 }
 
-export default function PublicSubmissionPage() {
-  const { token } = useParams();
+export default function PublicSubmissionPage({ useDefaultPortal = false }) {
+  const { token: routeToken } = useParams();
+  const [resolvedToken, setResolvedToken] = useState(routeToken || "");
   const [loading, setLoading] = useState(true);
   const [pageData, setPageData] = useState(null);
   const [roll, setRoll] = useState("");
@@ -152,17 +154,24 @@ export default function PublicSubmissionPage() {
 
   const loadPage = async () => {
     setLoading(true);
+    setStudent(null);
     try {
-      const data = await fetchPublicSubmissionPage(token);
+      const data = useDefaultPortal
+        ? await fetchCurrentPublicSubmissionPage()
+        : await fetchPublicSubmissionPage(routeToken);
+
       setPageData(data);
+      setResolvedToken(data?.link?.token || routeToken || "");
       setAssessments(Array.isArray(data?.assessments) ? data.assessments : []);
     } catch (err) {
       console.error(err);
+      setResolvedToken("");
       setPageData({
         error:
           err?.response?.data?.message ||
           "This public submission page is not available right now.",
       });
+      setAssessments([]);
     } finally {
       setLoading(false);
     }
@@ -170,7 +179,7 @@ export default function PublicSubmissionPage() {
 
   useEffect(() => {
     loadPage();
-  }, [token]);
+  }, [routeToken, useDefaultPortal]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -186,9 +195,14 @@ export default function PublicSubmissionPage() {
       return;
     }
 
+    if (!resolvedToken) {
+      Swal.fire("Unavailable", "No submission course is currently selected for /submit.", "warning");
+      return;
+    }
+
     setVerifying(true);
     try {
-      const data = await verifyPublicSubmissionRoll(token, cleanRoll);
+      const data = await verifyPublicSubmissionRoll(resolvedToken, cleanRoll);
       setStudent(data?.student || null);
       setAssessments(Array.isArray(data?.assessments) ? data.assessments : []);
     } catch (err) {
@@ -205,8 +219,8 @@ export default function PublicSubmissionPage() {
   };
 
   const refreshVerifiedRoll = async () => {
-    if (!student?.roll) return;
-    const data = await verifyPublicSubmissionRoll(token, student.roll);
+    if (!student?.roll || !resolvedToken) return;
+    const data = await verifyPublicSubmissionRoll(resolvedToken, student.roll);
     setStudent(data?.student || null);
     setAssessments(Array.isArray(data?.assessments) ? data.assessments : []);
   };
@@ -264,7 +278,7 @@ export default function PublicSubmissionPage() {
     setUploadingId(assessment.id);
     try {
       await submitPublicLabAssessmentFile({
-        token,
+        token: resolvedToken,
         assessmentId: assessment.id,
         roll: student.roll,
         file,
@@ -308,6 +322,12 @@ export default function PublicSubmissionPage() {
           <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
             {pageData.error}
           </p>
+          <Link
+            to={useDefaultPortal ? "/login" : "/submit"}
+            className="mt-5 inline-flex rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-indigo-700"
+          >
+            {useDefaultPortal ? "Portal Login" : "Open Main Submission Page"}
+          </Link>
         </div>
       </div>
     );
@@ -315,7 +335,17 @@ export default function PublicSubmissionPage() {
 
   return (
     <div className="min-h-screen bg-slate-100 px-4 py-6 dark:bg-slate-950 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl space-y-6">
+      <div className="mx-auto max-w-6xl space-y-4">
+        {!useDefaultPortal ? (
+          <Link
+            to="/submit"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-indigo-300 hover:text-indigo-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-indigo-500/40 dark:hover:text-indigo-300"
+          >
+            <span aria-hidden="true">←</span>
+            Main Submission Page
+          </Link>
+        ) : null}
+
         <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="bg-gradient-to-br from-indigo-600 via-slate-900 to-emerald-700 px-6 py-8 text-white sm:px-8">
             <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">

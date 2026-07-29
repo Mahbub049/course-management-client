@@ -188,6 +188,16 @@ export const updateTeacherPublicSubmissionLink = async (courseId, payload) => {
   return res.data;
 };
 
+export const fetchPublicSubmissionPortal = async () => {
+  const res = await api.get(`/public-lab-submissions/portal`);
+  return res.data;
+};
+
+export const fetchCurrentPublicSubmissionPage = async () => {
+  const res = await api.get(`/public-lab-submissions/current`);
+  return res.data;
+};
+
 export const fetchPublicSubmissionPage = async (token) => {
   const res = await api.get(`/public-lab-submissions/${token}`);
   return res.data;

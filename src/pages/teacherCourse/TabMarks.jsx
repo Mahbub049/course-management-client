@@ -23,6 +23,7 @@ import { getObeBlueprints, getObeSetup } from "../../services/obeService";
 import {
   chooseDefaultMarksSheet,
   importCategory,
+  inspectMarksSheet,
   normalizeImportLabel,
   parseMarksSheet,
   parseMarksWorkbook,
@@ -908,7 +909,7 @@ function isExistingImportTargetFilled(target, marksMap, studentId) {
 }
 
 function suggestedCreateFullMarks(column) {
-  const fullMarks = Number(column?.maxMarks);
+  const fullMarks = Number(column?.maxMarks ?? column?.suggestedFullMarks);
   if (Number.isFinite(fullMarks) && fullMarks > 0) return fullMarks;
 
   const defaults = {
@@ -1378,6 +1379,12 @@ function MarksExcelImportModal({
   onCreateConfigChange,
   showAllColumns,
   setShowAllColumns,
+  sheetInspection,
+  sheetSetup,
+  setupOpen,
+  setSetupOpen,
+  onSheetSetupChange,
+  onApplySheetSetup,
   importPolicy,
   setImportPolicy,
   onAutoMatch,
@@ -1403,6 +1410,14 @@ function MarksExcelImportModal({
     (value) => value === "create"
   ).length;
   const ignoredCount = Math.max(0, columns.length - mappedCount - createCount);
+  const hasSelectedHeaderRow =
+    sheetSetup?.headerRow !== "" && Number.isInteger(Number(sheetSetup?.headerRow));
+  const selectedRollColumn = (sheetInspection?.columns || []).find(
+    (item) => Number(item.value) === Number(sheetSetup?.rollCol)
+  );
+  const selectedNameColumn = (sheetInspection?.columns || []).find(
+    (item) => Number(item.value) === Number(sheetSetup?.nameCol)
+  );
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:p-5">
@@ -1472,6 +1487,55 @@ function MarksExcelImportModal({
             </div>
           </div>
 
+          <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800/35">
+            <div className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <div className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-500">Detected sheet structure</div>
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                  <span>Header row: {hasSelectedHeaderRow ? Number(sheetSetup.headerRow) + 1 : "Not selected"}</span>
+                  <span>Student ID: {selectedRollColumn?.label || "Not selected"}</span>
+                  <span>Name: {Number(sheetSetup?.nameCol) >= 0 ? selectedNameColumn?.label || "Not selected" : "Optional / not used"}</span>
+                  {!preview?.error && <span>{columns.length} mark column(s) detected</span>}
+                </div>
+              </div>
+              <button type="button" onClick={() => setSetupOpen(!setupOpen)} className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-slate-50 px-3.5 text-xs font-bold text-slate-700 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-indigo-500/40 dark:hover:bg-indigo-500/10 dark:hover:text-indigo-300">
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 7h10M18 7h2M4 12h4M12 12h8M4 17h8M16 17h4" strokeLinecap="round"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="14" cy="17" r="2"/></svg>
+                {setupOpen ? "Hide setup" : "Adjust detection"}
+              </button>
+            </div>
+
+            {setupOpen && (
+              <div className="border-t border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-900/45">
+                <div className="grid gap-3 md:grid-cols-3">
+                  <label className="block">
+                    <span className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Header row</span>
+                    <select value={sheetSetup?.headerRow ?? ""} onChange={(e) => onSheetSetupChange("headerRow", e.target.value)} className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100">
+                      {(sheetInspection?.headerRows || []).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Student ID / Roll column</span>
+                    <select value={sheetSetup?.rollCol ?? ""} onChange={(e) => onSheetSetupChange("rollCol", e.target.value)} className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100">
+                      <option value="">Select ID column</option>
+                      {(sheetInspection?.columns || []).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Student name column</span>
+                    <select value={sheetSetup?.nameCol ?? -1} onChange={(e) => onSheetSetupChange("nameCol", e.target.value)} className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100">
+                      <option value={-1}>No name column / match by ID only</option>
+                      {(sheetInspection?.columns || []).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                    </select>
+                  </label>
+                </div>
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-[11px] leading-5 text-slate-500 dark:text-slate-400">Use this when a workbook has title rows, unusual headers, or different Student ID/Name column names. Applying it re-detects every remaining Excel column for manual mapping.</p>
+                  <button type="button" onClick={onApplySheetSetup} disabled={busy || sheetSetup?.rollCol === "" || sheetSetup?.rollCol == null} className="inline-flex h-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 px-4 text-xs font-extrabold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">Apply & detect columns</button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {preview?.error ? (
             <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300">{preview.error}</div>
           ) : (
@@ -1482,14 +1546,14 @@ function MarksExcelImportModal({
                     <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M7 7h10M7 12h7M7 17h4" strokeLinecap="round"/><path d="M17 14l2 2 3-4" strokeLinecap="round" strokeLinejoin="round"/></svg>
                     Auto Match
                   </button>
-                  <button type="button" onClick={onCreateRecommended} className="inline-flex h-9 items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/15">
+                  <button type="button" onClick={onCreateRecommended} title="Prepare detected mark columns as new assessments" className="inline-flex h-9 items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/15">
                     <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 5v14M5 12h14" strokeLinecap="round"/></svg>
-                    Create Missing
+                    Create Detected
                   </button>
                 </div>
                 <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
                   <input type="checkbox" checked={showAllColumns} onChange={(e) => setShowAllColumns(e.target.checked)} className="h-4 w-4 accent-indigo-500" />
-                  Show detailed CO / Lab columns
+                  Show every detected Excel column
                 </label>
               </div>
 
@@ -1504,28 +1568,36 @@ function MarksExcelImportModal({
                       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,.9fr)] lg:items-center">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-lg bg-slate-100 px-2 text-[10px] font-black text-slate-500 dark:bg-slate-700 dark:text-slate-300">{index + 1}</span>
-                            <div className="truncate text-sm font-extrabold text-slate-900 dark:text-white" title={column.sourceLabel}>{column.sourceLabel}</div>
-                            {column.recommended && <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[9px] font-extrabold uppercase tracking-wide text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">Recommended</span>}
+                            <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-lg bg-slate-100 px-2 text-[10px] font-black text-slate-500 dark:bg-slate-700 dark:text-slate-300">{column.letter || index + 1}</span>
+                            <div className="min-w-0 truncate text-sm font-extrabold text-slate-900 dark:text-white" title={column.sourceLabel}>{column.sourceLabel}</div>
+                            {column.recommended && <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[9px] font-extrabold uppercase tracking-wide text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">Detected marks</span>}
                           </div>
                           <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
-                            <span className="rounded-lg bg-slate-100 px-2 py-1 dark:bg-slate-700/70">{String(column.category || "other").replace(/_/g, " ")}</span>
-                            <span className="rounded-lg bg-slate-100 px-2 py-1 dark:bg-slate-700/70">Detected max: <strong className="text-slate-700 dark:text-slate-300">{column.maxMarks ?? "—"}</strong></span>
+                            <span className="rounded-lg bg-slate-100 px-2 py-1 dark:bg-slate-700/70">Type: {String(column.category || "other").replace(/_/g, " ")}</span>
+                            <span className="rounded-lg bg-slate-100 px-2 py-1 dark:bg-slate-700/70">Header max: <strong className="text-slate-700 dark:text-slate-300">{column.maxMarks ?? "—"}</strong></span>
+                            <span className="rounded-lg bg-slate-100 px-2 py-1 dark:bg-slate-700/70">Suggested full marks: <strong className="text-slate-700 dark:text-slate-300">{column.suggestedFullMarks ?? "—"}</strong></span>
+                            <span className="rounded-lg bg-slate-100 px-2 py-1 dark:bg-slate-700/70">Values found: <strong className="text-slate-700 dark:text-slate-300">{column.nonEmptyCount ?? 0}</strong></span>
                             {target?.synced && <span className="rounded-lg bg-amber-50 px-2 py-1 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">sync-connected target</span>}
                           </div>
+                          {!!column.sampleValues?.length && <div className="mt-2 truncate text-[11px] text-slate-500 dark:text-slate-400" title={column.sampleValues.join(", ")}>Sample: {column.sampleValues.join(", ")}</div>}
                         </div>
 
                         <div>
                           <select value={mapping} onChange={(e) => onMappingChange(column.key, e.target.value)} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100">
                             <option value="ignore">Ignore this Excel column</option>
-                            <option value="create">＋ Create new assessment</option>
-                            {targets.map((item) => <option key={item.key} value={item.key} disabled={item.locked}>{item.label} ({item.fullMarks}){item.synced ? " — sync connected" : ""}</option>)}
+                            <option value="create">＋ Create a new assessment from this header</option>
+                            <optgroup label="Map to an existing assessment">
+                              {targets.map((item) => <option key={item.key} value={item.key} disabled={item.locked}>{item.label} ({item.fullMarks}){item.synced ? " — sync connected" : ""}</option>)}
+                            </optgroup>
                           </select>
 
                           {mapping === "create" && (
-                            <div className="mt-2 grid grid-cols-[minmax(0,1fr)_105px] gap-2">
-                              <input value={config.name || ""} onChange={(e) => onCreateConfigChange(column.key, "name", e.target.value)} placeholder="Assessment name" className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
-                              <input type="number" min="0.5" step="0.5" value={config.fullMarks ?? ""} onChange={(e) => onCreateConfigChange(column.key, "fullMarks", e.target.value)} placeholder="Marks" className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
+                            <div className="mt-2 rounded-xl border border-indigo-200 bg-indigo-50/60 p-2.5 dark:border-indigo-500/20 dark:bg-indigo-500/5">
+                              <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-300">Suggested from Excel — edit before importing</div>
+                              <div className="grid grid-cols-[minmax(0,1fr)_110px] gap-2">
+                                <input value={config.name || ""} onChange={(e) => onCreateConfigChange(column.key, "name", e.target.value)} placeholder="Assessment name" className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
+                                <input type="number" min="0.5" step="0.5" value={config.fullMarks ?? ""} onChange={(e) => onCreateConfigChange(column.key, "fullMarks", e.target.value)} placeholder="Full marks" className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1535,7 +1607,7 @@ function MarksExcelImportModal({
                 })}
               </div>
 
-              {!visibleColumns.length && <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-center text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-400">No useful marks columns were detected. Enable detailed columns to inspect the complete sheet.</div>}
+              {!visibleColumns.length && <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-center text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-400">No mark columns are visible. Turn on “Show every detected Excel column” or adjust the sheet structure.</div>}
               {!!preview?.duplicateRolls?.length && <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">{preview.duplicateRolls.length} duplicate student row(s) will be ignored.</div>}
             </>
           )}
@@ -1988,7 +2060,10 @@ export default function TabMarks({ courseId, course }) {
     preview: null,
     mappings: {},
     createConfigs: {},
-    showAllColumns: false,
+    showAllColumns: true,
+    sheetInspection: null,
+    sheetSetup: { headerRow: "", rollCol: "", nameCol: -1 },
+    setupOpen: false,
     importPolicy: "blank_only",
     busy: false,
   });
@@ -3244,8 +3319,29 @@ export default function TabMarks({ courseId, course }) {
     return configs;
   };
 
-  const openExcelImportForSheet = (workbook, sheetName, extra = {}) => {
-    const preview = parseMarksSheet(workbook, sheetName, { courseType });
+  const openExcelImportForSheet = (
+    workbook,
+    sheetName,
+    extra = {},
+    manualSetup = null
+  ) => {
+    const firstInspection = inspectMarksSheet(workbook, sheetName, {
+      headerRow: manualSetup?.headerRow,
+    });
+    const setup = manualSetup || firstInspection.suggested || {
+      headerRow: "",
+      rollCol: "",
+      nameCol: -1,
+    };
+    const inspection = inspectMarksSheet(workbook, sheetName, {
+      headerRow: setup.headerRow,
+    });
+    const preview = parseMarksSheet(workbook, sheetName, {
+      courseType,
+      headerRow: setup.headerRow,
+      rollCol: setup.rollCol,
+      nameCol: setup.nameCol,
+    });
     const mappings = preview?.error
       ? {}
       : buildAutoExcelImportMappings(preview.columns, excelImportTargets);
@@ -3268,7 +3364,14 @@ export default function TabMarks({ courseId, course }) {
       preview,
       mappings,
       createConfigs,
-      showAllColumns: false,
+      showAllColumns: true,
+      sheetInspection: inspection,
+      sheetSetup: {
+        headerRow: setup.headerRow ?? "",
+        rollCol: setup.rollCol ?? "",
+        nameCol: setup.nameCol ?? -1,
+      },
+      setupOpen: Boolean(preview?.error),
       busy: false,
     }));
   };
@@ -3308,6 +3411,51 @@ export default function TabMarks({ courseId, course }) {
       sheetNames: excelImport.sheetNames,
       importPolicy: excelImport.importPolicy,
     });
+  };
+
+  const handleExcelImportSheetSetupChange = (field, value) => {
+    setExcelImport((prev) => {
+      const numericValue = value === "" ? "" : Number(value);
+      const nextSetup = {
+        ...(prev.sheetSetup || {}),
+        [field]: numericValue,
+      };
+      const nextInspection =
+        field === "headerRow" && prev.workbook
+          ? inspectMarksSheet(prev.workbook, prev.sheetName, {
+              headerRow: numericValue,
+            })
+          : prev.sheetInspection;
+
+      return {
+        ...prev,
+        sheetSetup: nextSetup,
+        sheetInspection: nextInspection,
+      };
+    });
+  };
+
+  const handleApplyExcelImportSheetSetup = () => {
+    if (!excelImport.workbook) return;
+    if (excelImport.sheetSetup?.rollCol === "" || excelImport.sheetSetup?.rollCol == null) {
+      premiumSwal({
+        icon: "warning",
+        title: "Student ID column required",
+        text: "Choose the Excel column that contains Student ID or Roll before detecting mark columns.",
+      });
+      return;
+    }
+
+    openExcelImportForSheet(
+      excelImport.workbook,
+      excelImport.sheetName,
+      {
+        fileName: excelImport.fileName,
+        sheetNames: excelImport.sheetNames,
+        importPolicy: excelImport.importPolicy,
+      },
+      excelImport.sheetSetup
+    );
   };
 
   const handleExcelImportMappingChange = (columnKey, value) => {
@@ -3353,16 +3501,21 @@ export default function TabMarks({ courseId, course }) {
         if (!column.recommended || column.category === "grand_total") return;
         if (nextMappings[column.key] && nextMappings[column.key] !== "ignore") return;
 
-        const sameCategoryAlreadyMapped = alreadyMappedColumns.some(
-          (other) =>
-            other.key !== column.key &&
-            other.category === column.category
-        );
-        const compatibleExistingTarget = excelImportTargets.some((target) =>
-          target.category === column.category ||
-          (column.category === "ct_aggregate" && target.category === "ct") ||
-          (column.category === "ct" && target.category === "ct_aggregate")
-        );
+        const isGenericColumn = column.category === "other";
+        const sameCategoryAlreadyMapped =
+          !isGenericColumn &&
+          alreadyMappedColumns.some(
+            (other) =>
+              other.key !== column.key &&
+              other.category === column.category
+          );
+        const compatibleExistingTarget =
+          !isGenericColumn &&
+          excelImportTargets.some((target) =>
+            target.category === column.category ||
+            (column.category === "ct_aggregate" && target.category === "ct") ||
+            (column.category === "ct" && target.category === "ct_aggregate")
+          );
         const aggregateCtAlreadyCovered =
           column.category === "ct_aggregate" &&
           alreadyMappedColumns.some((other) => other.category === "ct");
@@ -5019,6 +5172,14 @@ export default function TabMarks({ courseId, course }) {
           setShowAllColumns={(showAllColumns) =>
             setExcelImport((prev) => ({ ...prev, showAllColumns }))
           }
+          sheetInspection={excelImport.sheetInspection}
+          sheetSetup={excelImport.sheetSetup}
+          setupOpen={excelImport.setupOpen}
+          setSetupOpen={(setupOpen) =>
+            setExcelImport((prev) => ({ ...prev, setupOpen }))
+          }
+          onSheetSetupChange={handleExcelImportSheetSetupChange}
+          onApplySheetSetup={handleApplyExcelImportSheetSetup}
           importPolicy={excelImport.importPolicy}
           setImportPolicy={(importPolicy) =>
             setExcelImport((prev) => ({ ...prev, importPolicy }))

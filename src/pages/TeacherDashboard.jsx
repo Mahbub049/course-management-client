@@ -271,7 +271,7 @@ if (role !== "teacher") return;
         />
       </section>
 
-      <div className="hidden space-y-5 md:block md:space-y-6">
+      <div className="hidden space-y-5 md:block">
       {/* Top intro + quick actions */}
       <section className="rounded-[28px] border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/85 sm:p-6">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
@@ -638,37 +638,39 @@ function StatCard({ title, value, hint, icon, accent = "violet" }) {
 
 function ActionCard({ title, desc, buttonText, onClick, icon, accent }) {
   return (
-    <div className="group relative overflow-hidden rounded-[24px] border border-slate-200/80 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
+    <div className="group relative min-h-[136px] overflow-hidden rounded-[24px] border border-slate-200/80 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
       <div className={`absolute inset-0 bg-gradient-to-br ${accent}`} />
       <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-white/40 blur-2xl dark:bg-white/5" />
 
-      <div className="relative flex h-full flex-col p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="rounded-2xl border border-slate-200 bg-white/80 p-3 text-slate-800 backdrop-blur dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-100">
+      <div className="relative p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="rounded-xl border border-slate-200 bg-white/80 p-2.5 text-slate-800 backdrop-blur dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-100">
             {icon}
           </div>
 
-          <span className="rounded-full bg-white/70 px-2.5 py-1 text-[11px] font-semibold text-slate-500 backdrop-blur dark:bg-slate-800/80 dark:text-slate-400">
+          <span className="rounded-full bg-white/70 px-2.5 py-1 text-[10px] font-semibold text-slate-500 backdrop-blur dark:bg-slate-800/80 dark:text-slate-400">
             Quick Access
           </span>
         </div>
 
-        <h3 className="mt-4 text-base font-semibold text-slate-900 dark:text-white">
-          {title}
-        </h3>
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <h3 className="min-w-0 truncate text-sm font-semibold text-slate-900 dark:text-white">
+            {title}
+          </h3>
 
-        <p className="mt-2 flex-1 text-sm leading-6 text-slate-600 dark:text-slate-400">
+          <button
+            onClick={onClick}
+            type="button"
+            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-500/35 dark:bg-violet-600 dark:hover:bg-violet-700"
+          >
+            {buttonText}
+            <ArrowIcon />
+          </button>
+        </div>
+
+        <p className="mt-1.5 truncate text-xs leading-5 text-slate-600 dark:text-slate-400" title={desc}>
           {desc}
         </p>
-
-        <button
-          onClick={onClick}
-          type="button"
-          className="mt-5 inline-flex items-center justify-center gap-2 self-start rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-violet-600 dark:hover:bg-violet-700"
-        >
-          {buttonText}
-          <ArrowIcon />
-        </button>
       </div>
     </div>
   );
