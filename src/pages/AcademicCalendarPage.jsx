@@ -34,6 +34,13 @@ const CATEGORIES = [
 ];
 
 const FACULTY_EVENT_TYPES = ["Task", "Exam", "Event"];
+const MONTH_CALENDAR_CATEGORIES = new Set([
+  "Holiday",
+  "Exam",
+  "Class",
+  "Result",
+  "Attendance",
+]);
 const VISIBILITY_OPTIONS = [
   {
     value: "personal",
@@ -109,6 +116,8 @@ function createAcademicCalendarItems(events = []) {
         dateText: event.dateText,
         dayText: event.dayText,
         isHighlighted: Boolean(event.isHighlighted),
+        sortOrder: Number.isFinite(Number(event.sortOrder)) ? Number(event.sortOrder) : index,
+        createdAt: event.createdAt || "",
         raw: event,
       };
     })
@@ -134,6 +143,8 @@ function createFacultyCalendarItems(events = []) {
         visibility: event.visibility || "personal",
         canEdit: event.canEdit !== false,
         creatorName: event.creatorName || event.faculty?.name || "",
+        sortOrder: Number.isFinite(Number(event.sortOrder)) ? Number(event.sortOrder) : 0,
+        createdAt: event.createdAt || "",
         raw: event,
       };
     })
@@ -153,8 +164,26 @@ function getDefaultFacultyForm(date = isoFromDate(new Date())) {
   };
 }
 
+function calendarSourceRank(item) {
+  if (item.source === "faculty" && item.canEdit) return 0;
+  if (item.source === "faculty") return 1;
+  return 2;
+}
+
 function sortCalendarItems(a, b) {
   if (a.startDate !== b.startDate) return a.startDate.localeCompare(b.startDate);
+
+  const sourceDifference = calendarSourceRank(a) - calendarSourceRank(b);
+  if (sourceDifference !== 0) return sourceDifference;
+
+  if (a.source === "faculty" && b.source === "faculty") {
+    const orderDifference = Number(a.sortOrder || 0) - Number(b.sortOrder || 0);
+    if (orderDifference !== 0) return orderDifference;
+
+    const aCreated = Date.parse(a.createdAt || "") || 0;
+    const bCreated = Date.parse(b.createdAt || "") || 0;
+    if (aCreated !== bCreated) return bCreated - aCreated;
+  }
 
   const aTime = a.startTime || "99:99";
   const bTime = b.startTime || "99:99";
@@ -163,6 +192,9 @@ function sortCalendarItems(a, b) {
   const aDuration = daysBetween(dateFromIso(a.startDate), dateFromIso(a.endDate));
   const bDuration = daysBetween(dateFromIso(b.startDate), dateFromIso(b.endDate));
   if (aDuration !== bDuration) return bDuration - aDuration;
+
+  const orderDifference = Number(a.sortOrder || 0) - Number(b.sortOrder || 0);
+  if (orderDifference !== 0) return orderDifference;
 
   return String(a.title || "").localeCompare(String(b.title || ""));
 }
@@ -201,8 +233,9 @@ function getWeekLayout(days, items) {
     .filter(Boolean)
     .sort((a, b) => {
       if (a.startColumn !== b.startColumn) return a.startColumn - b.startColumn;
-      if (a.span !== b.span) return b.span - a.span;
-      return sortCalendarItems(a, b);
+      const itemOrder = sortCalendarItems(a, b);
+      if (itemOrder !== 0) return itemOrder;
+      return b.span - a.span;
     });
 
   const occupiedLanes = [];
@@ -370,7 +403,9 @@ export default function AcademicCalendarPage() {
 
   const calendarItems = useMemo(() => {
     const query = search.trim().toLowerCase();
-    const officialItems = createAcademicCalendarItems(calendar?.events || []);
+    const officialItems = createAcademicCalendarItems(calendar?.events || []).filter((item) =>
+      MONTH_CALENDAR_CATEGORIES.has(item.type)
+    );
     const teacherItems = createFacultyCalendarItems(facultyEvents || []);
 
     return [...officialItems, ...teacherItems]
@@ -397,6 +432,56 @@ export default function AcademicCalendarPage() {
     if (!agendaDate) return [];
     return calendarItems.filter((item) => itemCoversDate(item, agendaDate));
   }, [agendaDate, calendarItems]);
+
+  const handleReorderFacultyEvents = async (draggedItem, targetItem) => {
+    if (
+      !draggedItem?.id ||
+      !targetItem?.id ||
+      draggedItem.id === targetItem.id ||
+      draggedItem.source !== "faculty" ||
+      targetItem.source !== "faculty" ||
+      !draggedItem.canEdit ||
+      !targetItem.canEdit ||
+      draggedItem.startDate !== targetItem.startDate
+    ) {
+      return;
+    }
+
+    const orderedItems = createFacultyCalendarItems(facultyEvents)
+      .filter((item) => item.canEdit && item.startDate === draggedItem.startDate)
+      .sort(sortCalendarItems);
+
+    const draggedIndex = orderedItems.findIndex((item) => item.id === draggedItem.id);
+    const targetIndex = orderedItems.findIndex((item) => item.id === targetItem.id);
+    if (draggedIndex < 0 || targetIndex < 0) return;
+
+    const nextOrder = [...orderedItems];
+    const [movedItem] = nextOrder.splice(draggedIndex, 1);
+    nextOrder.splice(targetIndex, 0, movedItem);
+
+    const orderedEventIds = nextOrder.map((item) => item.id);
+    const orderById = new Map(orderedEventIds.map((id, index) => [String(id), index]));
+
+    setFacultyEvents((previous) =>
+      previous.map((event) =>
+        orderById.has(String(event._id))
+          ? { ...event, sortOrder: orderById.get(String(event._id)) }
+          : event
+      )
+    );
+
+    try {
+      await academicCalendarService.reorderFacultyEvents(orderedEventIds);
+    } catch (error) {
+      console.error(error);
+      await loadFacultyEvents();
+      Swal.fire(
+        "Reorder failed",
+        error?.response?.data?.message || "Could not save the new calendar order.",
+        "error"
+      );
+    }
+  };
 
   const openCreateModal = (date = isoFromDate(new Date())) => {
     if (!isTeacher) return;
@@ -748,7 +833,7 @@ export default function AcademicCalendarPage() {
                     {monthLabel(currentMonth)}
                   </h2>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Click a date to add an item. Multi-day events appear as one continuous bar.
+                    Click a date to add an item. Your own items appear first and can be dragged to reorder on the same date.
                   </p>
                 </div>
                 {facultyEventsLoading && (
@@ -831,6 +916,7 @@ export default function AcademicCalendarPage() {
                   onCreate={openCreateModal}
                   onOpenItem={openCalendarItem}
                   onOpenAgenda={setAgendaDate}
+                  onReorder={handleReorderFacultyEvents}
                 />
               ))}
             </div>
@@ -869,7 +955,11 @@ export default function AcademicCalendarPage() {
   );
 }
 
-function CalendarWeek({ days, items, isLast, onCreate, onOpenItem, onOpenAgenda }) {
+function CalendarWeek({ days, items, isLast, onCreate, onOpenItem, onOpenAgenda, onReorder }) {
+  const [draggedId, setDraggedId] = useState("");
+  const [dragTargetId, setDragTargetId] = useState("");
+  const suppressClickRef = useRef(false);
+
   const { visibleSegments, hiddenByDate } = useMemo(
     () => getWeekLayout(days, items),
     [days, items]
@@ -946,20 +1036,69 @@ function CalendarWeek({ days, items, isLast, onCreate, onOpenItem, onOpenAgenda 
             <button
               key={`${segment.id}-${days[0].iso}`}
               type="button"
+              draggable={segment.source === "faculty" && segment.canEdit}
+              onDragStart={(event) => {
+                if (segment.source !== "faculty" || !segment.canEdit) return;
+                suppressClickRef.current = true;
+                setDraggedId(segment.id);
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/plain", segment.id);
+              }}
+              onDragOver={(event) => {
+                const draggedSegment = visibleSegments.find((item) => item.id === draggedId);
+                if (
+                  !draggedSegment ||
+                  segment.id === draggedId ||
+                  segment.source !== "faculty" ||
+                  !segment.canEdit ||
+                  draggedSegment.startDate !== segment.startDate
+                ) {
+                  return;
+                }
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                setDragTargetId(segment.id);
+              }}
+              onDragLeave={() => {
+                if (dragTargetId === segment.id) setDragTargetId("");
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const draggedSegment = visibleSegments.find((item) => item.id === draggedId);
+                if (draggedSegment) onReorder?.(draggedSegment, segment);
+                setDraggedId("");
+                setDragTargetId("");
+                window.setTimeout(() => {
+                  suppressClickRef.current = false;
+                }, 0);
+              }}
+              onDragEnd={() => {
+                setDraggedId("");
+                setDragTargetId("");
+                window.setTimeout(() => {
+                  suppressClickRef.current = false;
+                }, 0);
+              }}
               onClick={(event) => {
                 event.stopPropagation();
+                if (suppressClickRef.current) return;
                 onOpenItem(segment);
               }}
               className={`pointer-events-auto mx-1 flex min-w-0 items-center gap-1.5 overflow-hidden border px-2 py-1 text-left text-[11px] font-semibold leading-none shadow-[0_1px_1px_rgba(15,23,42,0.04)] transition hover:-translate-y-px hover:brightness-[1.04] hover:shadow-sm dark:shadow-[0_5px_16px_rgba(0,0,0,0.22)] dark:hover:brightness-110 ${style} ${
-                segment.startsBeforeWeek ? "rounded-l-sm" : "rounded-l-lg"
-              } ${segment.endsAfterWeek ? "rounded-r-sm" : "rounded-r-lg"}`}
+                segment.source === "faculty" && segment.canEdit ? "cursor-grab active:cursor-grabbing" : ""
+              } ${draggedId === segment.id ? "opacity-45" : ""} ${
+                dragTargetId === segment.id ? "ring-2 ring-violet-500 ring-offset-1 dark:ring-offset-slate-950" : ""
+              } ${segment.startsBeforeWeek ? "rounded-l-sm" : "rounded-l-lg"} ${
+                segment.endsAfterWeek ? "rounded-r-sm" : "rounded-r-lg"
+              }`}
               style={{
                 gridColumn: `${segment.startColumn + 1} / span ${segment.span}`,
                 gridRow: segment.lane + 1,
               }}
               title={`${segment.title}\n${formatRange(segment)}${
                 segment.details ? `\n${segment.details}` : ""
-              }`}
+              }${segment.source === "faculty" && segment.canEdit ? "\nDrag to reorder your items on this date." : ""}`}
             >
               <span
                 className={`h-1.5 w-1.5 shrink-0 rounded-full ${

@@ -16,6 +16,43 @@ import {
   toDateInput,
 } from "../utils/calendarUtils";
 
+const DASHBOARD_ACADEMIC_CATEGORIES = new Set([
+  "Holiday",
+  "Exam",
+  "Class",
+  "Result",
+  "Attendance",
+]);
+
+function getDashboardAcademicCategory(event = {}) {
+  const category = String(event.category || "").trim();
+  if (DASHBOARD_ACADEMIC_CATEGORIES.has(category)) return category;
+
+  const normalizedCategory = category.toLowerCase();
+  if (/attendance/.test(normalizedCategory)) return "Attendance";
+  if (/holiday/.test(normalizedCategory)) return "Holiday";
+  if (/exam|examination/.test(normalizedCategory)) return "Exam";
+  if (/class/.test(normalizedCategory)) return "Class";
+  if (/result|grade/.test(normalizedCategory)) return "Result";
+
+  // Do not reinterpret explicit excluded categories such as Payment or Registration.
+  if (category && !["other", "event"].includes(normalizedCategory)) return "";
+
+  const text = String(event.title || "").toLowerCase();
+  if (/attendance|student attendance report/.test(text)) return "Attendance";
+  if (/holiday|eid|ashura|janmashtami|miladunnabi|closed|semester break/.test(text)) return "Holiday";
+  if (/exam|examination|midterm|mid-term|final|supplementary|viva/.test(text)) return "Exam";
+  if (/class|classes|teaching|orientation/.test(text)) return "Class";
+  if (/result|grade|publication/.test(text)) return "Result";
+  return "";
+}
+
+function dashboardSourceRank(item = {}) {
+  if (item.source === "faculty" && item.canEdit) return 0;
+  if (item.source === "faculty") return 1;
+  return 2;
+}
+
 function getCounsellingRequestText(request = {}) {
   const course = request.course || request.student?.course || {};
   const intake = request.intake || request.student?.intake || course.intake || "";
@@ -39,6 +76,9 @@ function getCounsellingRequestText(request = {}) {
 function buildUpcomingSchedule(calendar, facultyEvents, startDate, endDate) {
   const officialItems = (calendar?.events || [])
     .map((event, index) => {
+      const category = getDashboardAcademicCategory(event);
+      if (!category) return null;
+
       const range = parseAcademicDateRange(event.dateText);
       if (!range) return null;
 
@@ -50,12 +90,15 @@ function buildUpcomingSchedule(calendar, facultyEvents, startDate, endDate) {
         id: `academic-${event._id || index}`,
         source: "academic",
         title: event.title,
-        type: event.category || "Event",
+        type: category,
         startDate: rangeStart,
         endDate: rangeEnd,
         displayDate: rangeStart < startDate ? startDate : rangeStart,
         startTime: "",
         visibility: "university",
+        canEdit: false,
+        sortOrder: Number.isFinite(Number(event.sortOrder)) ? Number(event.sortOrder) : index,
+        createdAt: event.createdAt || "",
       };
     })
     .filter(Boolean);
@@ -76,6 +119,9 @@ function buildUpcomingSchedule(calendar, facultyEvents, startDate, endDate) {
         displayDate: eventStart < startDate ? startDate : eventStart,
         startTime: event.startTime || "",
         visibility: event.visibility || "personal",
+        canEdit: event.canEdit !== false,
+        sortOrder: Number.isFinite(Number(event.sortOrder)) ? Number(event.sortOrder) : 0,
+        createdAt: event.createdAt || "",
       };
     })
     .filter(Boolean);
@@ -83,6 +129,18 @@ function buildUpcomingSchedule(calendar, facultyEvents, startDate, endDate) {
   return [...officialItems, ...teacherItems]
     .sort((a, b) => {
       if (a.displayDate !== b.displayDate) return a.displayDate.localeCompare(b.displayDate);
+
+      const sourceDifference = dashboardSourceRank(a) - dashboardSourceRank(b);
+      if (sourceDifference !== 0) return sourceDifference;
+
+      if (a.source === "faculty" && b.source === "faculty") {
+        const orderDifference = Number(a.sortOrder || 0) - Number(b.sortOrder || 0);
+        if (orderDifference !== 0) return orderDifference;
+
+        const createdDifference = String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
+        if (createdDifference !== 0) return createdDifference;
+      }
+
       const aTime = a.startTime || "99:99";
       const bTime = b.startTime || "99:99";
       if (aTime !== bTime) return aTime.localeCompare(bTime);
@@ -295,17 +353,6 @@ if (role !== "teacher") return;
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:w-auto xl:min-w-[540px]">
             <QuickButton
-              primary
-              icon={<PlusIcon />}
-              label="Create Course"
-              onClick={() => navigate("/teacher/create-course")}
-            />
-            <QuickButton
-              icon={<GridIcon />}
-              label="View Courses"
-              onClick={() => navigate("/teacher/courses")}
-            />
-            <QuickButton
               icon={<CheckIcon />}
               label="Take Attendance"
               onClick={() => navigate("/teacher/attendance")}
@@ -315,11 +362,16 @@ if (role !== "teacher") return;
               label="Attendance Sheet"
               onClick={() => navigate("/teacher/attendance-sheet")}
             />
-            {/* <QuickButton
+            <QuickButton
               icon={<MessageIcon />}
               label="Counselling"
               onClick={() => navigate("/teacher/counselling")}
-            /> */}
+            />
+            <QuickButton
+              icon={<GridIcon />}
+              label="View Courses"
+              onClick={() => navigate("/teacher/courses")}
+            />
           </div>
         </div>
       </section>
@@ -405,7 +457,6 @@ if (role !== "teacher") return;
         <ActionCard
           title="Courses"
           desc="Create courses, manage students, open marks tabs and keep course tasks organized."
-          buttonText="Go to Courses"
           onClick={() => navigate("/teacher/courses")}
           icon={<BookIcon />}
           accent="from-sky-500/10 via-indigo-500/10 to-violet-500/10 dark:from-sky-500/10 dark:via-indigo-500/5 dark:to-violet-500/10"
@@ -414,7 +465,6 @@ if (role !== "teacher") return;
         <ActionCard
           title="Attendance"
           desc="Take attendance, update previous records and generate attendance sheets easily."
-          buttonText="Open Attendance"
           onClick={() => navigate("/teacher/attendance")}
           icon={<CheckIcon />}
           accent="from-emerald-500/10 via-cyan-500/10 to-sky-500/10 dark:from-emerald-500/10 dark:via-cyan-500/5 dark:to-sky-500/10"
@@ -423,7 +473,6 @@ if (role !== "teacher") return;
         <ActionCard
           title="Complaints"
           desc="Review attendance and marks complaints, reply quickly and keep issue tracking clean."
-          buttonText="Go to Complaints"
           onClick={() => navigate("/teacher/complaints")}
           icon={<AlertIcon />}
           accent="from-amber-500/10 via-orange-500/10 to-rose-500/10 dark:from-amber-500/10 dark:via-orange-500/5 dark:to-rose-500/10"
@@ -432,7 +481,6 @@ if (role !== "teacher") return;
         <ActionCard
           title="Counselling"
           desc="Review student counselling requests, approve appointments, suggest alternate time slots or decline with a note."
-          buttonText="Open Counselling"
           onClick={() => navigate("/teacher/counselling")}
           icon={<MessageIcon />}
           accent="from-emerald-500/10 via-teal-500/10 to-cyan-500/10 dark:from-emerald-500/10 dark:via-teal-500/5 dark:to-cyan-500/10"
@@ -450,6 +498,8 @@ function UpcomingScheduleCard({ items, loading, onOpenCalendar, compact = false 
     Event: "bg-blue-500",
     Holiday: "bg-rose-500",
     Class: "bg-violet-500",
+    Result: "bg-indigo-500",
+    Attendance: "bg-cyan-500",
     Other: "bg-slate-500",
   };
 
@@ -582,16 +632,14 @@ function MobileActionButton({ title, icon, onClick, accent = "violet" }) {
 
 /* ---------- UI Components ---------- */
 
-function QuickButton({ label, icon, onClick, primary = false }) {
+function QuickButton({ label, icon, onClick }) {
   return (
     <button
       onClick={onClick}
       className={[
         "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition-all duration-200",
         "focus:outline-none focus:ring-2 focus:ring-violet-500/40",
-        primary
-          ? "bg-violet-600 text-white shadow-sm hover:bg-violet-700"
-          : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800/90 dark:text-slate-100 dark:hover:bg-slate-800",
+        "border border-slate-200 bg-white text-slate-700 hover:border-violet-300 hover:bg-violet-50 dark:border-slate-700 dark:bg-slate-800/90 dark:text-slate-100 dark:hover:border-violet-500/40 dark:hover:bg-violet-500/10",
       ].join(" ")}
       type="button"
     >
@@ -636,9 +684,14 @@ function StatCard({ title, value, hint, icon, accent = "violet" }) {
   );
 }
 
-function ActionCard({ title, desc, buttonText, onClick, icon, accent }) {
+function ActionCard({ title, desc, onClick, icon, accent }) {
   return (
-    <div className="group relative min-h-[136px] overflow-hidden rounded-[24px] border border-slate-200/80 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`Open ${title}`}
+      className="group relative min-h-[136px] w-full overflow-hidden rounded-[24px] border border-slate-200/80 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:border-violet-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-violet-500/35 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-violet-500/40"
+    >
       <div className={`absolute inset-0 bg-gradient-to-br ${accent}`} />
       <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-white/40 blur-2xl dark:bg-white/5" />
 
@@ -648,31 +701,21 @@ function ActionCard({ title, desc, buttonText, onClick, icon, accent }) {
             {icon}
           </div>
 
-          <span className="rounded-full bg-white/70 px-2.5 py-1 text-[10px] font-semibold text-slate-500 backdrop-blur dark:bg-slate-800/80 dark:text-slate-400">
-            Quick Access
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/70 px-2.5 py-1 text-[10px] font-semibold text-slate-500 backdrop-blur transition group-hover:text-violet-700 dark:bg-slate-800/80 dark:text-slate-400 dark:group-hover:text-violet-300">
+            Open
+            <span className="transition-transform group-hover:translate-x-0.5"><ArrowIcon /></span>
           </span>
         </div>
 
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <h3 className="min-w-0 truncate text-sm font-semibold text-slate-900 dark:text-white">
-            {title}
-          </h3>
-
-          <button
-            onClick={onClick}
-            type="button"
-            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-500/35 dark:bg-violet-600 dark:hover:bg-violet-700"
-          >
-            {buttonText}
-            <ArrowIcon />
-          </button>
-        </div>
+        <h3 className="mt-3 min-w-0 truncate text-sm font-semibold text-slate-900 dark:text-white">
+          {title}
+        </h3>
 
         <p className="mt-1.5 truncate text-xs leading-5 text-slate-600 dark:text-slate-400" title={desc}>
           {desc}
         </p>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -689,20 +732,6 @@ function CalendarIcon() {
     >
       <rect x="3" y="5" width="18" height="16" rx="2" />
       <path d="M16 3v4M8 3v4M3 10h18" />
-    </svg>
-  );
-}
-
-function PlusIcon() {
-  return (
-    <svg
-      className="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M12 5v14M5 12h14" />
     </svg>
   );
 }

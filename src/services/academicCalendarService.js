@@ -26,6 +26,13 @@ export const academicCalendarService = {
     return res.data;
   },
 
+  reorderFacultyEvents: async (orderedEventIds) => {
+    const res = await api.patch("/academic-calendar/faculty-events/reorder", {
+      orderedEventIds,
+    });
+    return res.data;
+  },
+
   deleteFacultyEvent: async (eventId) => {
     const res = await api.delete(`/academic-calendar/faculty-events/${eventId}`);
     return res.data;

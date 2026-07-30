@@ -567,7 +567,7 @@ export default function TeacherNotebookPage() {
   };
 
   return (
-    <div className="min-w-0 max-w-full space-y-5 overflow-hidden text-slate-900 dark:text-slate-100">
+    <div className="min-w-0 max-w-full space-y-5 overflow-x-hidden text-slate-900 dark:text-slate-100">
       <section className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-br from-white via-slate-50 to-indigo-50 p-5 shadow-sm dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900 sm:p-6">
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute -left-20 top-8 h-44 w-44 rounded-full bg-violet-200/40 blur-3xl dark:bg-violet-500/10" />
@@ -1836,7 +1836,7 @@ function EvaluationEditor({ note, onChange }) {
       <NotebookMarksSyncPanel note={note} />
 
       <div className="overflow-hidden rounded-3xl border border-slate-200 dark:border-slate-800">
-        <div className="max-h-[70vh] overflow-auto overscroll-contain">
+        <div className="max-h-[70vh] touch-pan-x touch-pan-y overflow-auto overscroll-y-auto [-webkit-overflow-scrolling:touch]">
           <div className="sticky left-0 top-0 z-40 border-b border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
             <div className="flex items-center gap-2 sm:gap-3">
               <div className="relative min-w-0 flex-1">

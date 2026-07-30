@@ -79,10 +79,10 @@ function TeacherRoutinePage() {
     }
   };
 
-  const downloadPdf = () => {
+  const downloadPdf = async () => {
     try {
       setDownloading("class-routine-pdf");
-      downloadClassRoutinePdf(routine);
+      await downloadClassRoutinePdf(routine);
     } catch (error) {
       Swal.fire("Download failed", error?.message || "Create and save a valid routine first.", "error");
     } finally {
@@ -95,7 +95,7 @@ function TeacherRoutinePage() {
   }
 
   return (
-    <div className="space-y-5 pb-10">
+    <div className="w-full min-w-0 max-w-none space-y-5 pb-10">
       <RoutineTabs />
 
       <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
@@ -130,13 +130,16 @@ function TeacherRoutinePage() {
             <Summary label="Status" value={routine.validation?.isValid ? "Ready" : "Needs Update"} good={routine.validation?.isValid} />
           </section>
 
-          <section className="rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+          <section className="w-full min-w-0 rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950">
             <div className="mb-4">
               <h2 className="text-lg font-black text-slate-950 dark:text-white">Saved Routine</h2>
               <p className="text-xs text-slate-500">Only time slots containing at least one class or weekly activity are shown.</p>
             </div>
-            <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
-              <table className="min-w-[900px] border-collapse text-center">
+            <div className="w-full min-w-0 overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
+              <table
+                className="w-full border-collapse text-center"
+                style={{ minWidth: `${Math.max(900, 150 + columns.length * 150)}px` }}
+              >
                 <thead>
                   <tr className="bg-slate-100 dark:bg-slate-900">
                     <th className="sticky left-0 z-20 min-w-32 border-b border-r border-slate-200 bg-slate-100 p-3 text-xs font-black dark:border-slate-700 dark:bg-slate-900">Day / Time</th>

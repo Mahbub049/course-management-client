@@ -390,8 +390,7 @@ export default function TeacherAttendanceSheetPage() {
                     const id = c._id || c.id;
                     return (
                       <option key={id || i} value={id}>
-                        {c.code} – {c.title} (Sec {c.section}) – {c.shift || "Day"}
-                        {c.department ? ` – ${c.department}` : ""} – {c.semester} {c.year}
+                        {c.code} - {c.title} (Sec {c.section})
                       </option>
                     );
                   })}
@@ -427,15 +426,8 @@ export default function TeacherAttendanceSheetPage() {
               <div className="mb-5 flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <h2 className="truncate text-lg font-bold text-slate-900 dark:text-white">
-                    {data.course.code} – {data.course.title}
+                    {data.course.code} - {data.course.title} (Sec {data.course.section})
                   </h2>
-                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                    Section {data.course.section} • {data.course.shift || "Day"}
-                    {data.course.department || data.course.program
-                      ? ` • ${data.course.department || data.course.program}`
-                      : ""}
-                    {` • ${data.course.semester} ${data.course.year}`}
-                  </p>
                 </div>
 
                 <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">

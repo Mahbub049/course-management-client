@@ -749,12 +749,59 @@ const inferProgram = (course = {}, setup = {}) => {
   return department;
 };
 
+const normalizeDepartmentName = (value = "") => {
+  const raw = safeText(value, "")
+    .replace(/^department\s+of\s+/i, "")
+    .replace(/,?\s*BUBT\s*$/i, "")
+    .trim();
+
+  if (!raw) return "Computer Science and Engineering";
+
+  const upper = raw.toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
+
+  if (
+    upper === "CSE" ||
+    /\bCSE\b/.test(upper) ||
+    upper.includes("COMPUTER SCIENCE AND ENGINEERING") ||
+    upper.includes("COMPUTER SCIENCE ENGINEERING")
+  ) {
+    return "Computer Science and Engineering";
+  }
+
+  if (
+    upper === "EEE" ||
+    /\bEEE\b/.test(upper) ||
+    upper.includes("ELECTRICAL AND ELECTRONIC ENGINEERING") ||
+    upper.includes("ELECTRICAL ELECTRONIC ENGINEERING")
+  ) {
+    return "Electrical and Electronic Engineering";
+  }
+
+  if (
+    upper === "ICE" ||
+    /\bICE\b/.test(upper) ||
+    upper.includes("INFORMATION AND COMMUNICATION ENGINEERING")
+  ) {
+    return "Information and Communication Engineering";
+  }
+
+  if (
+    upper === "DSE" ||
+    upper.includes("DATA SCIENCE AND ENGINEERING") ||
+    upper.includes("DATA SCIENCE ENGINEERING")
+  ) {
+    return "Data Science and Engineering";
+  }
+
+  return raw.replace(/\s*&\s*/g, " and ").replace(/\s+/g, " ").trim();
+};
+
 const formatDepartment = (course = {}, setup = {}) => {
   const department = safeText(
     course.department || course.createdBy?.department || setup.department,
     "Computer Science and Engineering"
   );
-  return /^department\s+of\s+/i.test(department) ? department : `Department of ${department}`;
+  return `Department of ${normalizeDepartmentName(department)}`;
 };
 
 const getTeacherName = (payload = {}) =>

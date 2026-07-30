@@ -33,6 +33,7 @@ export default function TeacherCoursesPage() {
 
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all"); // all | theory | lab | hybrid
+  const [semesterFilter, setSemesterFilter] = useState("all");
 
   const yearOptions = useMemo(() => {
     const current = new Date().getFullYear();
@@ -70,6 +71,10 @@ export default function TeacherCoursesPage() {
     };
 
     loadCourses();
+  }, [viewMode]);
+
+  useEffect(() => {
+    setSemesterFilter("all");
   }, [viewMode]);
 
   const openCourse = (course) => {
@@ -377,12 +382,49 @@ export default function TeacherCoursesPage() {
     return c;
   }, [courses]);
 
+  const archivedSemesterOptions = useMemo(() => {
+    if (viewMode !== "archived") return [];
+
+    const semesterRank = { Spring: 1, Summer: 2, Fall: 3 };
+    const uniqueTerms = new Map();
+
+    courses.forEach((course) => {
+      const semester = String(course.semester || "").trim();
+      const year = String(course.year || "").trim();
+      if (!semester && !year) return;
+
+      const value = `${semester}::${year}`;
+      if (!uniqueTerms.has(value)) {
+        uniqueTerms.set(value, {
+          value,
+          semester,
+          year,
+          label: [semester, year].filter(Boolean).join(" "),
+        });
+      }
+    });
+
+    return Array.from(uniqueTerms.values()).sort((a, b) => {
+      const yearDifference = Number(b.year || 0) - Number(a.year || 0);
+      if (yearDifference !== 0) return yearDifference;
+
+      const aRank = semesterRank[a.semester] || 0;
+      const bRank = semesterRank[b.semester] || 0;
+      if (aRank !== bRank) return bRank - aRank;
+
+      return b.label.localeCompare(a.label, undefined, { numeric: true, sensitivity: "base" });
+    });
+  }, [courses, viewMode]);
+
   const filteredCourses = useMemo(() => {
     const q = query.trim().toLowerCase();
 
     return courses.filter((c) => {
       const t = (c.courseType || "theory").toLowerCase();
       const matchesType = typeFilter === "all" ? true : t === typeFilter;
+      const courseTerm = `${String(c.semester || "").trim()}::${String(c.year || "").trim()}`;
+      const matchesSemester =
+        viewMode !== "archived" || semesterFilter === "all" || courseTerm === semesterFilter;
 
       const matchesQuery =
         !q ||
@@ -393,9 +435,9 @@ export default function TeacherCoursesPage() {
         (c.semester || "").toLowerCase().includes(q) ||
         String(c.year || "").toLowerCase().includes(q);
 
-      return matchesType && matchesQuery;
+      return matchesType && matchesSemester && matchesQuery;
     });
-  }, [courses, query, typeFilter]);
+  }, [courses, query, semesterFilter, typeFilter, viewMode]);
 
   return (
     <div className="space-y-4 text-slate-900 dark:text-slate-100">
@@ -438,7 +480,7 @@ export default function TeacherCoursesPage() {
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-[auto_1fr_260px]">
+          <div className={`mt-4 grid grid-cols-1 gap-3 ${viewMode === "archived" ? "xl:grid-cols-[auto_minmax(0,1fr)_220px_240px]" : "xl:grid-cols-[auto_minmax(0,1fr)_260px]"}`}>
             <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white/80 p-1 shadow-sm dark:border-slate-700 dark:bg-slate-950/70">
               <button
                 type="button"
@@ -476,6 +518,22 @@ export default function TeacherCoursesPage() {
               <option value="lab">Lab</option>
               <option value="hybrid">Hybrid</option>
             </select>
+
+            {viewMode === "archived" && (
+              <select
+                value={semesterFilter}
+                onChange={(e) => setSemesterFilter(e.target.value)}
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white/90 px-4 text-sm text-slate-900 shadow-sm outline-none transition focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 dark:border-slate-700 dark:bg-slate-950/70 dark:text-slate-100"
+                aria-label="Filter archived courses by semester"
+              >
+                <option value="all">All Semesters</option>
+                {archivedSemesterOptions.map((term) => (
+                  <option key={term.value} value={term.value}>
+                    {term.label}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
       </section>
