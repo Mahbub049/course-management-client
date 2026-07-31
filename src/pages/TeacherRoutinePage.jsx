@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import { downloadRoutineDocument, getMyRoutine } from "../services/routineService";
 import { downloadClassRoutinePdf } from "../utils/routinePdfExport";
@@ -11,25 +11,6 @@ import {
   getDocumentColumns,
 } from "../utils/routineConfig";
 
-function RoutineTabs() {
-  const linkClass = ({ isActive }) =>
-    [
-      "inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-semibold transition",
-      isActive
-        ? "bg-violet-600 text-white shadow-sm shadow-violet-500/25"
-        : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800/80",
-    ].join(" ");
-
-  return (
-    <div>
-      <div className="inline-flex rounded-full border border-slate-200 bg-white/85 p-1 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-950/80">
-        <NavLink to="/teacher/routine" className={linkClass} end>Routine</NavLink>
-        <NavLink to="/teacher/counselling" className={linkClass}>Counselling</NavLink>
-      </div>
-    </div>
-  );
-}
-
 function entryLines(entry) {
   if (!entry) return [];
   if (entry.type !== "CLASS") return [entry.label || entry.type];
@@ -38,6 +19,14 @@ function entryLines(entry) {
     entry.room,
     [entry.intake, entry.section].filter(Boolean).join("/"),
   ].filter(Boolean);
+}
+
+function formatWorkingDuration(value) {
+  const totalMinutes = Math.max(0, Math.round(Number(value || 0) * 60));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  return `${hours} hour${hours === 1 ? "" : "s"} ${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
 function TeacherRoutinePage() {
@@ -96,20 +85,18 @@ function TeacherRoutinePage() {
 
   return (
     <div className="w-full min-w-0 max-w-none space-y-5 pb-10">
-      <RoutineTabs />
-
       <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <span className="rounded-full border border-violet-300/40 bg-violet-500/10 px-3 py-1 text-xs font-bold text-violet-700 dark:text-violet-300">Class Routine</span>
             <h1 className="mt-3 text-2xl font-black text-slate-950 dark:text-white">Routine & Weekly Activities</h1>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Download the full Word routine or a clean class-only PDF.</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Download the official Word routine or a clean class-only PDF.</p>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
             <button type="button" onClick={() => navigate("/teacher/routine/manage")} className="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-bold text-white">Create / Update</button>
-            <button type="button" onClick={() => window.open("/routine-reference", "_blank", "noopener,noreferrer")} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold dark:border-slate-700">Schedule & Rooms</button>
-            <button type="button" onClick={() => download("class-routine")} disabled={Boolean(downloading)} className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700 disabled:opacity-60 dark:bg-emerald-500/10 dark:text-emerald-300">{downloading === "class-routine" ? "Preparing..." : "Download Routine"}</button>
-            <button type="button" onClick={downloadPdf} disabled={Boolean(downloading) || !routine} className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2.5 text-sm font-bold text-rose-700 disabled:opacity-60 dark:bg-rose-500/10 dark:text-rose-300">{downloading === "class-routine-pdf" ? "Preparing PDF..." : "Download PDF"}</button>
+            <button type="button" onClick={() => window.open("/routine-reference", "_blank", "noopener,noreferrer")} className="hidden rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold dark:border-slate-700">Schedule & Rooms</button>
+            <button type="button" onClick={() => download("class-routine")} disabled={Boolean(downloading)} className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700 disabled:opacity-60 dark:bg-emerald-500/10 dark:text-emerald-300">{downloading === "class-routine" ? "Preparing..." : "Official Routine Download"}</button>
+            <button type="button" onClick={downloadPdf} disabled={Boolean(downloading) || !routine} className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2.5 text-sm font-bold text-rose-700 disabled:opacity-60 dark:bg-rose-500/10 dark:text-rose-300">{downloading === "class-routine-pdf" ? "Preparing PDF..." : "Routine Download"}</button>
             <button type="button" onClick={() => download("faculty-nameplate")} disabled={Boolean(downloading)} className="rounded-xl border border-sky-300 bg-sky-50 px-4 py-2.5 text-sm font-bold text-sky-700 disabled:opacity-60 dark:bg-sky-500/10 dark:text-sky-300">{downloading === "faculty-nameplate" ? "Preparing..." : "Download Nameplate"}</button>
           </div>
         </div>
@@ -126,7 +113,12 @@ function TeacherRoutinePage() {
           <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Summary label="Semester" value={`${routine.semester} ${routine.year}`} />
             <Summary label="Working Days" value={`${routine.workingDays.length}`} />
-            <Summary label="Working Hours" value={`${routine.totalWorkingHours || routine.validation?.summary?.totalWorkingHours || 0}`} />
+            <Summary
+              label="Working Hours"
+              value={formatWorkingDuration(
+                routine.totalWorkingHours || routine.validation?.summary?.totalWorkingHours || 0
+              )}
+            />
             <Summary label="Status" value={routine.validation?.isValid ? "Ready" : "Needs Update"} good={routine.validation?.isValid} />
           </section>
 

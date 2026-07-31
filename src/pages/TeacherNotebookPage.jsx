@@ -33,17 +33,24 @@ const DEFAULT_BLANK_FIELD = {
   label: "Marks",
 };
 
+const DEFAULT_CHECKBOX_FIELD = {
+  id: "checkbox_1",
+  label: "Completed",
+};
+
 const DEFAULT_SETTINGS = {
   includeRoll: true,
   includeName: true,
   includeFeedback: true,
   includeMcq: true,
+  includeCheckbox: false,
   includeBlankFields: false,
   includeTotal: false,
   columnOrder: [],
   mcqLabel: DEFAULT_MCQ_FIELD.label,
   mcqOptions: DEFAULT_MCQ_FIELD.options,
   mcqFields: [DEFAULT_MCQ_FIELD],
+  checkboxFields: [DEFAULT_CHECKBOX_FIELD],
   blankFields: [DEFAULT_BLANK_FIELD],
 };
 
@@ -56,6 +63,11 @@ const makeMcqField = (index = 1) => ({
 const makeBlankField = (index = 1) => ({
   id: `blank_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
   label: index === 1 ? "Marks" : `Blank Field ${index}`,
+});
+
+const makeCheckboxField = (index = 1) => ({
+  id: `checkbox_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+  label: index === 1 ? "Completed" : `Checkbox ${index}`,
 });
 
 const cleanMcqOptions = (options) => {
@@ -118,9 +130,22 @@ const normalizeBlankFields = (settings = {}) => {
   }));
 };
 
+const normalizeCheckboxFields = (settings = {}) => {
+  const rawFields =
+    Array.isArray(settings.checkboxFields) && settings.checkboxFields.length > 0
+      ? settings.checkboxFields
+      : [DEFAULT_CHECKBOX_FIELD];
+
+  return rawFields.map((field, index) => ({
+    id: String(field?.id || `checkbox_${index + 1}`),
+    label: editableText(field?.label, `Checkbox ${index + 1}`),
+  }));
+};
+
 const normalizeSettings = (settings = {}) => {
   const mcqFields = normalizeMcqFields(settings);
   const blankFields = normalizeBlankFields(settings);
+  const checkboxFields = normalizeCheckboxFields(settings);
   const firstField = mcqFields[0] || DEFAULT_MCQ_FIELD;
 
   const normalized = {
@@ -128,11 +153,13 @@ const normalizeSettings = (settings = {}) => {
     includeName: settings.includeName === undefined ? true : Boolean(settings.includeName),
     includeFeedback: settings.includeFeedback === undefined ? true : Boolean(settings.includeFeedback),
     includeMcq: settings.includeMcq === undefined ? true : Boolean(settings.includeMcq),
+    includeCheckbox: settings.includeCheckbox === undefined ? false : Boolean(settings.includeCheckbox),
     includeBlankFields: settings.includeBlankFields === undefined ? false : Boolean(settings.includeBlankFields),
     includeTotal: settings.includeTotal === undefined ? false : Boolean(settings.includeTotal),
     mcqLabel: firstField.label,
     mcqOptions: firstField.options,
     mcqFields,
+    checkboxFields,
     blankFields,
   };
 
@@ -152,6 +179,9 @@ const getRowBlankValue = (row, field) => {
   const blankValues = row?.blankValues || {};
   return blankValues[field.id] !== undefined ? blankValues[field.id] || "" : "";
 };
+
+const getRowCheckboxValue = (row, field) =>
+  Boolean(row?.checkboxValues?.[field.id]);
 
 const formatTotalValue = (value) => {
   if (value === "") return "";
@@ -186,15 +216,18 @@ const COLUMN_IDS = {
 
 const blankColumnId = (field) => `blank:${field.id}`;
 const mcqColumnId = (field) => `mcq:${field.id}`;
+const checkboxColumnId = (field) => `checkbox:${field.id}`;
 
 const getAllMovableColumnIds = (settings = {}) => {
   const blankFields = Array.isArray(settings.blankFields) ? settings.blankFields : [];
   const mcqFields = Array.isArray(settings.mcqFields) ? settings.mcqFields : [];
+  const checkboxFields = Array.isArray(settings.checkboxFields) ? settings.checkboxFields : [];
   return [
     COLUMN_IDS.roll,
     COLUMN_IDS.name,
     ...blankFields.map(blankColumnId),
     ...mcqFields.map(mcqColumnId),
+    ...checkboxFields.map(checkboxColumnId),
     COLUMN_IDS.feedback,
   ];
 };
@@ -210,9 +243,10 @@ const normalizeColumnOrder = (order = [], settings = {}) => {
   return [...normalized, ...allIds.filter((id) => !seen.has(id))];
 };
 
-const buildVisibleColumns = (settings = {}) => {
+const buildVisibleColumns = (settings = {}, { includeCourse = false } = {}) => {
   const blankFields = Array.isArray(settings.blankFields) ? settings.blankFields : [];
   const mcqFields = Array.isArray(settings.mcqFields) ? settings.mcqFields : [];
+  const checkboxFields = Array.isArray(settings.checkboxFields) ? settings.checkboxFields : [];
   const allColumns = [];
 
   if (settings.includeRoll) {
@@ -220,6 +254,9 @@ const buildVisibleColumns = (settings = {}) => {
   }
   if (settings.includeName) {
     allColumns.push({ id: COLUMN_IDS.name, type: "name", label: "Name", minWidth: "min-w-56" });
+  }
+  if (includeCourse) {
+    allColumns.push({ id: "course", type: "course", label: "Course", minWidth: "min-w-56", locked: true });
   }
   if (settings.includeBlankFields) {
     blankFields.forEach((field, fieldIndex) => {
@@ -245,6 +282,18 @@ const buildVisibleColumns = (settings = {}) => {
       });
     });
   }
+  if (settings.includeCheckbox) {
+    checkboxFields.forEach((field, fieldIndex) => {
+      allColumns.push({
+        id: checkboxColumnId(field),
+        type: "checkbox",
+        label: displayText(field.label, `Checkbox ${fieldIndex + 1}`),
+        field,
+        fieldIndex,
+        minWidth: "min-w-36",
+      });
+    });
+  }
   if (settings.includeFeedback) {
     allColumns.push({ id: COLUMN_IDS.feedback, type: "feedback", label: "Feedback / Comments", minWidth: "min-w-[320px]" });
   }
@@ -253,6 +302,12 @@ const buildVisibleColumns = (settings = {}) => {
   const ordered = normalizeColumnOrder(settings.columnOrder, settings)
     .map((id) => byId.get(id))
     .filter(Boolean);
+
+  if (includeCourse) {
+    const courseColumn = byId.get("course");
+    const nameIndex = ordered.findIndex((column) => column.id === COLUMN_IDS.name);
+    ordered.splice(nameIndex >= 0 ? nameIndex + 1 : 0, 0, courseColumn);
+  }
 
   if (settings.includeTotal) {
     ordered.push({ id: COLUMN_IDS.total, type: "total", label: "Total", minWidth: "min-w-40", locked: true });
@@ -264,8 +319,10 @@ const buildVisibleColumns = (settings = {}) => {
 const getColumnExportValue = (column, row, settings) => {
   if (column.type === "roll") return row.roll || "";
   if (column.type === "name") return row.name || "";
+  if (column.type === "course") return row.courseLabel || "";
   if (column.type === "blank") return getRowBlankValue(row, column.field);
   if (column.type === "mcq") return getRowMcqValue(row, column.field, column.fieldIndex);
+  if (column.type === "checkbox") return getRowCheckboxValue(row, column.field) ? "Yes" : "No";
   if (column.type === "feedback") return row.feedback || "";
   if (column.type === "total") {
     return calculateBlankFieldsTotal(row, settings.includeBlankFields ? settings.blankFields : []).value || "";
@@ -294,6 +351,52 @@ const formatCourseLabel = (course) => {
   return `${code}${title}${section}`;
 };
 
+const semesterKey = (semester, year) => {
+  const cleanSemester = String(semester || "").trim();
+  const cleanYear = String(year || "").trim();
+  return cleanSemester && cleanYear ? `${cleanSemester}::${cleanYear}` : "";
+};
+
+const semesterLabelFromKey = (key) => {
+  const [semester = "", year = ""] = String(key || "").split("::");
+  return [semester, year].filter(Boolean).join(" ");
+};
+
+const getNoteSemesterKey = (note) =>
+  semesterKey(
+    note?.courseScope === "all" ? note?.scopeSemester : note?.course?.semester,
+    note?.courseScope === "all" ? note?.scopeYear : note?.course?.year
+  );
+
+const formatNoteCourseLabel = (note) => {
+  if (note?.courseScope === "all") {
+    const scope = semesterKey(note?.scopeSemester, note?.scopeYear);
+    return scope ? `All Courses - ${semesterLabelFromKey(scope)}` : "All Courses";
+  }
+  return formatCourseLabel(note?.course);
+};
+
+const pickCurrentSemesterKey = (courses = []) => {
+  const counts = new Map();
+  courses.forEach((course) => {
+    const key = semesterKey(course?.semester, course?.year);
+    if (key) counts.set(key, (counts.get(key) || 0) + 1);
+  });
+
+  const seasonRank = { spring: 1, summer: 2, fall: 3 };
+  return [...counts.keys()].sort((a, b) => {
+    const [semesterA, yearA] = a.split("::");
+    const [semesterB, yearB] = b.split("::");
+    const yearDifference = Number(yearB || 0) - Number(yearA || 0);
+    if (yearDifference) return yearDifference;
+    const seasonDifference =
+      (seasonRank[String(semesterB).toLowerCase()] || 0) -
+      (seasonRank[String(semesterA).toLowerCase()] || 0);
+    if (seasonDifference) return seasonDifference;
+    return (counts.get(b) || 0) - (counts.get(a) || 0);
+  })[0] || "all";
+};
+
 const buildSavePayload = (note) => ({
   title: note?.title || "Untitled",
   date: note?.date || todayInput(),
@@ -301,6 +404,9 @@ const buildSavePayload = (note) => ({
   settings: normalizeSettings(note?.settings || {}),
   evaluationRows: Array.isArray(note?.evaluationRows) ? note.evaluationRows : [],
   content: note?.content || "",
+  courseScope: note?.courseScope || (note?.course ? "single" : undefined),
+  scopeSemester: note?.scopeSemester || "",
+  scopeYear: note?.scopeYear || "",
 });
 
 const serializeNote = (note) => JSON.stringify(buildSavePayload(note));
@@ -335,6 +441,7 @@ export default function TeacherNotebookPage() {
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [semesterFilter, setSemesterFilter] = useState("");
   const [courseFilter, setCourseFilter] = useState("all");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [saveStatus, setSaveStatus] = useState("Saved");
@@ -351,8 +458,11 @@ export default function TeacherNotebookPage() {
         fetchNotebookNotes(),
         fetchTeacherCourses({ archived: false }),
       ]);
-      setNotes(Array.isArray(notesData) ? notesData : []);
-      setCourses(Array.isArray(courseData) ? courseData : []);
+      const nextNotes = Array.isArray(notesData) ? notesData : [];
+      const nextCourses = Array.isArray(courseData) ? courseData : [];
+      setNotes(nextNotes);
+      setCourses(nextCourses);
+      setSemesterFilter((current) => current || pickCurrentSemesterKey(nextCourses));
     } catch (err) {
       console.error(err);
       setError(err?.response?.data?.message || "Failed to load notebook data.");
@@ -409,13 +519,44 @@ export default function TeacherNotebookPage() {
       }
     );
 
-    return [...byId.values()].sort((a, b) =>
+    return [...byId.values()]
+      .filter((course) => {
+        if (!semesterFilter || semesterFilter === "all") return true;
+        return semesterKey(course?.semester, course?.year) === semesterFilter;
+      })
+      .sort((a, b) =>
       formatCourseLabel(a).localeCompare(formatCourseLabel(b), undefined, {
         numeric: true,
         sensitivity: "base",
       })
     );
+  }, [courses, notes, semesterFilter]);
+
+  const semesterFilterOptions = useMemo(() => {
+    const keys = new Set();
+    notes.forEach((note) => {
+      const key = getNoteSemesterKey(note);
+      if (key) keys.add(key);
+    });
+    courses.forEach((course) => {
+      const key = semesterKey(course?.semester, course?.year);
+      if (key) keys.add(key);
+    });
+
+    return [...keys].sort((a, b) => {
+      const [, yearA] = a.split("::");
+      const [, yearB] = b.split("::");
+      const yearDifference = Number(yearB || 0) - Number(yearA || 0);
+      return yearDifference || semesterLabelFromKey(a).localeCompare(semesterLabelFromKey(b));
+    });
   }, [courses, notes]);
+
+  useEffect(() => {
+    if (["all", "unassigned"].includes(courseFilter)) return;
+    if (!courseFilterOptions.some((course) => getCourseId(course) === courseFilter)) {
+      setCourseFilter("all");
+    }
+  }, [courseFilter, courseFilterOptions]);
 
   const filteredNotes = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -423,22 +564,29 @@ export default function TeacherNotebookPage() {
       const type = note.type || "simple";
       const noteCourseId = getCourseId(note.course || note.courseId);
       const matchesType = typeFilter === "all" ? true : type === typeFilter;
+      const noteSemester = getNoteSemesterKey(note);
+      const matchesSemester =
+        semesterFilter === "all"
+          ? true
+          : semesterFilter === "unassigned"
+            ? !noteSemester
+            : noteSemester === semesterFilter;
       const matchesCourse =
         courseFilter === "all"
           ? true
           : courseFilter === "unassigned"
-            ? !noteCourseId
+            ? note.courseScope !== "all" && !noteCourseId
             : noteCourseId === courseFilter;
-      const courseLabel = formatCourseLabel(note.course).toLowerCase();
+      const courseLabel = formatNoteCourseLabel(note).toLowerCase();
       const matchesQuery =
         !q ||
         (note.title || "").toLowerCase().includes(q) ||
         (TYPE_LABELS[type] || type).toLowerCase().includes(q) ||
         courseLabel.includes(q) ||
         (note.date || "").toLowerCase().includes(q);
-      return matchesType && matchesCourse && matchesQuery;
+      return matchesType && matchesSemester && matchesCourse && matchesQuery;
     });
-  }, [notes, query, typeFilter, courseFilter]);
+  }, [notes, query, typeFilter, semesterFilter, courseFilter]);
 
   const openNote = async (note) => {
     const noteId = getNoteId(note);
@@ -540,8 +688,8 @@ export default function TeacherNotebookPage() {
         title: result?.addedCount > 0 ? "Student data refreshed" : "Already up to date",
         text:
           result?.addedCount > 0
-            ? `${result.addedCount} new student${result.addedCount === 1 ? "" : "s"} added. Existing marks, comments, and selections were kept unchanged.`
-            : "No new enrolled student was found for this course.",
+            ? `${result.addedCount} new student entr${result.addedCount === 1 ? "y" : "ies"} added. Existing marks, comments, and selections were kept unchanged.`
+            : "No new enrolled student entry was found for this sheet.",
         icon: "success",
         timer: 2200,
         showConfirmButton: false,
@@ -580,7 +728,7 @@ export default function TeacherNotebookPage() {
               <NotebookSmallIcon />
               Teacher Notebook
             </div>
-            <h1 className="text-2xl font-black tracking-tight text-slate-950 dark:text-white sm:text-3xl">
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-950 dark:text-white sm:text-3xl">
               Notebook & Evaluation Sheets
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">
@@ -615,14 +763,14 @@ export default function TeacherNotebookPage() {
           <div className="border-b border-slate-200 p-4 dark:border-slate-800 sm:p-5">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <h2 className="text-base font-black text-slate-950 dark:text-white">Your Notes</h2>
+                <h2 className="text-base font-semibold text-slate-950 dark:text-white">Your Notes</h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
                   Showing {filteredNotes.length} of {notes.length}
                 </p>
               </div>
 
-              <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:w-[900px] lg:grid-cols-[minmax(0,1fr)_180px_260px]">
-                <div className="relative min-w-0 sm:col-span-2 lg:col-span-1">
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:w-[1160px] xl:grid-cols-[minmax(0,1fr)_170px_190px_260px]">
+                <div className="relative min-w-0 sm:col-span-2 xl:col-span-1">
                   <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
                     <SearchIcon />
                   </span>
@@ -641,6 +789,22 @@ export default function TeacherNotebookPage() {
                   <option value="all">All Templates</option>
                   <option value="evaluation">Evaluation</option>
                   <option value="simple">Simple Notes</option>
+                </select>
+
+                <select
+                  value={semesterFilter || "all"}
+                  onChange={(e) => setSemesterFilter(e.target.value)}
+                  className="h-11 min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none transition focus:border-violet-400 focus:bg-white dark:border-slate-800 dark:bg-slate-900 dark:text-white dark:focus:border-violet-500"
+                >
+                  <option value="all">All Semesters</option>
+                  {semesterFilterOptions.map((key) => (
+                    <option key={key} value={key}>
+                      {semesterLabelFromKey(key)}
+                    </option>
+                  ))}
+                  {notes.some((note) => !getNoteSemesterKey(note)) && (
+                    <option value="unassigned">Without Semester</option>
+                  )}
                 </select>
 
                 <select
@@ -675,12 +839,12 @@ export default function TeacherNotebookPage() {
                 <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
                   <thead className="bg-slate-50 dark:bg-slate-900/70">
                     <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                      <th className="px-4 py-3 font-black">Title</th>
-                      <th className="px-4 py-3 font-black">Type</th>
-                      <th className="px-4 py-3 font-black">Course</th>
-                      <th className="px-4 py-3 font-black">Date</th>
-                      <th className="px-4 py-3 font-black">Updated</th>
-                      <th className="px-4 py-3 text-right font-black">Actions</th>
+                      <th className="px-4 py-3 font-bold">Title</th>
+                      <th className="px-4 py-3 font-bold">Type</th>
+                      <th className="px-4 py-3 font-bold">Course</th>
+                      <th className="px-4 py-3 font-bold">Date</th>
+                      <th className="px-4 py-3 font-bold">Updated</th>
+                      <th className="px-4 py-3 text-right font-bold">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -740,14 +904,14 @@ function NoteRow({ note, openingId, onOpen, onDelete }) {
       className="cursor-pointer text-sm transition hover:bg-slate-50/80 focus:bg-slate-50/80 focus:outline-none dark:hover:bg-slate-900/60 dark:focus:bg-slate-900/60"
     >
       <td className="px-4 py-4">
-        <div className="font-black text-slate-950 dark:text-white">{note.title || "Untitled"}</div>
+        <div className="font-medium text-slate-900 dark:text-slate-100">{note.title || "Untitled"}</div>
         <div className="text-xs text-slate-500 dark:text-slate-400">{note.time || "--:--"}</div>
       </td>
       <td className="px-4 py-4">
         <TypeBadge type={note.type} />
       </td>
       <td className="max-w-sm px-4 py-4 text-slate-600 dark:text-slate-300">
-        <span className="line-clamp-2">{formatCourseLabel(note.course)}</span>
+        <span className="line-clamp-2">{formatNoteCourseLabel(note)}</span>
       </td>
       <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{note.date || "-"}</td>
       <td className="px-4 py-4 text-slate-500 dark:text-slate-400">{formatDateTime(note.updatedAt)}</td>
@@ -796,8 +960,8 @@ function NoteCard({ note, openingId, onOpen, onDelete }) {
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <h3 className="line-clamp-2 break-words text-sm font-black text-slate-950 dark:text-white">{note.title || "Untitled"}</h3>
-          <p className="mt-1 line-clamp-2 break-words text-xs leading-5 text-slate-500 dark:text-slate-400">{formatCourseLabel(note.course)}</p>
+          <h3 className="line-clamp-2 break-words text-sm font-medium text-slate-900 dark:text-slate-100">{note.title || "Untitled"}</h3>
+          <p className="mt-1 line-clamp-2 break-words text-xs leading-5 text-slate-500 dark:text-slate-400">{formatNoteCourseLabel(note)}</p>
         </div>
         <span className="max-w-[46%] shrink-0">
           <TypeBadge type={note.type} />
@@ -984,6 +1148,42 @@ function CreateNotebookModal({ courses, onClose, onCreate }) {
     });
   };
 
+  const updateCheckboxField = (fieldId, patch) => {
+    setSettings((prev) => {
+      const normalized = normalizeSettings(prev);
+      const checkboxFields = normalized.checkboxFields.map((field) =>
+        field.id === fieldId ? { ...field, ...patch } : field
+      );
+      return { ...normalized, checkboxFields };
+    });
+  };
+
+  const addCheckboxField = () => {
+    setSettings((prev) => {
+      const normalized = normalizeSettings(prev);
+      const nextIndex = normalized.checkboxFields.length + 1;
+      return normalizeSettings({
+        ...normalized,
+        checkboxFields: [
+          ...normalized.checkboxFields,
+          makeCheckboxField(nextIndex),
+        ],
+      });
+    });
+  };
+
+  const removeCheckboxField = (fieldId) => {
+    setSettings((prev) => {
+      const normalized = normalizeSettings(prev);
+      return normalizeSettings({
+        ...normalized,
+        checkboxFields: normalized.checkboxFields.filter(
+          (field) => field.id !== fieldId
+        ),
+      });
+    });
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     setCreateError("");
@@ -1008,6 +1208,10 @@ function CreateNotebookModal({ courses, onClose, onCreate }) {
       id: field.id || `blank_${index + 1}`,
       label: String(field.label || `Blank Field ${index + 1}`).trim() || `Blank Field ${index + 1}`,
     }));
+    const cleanCheckboxFields = normalizedSettings.checkboxFields.map((field, index) => ({
+      id: field.id || `checkbox_${index + 1}`,
+      label: String(field.label || `Checkbox ${index + 1}`).trim() || `Checkbox ${index + 1}`,
+    }));
 
     if (type === "evaluation" && normalizedSettings.includeMcq && cleanMcqFields.length === 0) {
       setCreateError("Please add at least one MCQ/category column.");
@@ -1016,15 +1220,23 @@ function CreateNotebookModal({ courses, onClose, onCreate }) {
 
     try {
       setCreating(true);
+      const allCoursesSelected = type === "evaluation" && courseId === "__all__";
+      const currentSemester = pickCurrentSemesterKey(courses);
+      const [scopeSemester = "", scopeYear = ""] =
+        currentSemester === "all" ? [] : currentSemester.split("::");
       await onCreate({
         type,
         title: title.trim(),
-        courseId: courseId || null,
+        courseId: allCoursesSelected ? null : courseId || null,
+        courseScope: allCoursesSelected ? "all" : "single",
+        scopeSemester: allCoursesSelected ? scopeSemester : "",
+        scopeYear: allCoursesSelected ? scopeYear : "",
         date,
         time,
         settings: normalizeSettings({
           ...normalizedSettings,
           mcqFields: cleanMcqFields,
+          checkboxFields: cleanCheckboxFields,
           blankFields: cleanBlankFields,
         }),
         content: type === "simple" ? "" : undefined,
@@ -1085,6 +1297,9 @@ function CreateNotebookModal({ courses, onClose, onCreate }) {
             <Field label={type === "evaluation" ? "Course" : "Course (optional)"}>
               <select value={courseId} onChange={(e) => setCourseId(e.target.value)} className="input-soft">
                 <option value="">Select course</option>
+                {type === "evaluation" && (
+                  <option value="__all__">All Courses (current semester)</option>
+                )}
                 {courses.map((course) => (
                   <option key={course.id || course._id} value={course.id || course._id}>
                     {formatCourseLabel(course)}
@@ -1151,6 +1366,11 @@ function CreateNotebookModal({ courses, onClose, onCreate }) {
                     checked={normalizedSettings.includeMcq}
                     label="MCQ / Category Dropdown"
                     onChange={(value) => updateSetting("includeMcq", value)}
+                  />
+                  <CheckboxField
+                    checked={normalizedSettings.includeCheckbox}
+                    label="Checkbox Columns"
+                    onChange={(value) => updateSetting("includeCheckbox", value)}
                   />
                 </div>
 
@@ -1273,6 +1493,51 @@ function CreateNotebookModal({ courses, onClose, onCreate }) {
                     ))}
                   </div>
                 )}
+
+                {normalizedSettings.includeCheckbox && (
+                  <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Checkbox Columns</h4>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          Add one or more yes/no checkbox columns for each student.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={addCheckboxField}
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-violet-200 px-3 py-2 text-xs font-bold text-violet-700 hover:bg-violet-50 dark:border-violet-500/30 dark:text-violet-300 dark:hover:bg-violet-500/10"
+                      >
+                        <PlusIcon /> Add Checkbox Column
+                      </button>
+                    </div>
+
+                    {normalizedSettings.checkboxFields.map((field, fieldIndex) => (
+                      <div key={field.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/70">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="flex-1">
+                            <Field label={`Checkbox ${fieldIndex + 1} Column Name`}>
+                              <input
+                                value={field.label}
+                                onChange={(e) => updateCheckboxField(field.id, { label: e.target.value })}
+                                className="input-soft"
+                                placeholder={`Checkbox ${fieldIndex + 1}`}
+                              />
+                            </Field>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeCheckboxField(field.id)}
+                            disabled={normalizedSettings.checkboxFields.length <= 1}
+                            className="rounded-2xl border border-red-200 px-3 py-2 text-xs font-bold text-red-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-500/30 dark:text-red-300 sm:mt-6"
+                          >
+                            Remove Column
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1331,10 +1596,12 @@ function NotebookEditor({ note, courses, saveStatus, onBack, onChange, onDelete,
             <input
               value={note.title || ""}
               onChange={(e) => onChange({ title: e.target.value })}
-              className="mt-3 w-full rounded-2xl border border-transparent bg-transparent px-0 text-2xl font-black tracking-tight text-slate-950 outline-none focus:border-violet-300 focus:bg-slate-50 focus:px-3 dark:text-white dark:focus:border-violet-500/50 dark:focus:bg-slate-900 sm:text-3xl"
+              className="mt-3 w-full rounded-2xl border border-transparent bg-transparent px-0 text-2xl font-semibold tracking-tight text-slate-950 outline-none focus:border-violet-300 focus:bg-slate-50 focus:px-3 dark:text-white dark:focus:border-violet-500/50 dark:focus:bg-slate-900 sm:text-3xl"
               placeholder="Untitled note"
             />
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{formatCourseLabel(selectedCourse)}</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              {note.courseScope === "all" ? formatNoteCourseLabel(note) : formatCourseLabel(selectedCourse)}
+            </p>
           </div>
 
           <div className="w-full min-w-0 space-y-2 xl:w-auto">
@@ -1424,8 +1691,11 @@ function EvaluationEditor({ note, onChange }) {
   const settings = normalizeSettings(note.settings || {});
   const rows = Array.isArray(note.evaluationRows) ? note.evaluationRows : [];
   const mcqFields = settings.mcqFields || [];
+  const checkboxFields = settings.checkboxFields || [];
   const blankFields = settings.blankFields || [];
-  const visibleColumns = buildVisibleColumns(settings);
+  const visibleColumns = buildVisibleColumns(settings, {
+    includeCourse: note.courseScope === "all",
+  });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [rowSearch, setRowSearch] = useState("");
 
@@ -1450,6 +1720,13 @@ function EvaluationEditor({ note, onChange }) {
     const blankValues = { ...(row.blankValues || {}) };
     blankValues[field.id] = value;
     updateRow(rowIndex, { blankValues });
+  };
+
+  const updateRowCheckbox = (rowIndex, field, value) => {
+    const row = rows[rowIndex] || {};
+    const checkboxValues = { ...(row.checkboxValues || {}) };
+    checkboxValues[field.id] = Boolean(value);
+    updateRow(rowIndex, { checkboxValues });
   };
 
   const updateSetting = (key, value) => {
@@ -1547,6 +1824,36 @@ function EvaluationEditor({ note, onChange }) {
     onChange({ settings: normalizeSettings({ ...settings, blankFields: nextFields }), evaluationRows: nextRows });
   };
 
+  const updateCheckboxField = (fieldId, patch) => {
+    const nextFields = checkboxFields.map((field) =>
+      field.id === fieldId ? { ...field, ...patch } : field
+    );
+    onChange({ settings: normalizeSettings({ ...settings, checkboxFields: nextFields }) });
+  };
+
+  const addCheckboxField = () => {
+    const nextField = makeCheckboxField(checkboxFields.length + 1);
+    onChange({
+      settings: normalizeSettings({
+        ...settings,
+        checkboxFields: [...checkboxFields, nextField],
+      }),
+    });
+  };
+
+  const removeCheckboxField = (fieldId) => {
+    const nextFields = checkboxFields.filter((field) => field.id !== fieldId);
+    const nextRows = rows.map((row) => {
+      const checkboxValues = { ...(row.checkboxValues || {}) };
+      delete checkboxValues[fieldId];
+      return { ...row, checkboxValues };
+    });
+    onChange({
+      settings: normalizeSettings({ ...settings, checkboxFields: nextFields }),
+      evaluationRows: nextRows,
+    });
+  };
+
   const reorderColumns = (activeId, overId) => {
     if (!activeId || !overId || activeId === overId || activeId === COLUMN_IDS.total || overId === COLUMN_IDS.total) return;
     const currentOrder = normalizeColumnOrder(settings.columnOrder, settings);
@@ -1578,8 +1885,11 @@ function EvaluationEditor({ note, onChange }) {
     return withIndex.filter(({ row }) => {
       const selectedValues = mcqFields.map((field, fieldIndex) => getRowMcqValue(row, field, fieldIndex)).join(" ");
       const blankValues = blankFields.map((field) => getRowBlankValue(row, field)).join(" ");
+      const checkboxValues = checkboxFields
+        .map((field) => (getRowCheckboxValue(row, field) ? field.label : ""))
+        .join(" ");
       const totalValue = calculateBlankFieldsTotal(row, settings.includeBlankFields ? blankFields : []).value;
-      return [row.roll, row.name, row.feedback, selectedValues, blankValues, totalValue]
+      return [row.roll, row.name, row.courseLabel, row.feedback, selectedValues, checkboxValues, blankValues, totalValue]
         .join(" ")
         .toLowerCase()
         .includes(term);
@@ -1601,6 +1911,14 @@ function EvaluationEditor({ note, onChange }) {
       return (
         <td key={column.id} className="min-w-56 px-4 py-3 text-slate-700 dark:text-slate-200">
           {row.name || "-"}
+        </td>
+      );
+    }
+
+    if (column.type === "course") {
+      return (
+        <td key={column.id} className="min-w-56 px-4 py-3 text-slate-600 dark:text-slate-300">
+          {row.courseLabel || "-"}
         </td>
       );
     }
@@ -1634,6 +1952,22 @@ function EvaluationEditor({ note, onChange }) {
               </option>
             ))}
           </select>
+        </td>
+      );
+    }
+
+    if (column.type === "checkbox") {
+      return (
+        <td key={column.id} className="px-4 py-3 text-center">
+          <label className="inline-flex cursor-pointer items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 dark:border-slate-700 dark:bg-slate-950">
+            <input
+              type="checkbox"
+              checked={getRowCheckboxValue(row, column.field)}
+              onChange={(e) => updateRowCheckbox(rowIndex, column.field, e.target.checked)}
+              className="h-5 w-5 accent-violet-600"
+              aria-label={column.label}
+            />
+          </label>
         </td>
       );
     }
@@ -1692,11 +2026,12 @@ function EvaluationEditor({ note, onChange }) {
         </button>
 
         <div className={`${settingsOpen ? "mt-4 block" : "hidden"}`}>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-7">
             <CheckboxField checked={settings.includeRoll} label="Roll" onChange={(v) => updateSetting("includeRoll", v)} />
             <CheckboxField checked={settings.includeName} label="Name" onChange={(v) => updateSetting("includeName", v)} />
             <CheckboxField checked={settings.includeBlankFields} label="Blank Fields" onChange={(v) => updateSetting("includeBlankFields", v)} />
             <CheckboxField checked={settings.includeMcq} label="Category" onChange={(v) => updateSetting("includeMcq", v)} />
+            <CheckboxField checked={settings.includeCheckbox} label="Checkbox" onChange={(v) => updateSetting("includeCheckbox", v)} />
             <CheckboxField checked={settings.includeFeedback} label="Feedback" onChange={(v) => updateSetting("includeFeedback", v)} />
             <CheckboxField checked={settings.includeTotal} label="Total" onChange={(v) => updateSetting("includeTotal", v)} />
           </div>
@@ -1830,10 +2165,59 @@ function EvaluationEditor({ note, onChange }) {
               ))}
             </div>
           )}
+
+          {settings.includeCheckbox && (
+            <div className="mt-4 space-y-3">
+              <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Checkbox Columns</h4>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Current columns: {checkboxFields.length}. Each column stores a checked or unchecked value per student.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={addCheckboxField}
+                  className="rounded-2xl border border-violet-200 px-3 py-2 text-xs font-bold text-violet-700 hover:bg-violet-50 dark:border-violet-500/30 dark:text-violet-300 dark:hover:bg-violet-500/10"
+                >
+                  + Add Checkbox Column
+                </button>
+              </div>
+
+              {checkboxFields.map((field, fieldIndex) => (
+                <div key={field.id} className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                  <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
+                    <Field label={`Checkbox ${fieldIndex + 1} Column Name`}>
+                      <input
+                        value={field.label || ""}
+                        onChange={(e) => updateCheckboxField(field.id, { label: e.target.value })}
+                        className="input-soft"
+                        placeholder={`Checkbox ${fieldIndex + 1}`}
+                      />
+                    </Field>
+                    <button
+                      type="button"
+                      onClick={() => removeCheckboxField(field.id)}
+                      disabled={checkboxFields.length <= 1}
+                      className="rounded-2xl border border-red-200 px-3 py-2 text-xs font-bold text-red-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-500/30 dark:text-red-300"
+                    >
+                      Remove Column
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      <NotebookMarksSyncPanel note={note} />
+      {note.courseScope === "all" ? (
+        <div className="rounded-3xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-700 dark:border-sky-500/25 dark:bg-sky-500/10 dark:text-sky-300">
+          Marks Sync is available for course-specific evaluation sheets. This sheet includes all courses.
+        </div>
+      ) : (
+        <NotebookMarksSyncPanel note={note} />
+      )}
 
       <div className="overflow-hidden rounded-3xl border border-slate-200 dark:border-slate-800">
         <div className="max-h-[70vh] touch-pan-x touch-pan-y overflow-auto overscroll-y-auto [-webkit-overflow-scrolling:touch]">
@@ -1846,7 +2230,7 @@ function EvaluationEditor({ note, onChange }) {
                 <input
                   value={rowSearch}
                   onChange={(e) => setRowSearch(e.target.value)}
-                  placeholder="Search roll, name, blank fields, feedback, category..."
+                  placeholder="Search roll, name, course, fields, feedback or category..."
                   className="input-soft h-11 pl-10 text-sm"
                 />
               </div>
@@ -1883,7 +2267,7 @@ function EvaluationEditor({ note, onChange }) {
                 </tr>
               ) : (
                 filteredRows.map(({ row, rowIndex }, visibleIndex) => (
-                  <tr key={row.student || `${row.roll}-${rowIndex}`} className="text-sm">
+                  <tr key={`${row.course || "course"}-${row.student || row.roll || rowIndex}`} className="text-sm">
                     <td className="hidden px-4 py-3 text-xs font-black text-slate-400 sm:table-cell">{visibleIndex + 1}</td>
                     {visibleColumns.map((column) => renderCell(column, row, rowIndex))}
                   </tr>
@@ -2636,7 +3020,9 @@ function SimpleNoteEditor({ note, onChange }) {
 function buildEvaluationExport(note) {
   const settings = normalizeSettings(note.settings || {});
   const rows = Array.isArray(note.evaluationRows) ? note.evaluationRows : [];
-  const columns = buildVisibleColumns(settings);
+  const columns = buildVisibleColumns(settings, {
+    includeCourse: note.courseScope === "all",
+  });
   const headers = columns.map((column) => column.label);
   const body = rows.map((row) => columns.map((column) => getColumnExportValue(column, row, settings)));
   return { settings, columns, headers, body, rows };
@@ -2644,7 +3030,7 @@ function buildEvaluationExport(note) {
 
 function exportEvaluationExcel(note) {
   const { columns, headers, body, rows } = buildEvaluationExport(note);
-  const course = formatCourseLabel(note.course);
+  const course = formatNoteCourseLabel(note);
   const totalColumns = Math.max(headers.length, 1);
   const lastCol = totalColumns - 1;
 
@@ -2751,7 +3137,7 @@ function createEvaluationPdfDocument(note) {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 32;
-  const course = formatCourseLabel(note.course);
+  const course = formatNoteCourseLabel(note);
 
   const drawHeader = () => {
     doc.setFillColor(30, 41, 59);
@@ -2859,7 +3245,7 @@ function exportSimplePdf(note) {
   doc.setTextColor(71, 85, 105);
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
-  doc.text(`Course: ${formatCourseLabel(note.course)}`, 14, 42);
+  doc.text(`Course: ${formatNoteCourseLabel(note)}`, 14, 42);
   doc.text(`Date: ${note.date || "-"}    Time: ${note.time || "-"}`, 14, 49);
   doc.setTextColor(15, 23, 42);
   doc.setFontSize(11);
@@ -2915,7 +3301,7 @@ function TypeBadge({ type }) {
   return (
     <span
       className={[
-        "inline-flex max-w-full items-center justify-center rounded-full px-3 py-1 text-center text-[11px] font-black leading-4",
+        "inline-flex max-w-full items-center justify-center rounded-full px-3 py-1 text-center text-[11px] font-semibold leading-4",
         isEvaluation
           ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
           : "bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300",

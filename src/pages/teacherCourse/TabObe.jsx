@@ -4086,6 +4086,67 @@ const saveSetup = async () => {
               </SectionCard>
 
               <SectionCard
+                title="Course Report Comments"
+                subtitle="These are kept at the end of the OBE workflow and written to the final comment section of the Excel Course Report sheet."
+              >
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-950/40">
+                    <FormField label="Comment 1">
+                      <p className="mb-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                        State your suggestions for improving CO-PO achievement of this course.
+                      </p>
+                      <textarea
+                        rows={5}
+                        value={setup.courseReportComment1}
+                        onChange={(e) => setSetup((prev) => ({ ...prev, courseReportComment1: e.target.value }))}
+                        className={`${inputClass} min-h-28 resize-y`}
+                        placeholder="Suggestions for improving CO-PO achievement..."
+                      />
+                    </FormField>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-950/40">
+                    <FormField label="Comment 2">
+                      <p className="mb-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                        State your suggestions for improving teaching methodology of this course.
+                      </p>
+                      <textarea
+                        rows={5}
+                        value={setup.courseReportComment2}
+                        onChange={(e) => setSetup((prev) => ({ ...prev, courseReportComment2: e.target.value }))}
+                        className={`${inputClass} min-h-28 resize-y`}
+                        placeholder="Suggestions for improving teaching methodology..."
+                      />
+                    </FormField>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-950/40 lg:col-span-2">
+                    <FormField label="General Comment">
+                      <textarea
+                        rows={5}
+                        value={setup.courseReportGeneralComment}
+                        onChange={(e) => setSetup((prev) => ({ ...prev, courseReportGeneralComment: e.target.value }))}
+                        className={`${inputClass} min-h-28 resize-y`}
+                        placeholder="General Course Report comment..."
+                      />
+                    </FormField>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={saveSetup}
+                    disabled={setupSaving}
+                    className={`${primaryButtonClass} inline-flex items-center gap-2`}
+                  >
+                    <ObeIcon name="save" className="h-4 w-4" />
+                    {setupSaving ? "Saving..." : "Save Report Comments"}
+                  </button>
+                </div>
+              </SectionCard>
+
+              <SectionCard
                 title="Student CO Achievement"
                 subtitle="Detailed student-wise marks, CO percentage, and achievement status."
               >
@@ -4154,66 +4215,7 @@ const saveSetup = async () => {
                 </div>
               </SectionCard>
 
-              <SectionCard
-                title="Course Report Comments"
-                subtitle="These are kept at the end of the OBE workflow and written to the final comment section of the Excel Course Report sheet."
-              >
-                <div className="grid gap-4 lg:grid-cols-2">
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-950/40">
-                    <FormField label="Comment 1">
-                      <p className="mb-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                        State your suggestions for improving CO-PO achievement of this course.
-                      </p>
-                      <textarea
-                        rows={5}
-                        value={setup.courseReportComment1}
-                        onChange={(e) => setSetup((prev) => ({ ...prev, courseReportComment1: e.target.value }))}
-                        className={`${inputClass} min-h-28 resize-y`}
-                        placeholder="Suggestions for improving CO-PO achievement..."
-                      />
-                    </FormField>
-                  </div>
 
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-950/40">
-                    <FormField label="Comment 2">
-                      <p className="mb-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                        State your suggestions for improving teaching methodology of this course.
-                      </p>
-                      <textarea
-                        rows={5}
-                        value={setup.courseReportComment2}
-                        onChange={(e) => setSetup((prev) => ({ ...prev, courseReportComment2: e.target.value }))}
-                        className={`${inputClass} min-h-28 resize-y`}
-                        placeholder="Suggestions for improving teaching methodology..."
-                      />
-                    </FormField>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-950/40 lg:col-span-2">
-                    <FormField label="General Comment">
-                      <textarea
-                        rows={5}
-                        value={setup.courseReportGeneralComment}
-                        onChange={(e) => setSetup((prev) => ({ ...prev, courseReportGeneralComment: e.target.value }))}
-                        className={`${inputClass} min-h-28 resize-y`}
-                        placeholder="General Course Report comment..."
-                      />
-                    </FormField>
-                  </div>
-                </div>
-
-                <div className="mt-4 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={saveSetup}
-                    disabled={setupSaving}
-                    className={`${primaryButtonClass} inline-flex items-center gap-2`}
-                  >
-                    <ObeIcon name="save" className="h-4 w-4" />
-                    {setupSaving ? "Saving..." : "Save Report Comments"}
-                  </button>
-                </div>
-              </SectionCard>
             </>
           )}
         </div>

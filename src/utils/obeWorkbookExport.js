@@ -823,35 +823,44 @@ const getTeacherSignature = (payload = {}) =>
     ""
   );
 
-const ABBREVIATION_LABELS = {
-  AT: "Attendance",
-  CT: "Class Test",
-  ASM: "Assignment",
-  QT: "Quiz Test",
-  PRE: "Presentation",
-  VIV: "Viva Voce",
-  "LAB E": "Lab Evaluation",
-  LAB: "Lab Test",
-  CP: "Class Participation",
-  MT: "Mid Term",
-  FE: "Final Exam",
-};
-
 const normalizeAbbreviation = (value = "") =>
   safeText(value, "").replace(/\s+/g, " ").toUpperCase();
 
-const buildRelevantAbbreviations = (payload = {}, layout = {}) => {
-  const rows = [];
-  const seen = new Set();
-  const add = (code, label, best = "") => {
-    const normalized = normalizeAbbreviation(code);
-    if (!normalized || seen.has(normalized) || rows.length >= 10) return;
-    seen.add(normalized);
-    rows.push({
-      code: safeText(code, ""),
-      label: safeText(label, ABBREVIATION_LABELS[normalized] || normalized),
-      best,
-    });
+const ABBREVIATION_ROWS = {
+  CT: 14,
+  ASM: 15,
+  AT: 16,
+  QT: 17,
+  PRE: 18,
+  VIV: 19,
+  LAB: 20,
+  CP: 21,
+  MT: 22,
+  FE: 23,
+};
+
+const getAbbreviationCode = (...values) => {
+  const normalized = normalizeAbbreviation(values.filter(Boolean).join(" "));
+  if (!normalized) return "";
+
+  if (/\b(LAB\s*E|LAB\s*EVALUATION|LAB\s*TEST|LABORATORY\s*EVALUATION)\b/.test(normalized)) return "LAB";
+  if (/\b(ATTENDANCE|AT)\b/.test(normalized)) return "AT";
+  if (/\b(CLASS\s*TEST|CT)\b/.test(normalized)) return "CT";
+  if (/\b(ASSIGNMENT|ASM)\b/.test(normalized)) return "ASM";
+  if (/\b(QUIZ\s*TEST|QUIZ|QT)\b/.test(normalized)) return "QT";
+  if (/\b(PRESENTATION|PRE)\b/.test(normalized)) return "PRE";
+  if (/\b(VIVA\s*VOCE|VIVA|VIV)\b/.test(normalized)) return "VIV";
+  if (/\b(CLASS\s*PARTICIPATION|PARTICIPATION|CP)\b/.test(normalized)) return "CP";
+  if (/\b(MID\s*TERM|MIDTERM|MT)\b/.test(normalized)) return "MT";
+  if (/\b(FINAL\s*EXAM|FINAL|FE)\b/.test(normalized)) return "FE";
+  return "";
+};
+
+const buildAbbreviationCounts = (payload = {}, layout = {}) => {
+  const counts = Object.fromEntries(Object.keys(ABBREVIATION_ROWS).map((code) => [code, 0]));
+  const add = (code, amount = 1) => {
+    if (!code || counts[code] === undefined) return;
+    counts[code] = Math.min(3, counts[code] + Math.max(0, numberValue(amount)));
   };
 
   const continuous = Array.isArray(payload.continuousAssessment?.headers)
@@ -859,29 +868,56 @@ const buildRelevantAbbreviations = (payload = {}, layout = {}) => {
     : Array.isArray(payload.output?.continuousAssessment?.headers)
       ? payload.output.continuousAssessment.headers
       : [];
+  const hasContinuousAssessment = continuous.some(
+    (header) => numberValue(header?.maxMarks ?? header?.marks) > 0
+  );
 
   continuous.forEach((header) => {
-    const code = safeText(header.label || header.key, "");
-    if (!code || numberValue(header.maxMarks) <= 0) return;
-    const normalized = normalizeAbbreviation(code);
-    const best = ["CT", "ASM", "QT", "PRE", "VIV", "LAB E", "LAB"].includes(normalized)
-      ? 1
-      : "";
-    add(code, header.assessmentName || ABBREVIATION_LABELS[normalized], best);
+    if (numberValue(header?.maxMarks ?? header?.marks) <= 0) return;
+    add(
+      getAbbreviationCode(
+        header?.key,
+        header?.label,
+        header?.assessmentName,
+        header?.name
+      )
+    );
   });
 
-  if (numberValue(layout?.totals?.mid) > 0) add("MT", "Mid Term", 1);
-  if (numberValue(layout?.totals?.final) > 0) add("FE", "Final Exam", 1);
+  const blueprints = Array.isArray(payload.blueprints)
+    ? payload.blueprints
+    : Array.isArray(payload.output?.blueprints)
+      ? payload.output.blueprints
+      : [];
 
-  if (!continuous.length) {
-    (layout?.slots?.ca || []).forEach((slot) => {
-      if (slot?.isPlaceholder || numberValue(slot?.marks) <= 0) return;
-      const normalized = normalizeAbbreviation(slot.label);
-      add(slot.label, ABBREVIATION_LABELS[normalized] || slot.blueprintName, 1);
-    });
-  }
+  blueprints.forEach((blueprint) => {
+    const code = getAbbreviationCode(
+      blueprint?.assessmentType,
+      blueprint?.type,
+      blueprint?.category,
+      blueprint?.assessmentName,
+      blueprint?.name,
+      blueprint?.title
+    );
+    if (!code) return;
 
-  return rows;
+    // When the server supplies the fixed continuous-assessment headers, those
+    // headers are the authoritative entries for CA. Do not count the same CA
+    // blueprint again. Mid and Final remain blueprint-driven.
+    if (hasContinuousAssessment && !["MT", "FE"].includes(code)) return;
+
+    const itemMarks = (Array.isArray(blueprint?.items) ? blueprint.items : []).reduce(
+      (sum, item) => sum + numberValue(item?.marks ?? item?.maxMarks),
+      0
+    );
+    const totalMarks = numberValue(blueprint?.totalMarks ?? blueprint?.fullMarks) || itemMarks;
+    if (totalMarks > 0) add(code);
+  });
+
+  if (counts.MT === 0 && numberValue(layout?.totals?.mid) > 0) add("MT");
+  if (counts.FE === 0 && numberValue(layout?.totals?.final) > 0) add("FE");
+
+  return counts;
 };
 
 const calculateWorkbookData = (payload, layout, courseOutcomes, programOutcomes) => {
@@ -1061,14 +1097,15 @@ const populateGradeSheet = (document, payload, layout, workbookData, courseOutco
   writeCellValue(document, cells, "B19", safeText(course.section, ""));
   writeCellValue(document, cells, "B20", course.shift ?? setup.shift ?? 0);
 
-  const abbreviations = buildRelevantAbbreviations(payload, layout);
-  for (let index = 0; index < 10; index += 1) {
-    const row = 14 + index;
-    const item = abbreviations[index];
-    writeCellValue(document, cells, `E${row}`, item?.code || "", { preserveFormula: false });
-    writeCellValue(document, cells, `F${row}`, item?.label || "", { preserveFormula: false });
-    writeCellValue(document, cells, `I${row}`, item?.best ?? "", { preserveFormula: false });
-  }
+  // Keep the official abbreviation sequence and wording exactly as supplied
+  // by the template. Only update the "Best (Max. 3)" value in column I.
+  const abbreviationCounts = buildAbbreviationCounts(payload, layout);
+  Object.entries(ABBREVIATION_ROWS).forEach(([code, row]) => {
+    const count = abbreviationCounts[code] || 0;
+    writeCellValue(document, cells, `I${row}`, count > 0 ? count : "", {
+      preserveFormula: false,
+    });
+  });
 
   const groups = [
     ["ca", OBE_TEMPLATE_COLUMNS.ca],

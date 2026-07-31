@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   deleteTeacherCounsellingBooking,
   getTeacherCounsellingBookings,
@@ -153,27 +153,6 @@ function getFirstAvailableAlternate(slots = []) {
     alternateDate: first.day ? getNextDateForDay(first.day) : todayString(),
     alternateSlotId: getSlotDisplayId(first),
   };
-}
-
-function RoutineCounsellingTabs() {
-  const linkClass = ({ isActive }) =>
-    [
-      "inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold transition",
-      isActive
-        ? "bg-violet-600 text-white shadow-sm shadow-violet-500/20"
-        : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800/80",
-    ].join(" ");
-
-  return (
-    <div className="flex w-fit rounded-[1.4rem] border border-slate-200 bg-white/85 p-1 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-950/80">
-      <NavLink to="/teacher/routine" className={linkClass} end>
-        Routine
-      </NavLink>
-      <NavLink to="/teacher/counselling" className={linkClass}>
-        Counselling
-      </NavLink>
-    </div>
-  );
 }
 
 function StatCard({ title, value, subtitle, tone = "violet", icon }) {
@@ -391,8 +370,6 @@ function TeacherCounsellingPage() {
 
   return (
     <div className="space-y-5">
-      <RoutineCounsellingTabs />
-
       <section className="overflow-hidden rounded-[1.6rem] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
         <div className="flex flex-col gap-4 bg-gradient-to-r from-violet-600/10 via-fuchsia-500/10 to-sky-500/10 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div>

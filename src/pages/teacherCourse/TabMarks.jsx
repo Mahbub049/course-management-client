@@ -18,7 +18,11 @@ import {
   updateAssessmentStudentVisibilityRequest,
   createAssessmentRequest,
 } from "../../services/assessmentService";
-import { fetchAttendanceSummary } from "../../services/attendanceSummaryService";
+import {
+  fetchAttendanceSummary,
+  fetchAttendanceSummaryFromSheet,
+  saveAttendanceSummary,
+} from "../../services/attendanceSummaryService";
 import { getObeBlueprints, getObeSetup } from "../../services/obeService";
 import {
   chooseDefaultMarksSheet,
@@ -2033,6 +2037,7 @@ export default function TabMarks({ courseId, course }) {
   const [marksError, setMarksError] = useState("");
   const [saving, setSaving] = useState(false);
   const [syncingObeMarks, setSyncingObeMarks] = useState(false);
+  const [syncingAttendanceMarks, setSyncingAttendanceMarks] = useState(false);
   const [publishingAssessmentId, setPublishingAssessmentId] = useState(null);
   const [unpublishingAssessmentId, setUnpublishingAssessmentId] = useState(null);
   const [visibilityAssessmentId, setVisibilityAssessmentId] = useState(null);
@@ -2040,6 +2045,7 @@ export default function TabMarks({ courseId, course }) {
   const [tabMode, setTabMode] = useState("row");
   const [sortMode, setSortMode] = useState("entered");
   const [studentSearch, setStudentSearch] = useState("");
+  const [selectedGradeFilter, setSelectedGradeFilter] = useState("");
 
   const [advancedModal, setAdvancedModal] = useState({
     open: false,
@@ -2245,6 +2251,58 @@ export default function TabMarks({ courseId, course }) {
     }
   };
 
+  const handleFetchAttendanceMarks = async () => {
+    if (!courseId || syncingAttendanceMarks) return;
+
+    try {
+      setSyncingAttendanceMarks(true);
+      setMarksError("");
+
+      const result = await fetchAttendanceSummaryFromSheet(courseId);
+      const totalClasses = Number(result?.totalClasses || 0);
+
+      if (totalClasses <= 0) {
+        await Swal.fire({
+          title: "No attendance found",
+          text: "No saved daily attendance session was found for this course.",
+          icon: "info",
+          confirmButtonColor: "#4f46e5",
+        });
+        return;
+      }
+
+      const attendedMap = new Map(
+        (result?.records || []).map((row) => [
+          String(row.studentId || row.student || ""),
+          Number(row.attendedClasses || 0),
+        ])
+      );
+
+      const records = students.map((student) => ({
+        studentId: student.id,
+        totalClasses,
+        attendedClasses: attendedMap.get(String(student.id)) || 0,
+      }));
+
+      await saveAttendanceSummary(courseId, records);
+      await loadAllData();
+
+      await Swal.fire({
+        title: "Attendance marks updated",
+        text: "Attendance was fetched from the daily sheet, calculated using the existing attendance criteria, and saved in the marksheet.",
+        icon: "success",
+        confirmButtonColor: "#4f46e5",
+      });
+    } catch (error) {
+      console.error(error);
+      setMarksError(
+        error?.response?.data?.message || "Failed to fetch and calculate attendance marks"
+      );
+    } finally {
+      setSyncingAttendanceMarks(false);
+    }
+  };
+
   useEffect(() => {
     loadAllData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2363,21 +2421,40 @@ export default function TabMarks({ courseId, course }) {
 
   const visibleStudents = useMemo(() => {
     const q = studentSearch.trim().toLowerCase();
-
-    if (!q) return sortedStudents;
-
     return sortedStudents.filter((student) => {
       const roll = String(student.roll || "").toLowerCase();
       const name = String(student.name || "").toLowerCase();
       const email = String(student.email || "").toLowerCase();
+      const matchesSearch =
+        !q || roll.includes(q) || name.includes(q) || email.includes(q);
 
-      return roll.includes(q) || name.includes(q) || email.includes(q);
+      if (!matchesSearch) return false;
+      if (!selectedGradeFilter) return true;
+
+      const row = marksMap[student.id] || {};
+      const total = computeTotal100(
+        course,
+        assessments,
+        row,
+        Number(attMarksMap[student.id] || 0)
+      );
+      const grade = gradeForStudent(course, assessments, row, total);
+
+      return grade === selectedGradeFilter;
     });
-  }, [sortedStudents, studentSearch]);
+  }, [
+    sortedStudents,
+    studentSearch,
+    selectedGradeFilter,
+    marksMap,
+    attMarksMap,
+    course,
+    assessments,
+  ]);
 
   useEffect(() => {
     inputRefs.current = [];
-  }, [studentSearch, sortMode]);
+  }, [studentSearch, sortMode, selectedGradeFilter]);
 
   const gradeCounts = useMemo(() => {
     const counts = {
@@ -4570,16 +4647,26 @@ export default function TabMarks({ courseId, course }) {
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                   Grade Count Summary
                 </div>
-                <div className="text-xs text-slate-400 dark:text-slate-500">
-                  Total: {students.length}
+                <div className="text-right text-xs text-slate-400 dark:text-slate-500">
+                  <div>Total: {students.length}</div>
+                  <div>{selectedGradeFilter ? `Filtering: ${selectedGradeFilter}` : "Click a grade to filter"}</div>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-11">
                 {["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "D", "F", "I"].map((grade) => (
-                  <div
+                  <button
+                    type="button"
                     key={grade}
-                    className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-center dark:border-slate-700 dark:bg-slate-900"
+                    onClick={() => setSelectedGradeFilter(grade)}
+                    onDoubleClick={() => setSelectedGradeFilter("")}
+                    title="Click to show this grade only. Double-click to remove the grade filter."
+                    className={[
+                      "rounded-xl border px-3 py-2 text-center transition focus:outline-none focus:ring-2 focus:ring-indigo-500/30",
+                      selectedGradeFilter === grade
+                        ? "border-indigo-400 bg-indigo-50 ring-2 ring-indigo-500/20 dark:border-indigo-400 dark:bg-indigo-500/15"
+                        : "border-slate-200 bg-slate-50 hover:border-indigo-300 hover:bg-indigo-50/60 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-indigo-500/50 dark:hover:bg-indigo-500/10",
+                    ].join(" ")}
                   >
                     <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                       {grade}
@@ -4587,7 +4674,7 @@ export default function TabMarks({ courseId, course }) {
                     <div className="mt-1 text-base font-bold text-slate-900 dark:text-slate-100">
                       {gradeCounts[grade]}
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -4666,6 +4753,26 @@ export default function TabMarks({ courseId, course }) {
               >
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M12 3v11m0 0 4-4m-4 4-4-4" strokeLinecap="round" strokeLinejoin="round"/><path d="M5 16v3h14v-3" strokeLinecap="round"/></svg>
                 Import Excel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleFetchAttendanceMarks}
+                disabled={
+                  loading ||
+                  saving ||
+                  syncingAttendanceMarks ||
+                  students.length === 0
+                }
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 text-xs font-bold text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-sky-500/25 dark:bg-sky-500/10 dark:text-sky-300 dark:hover:bg-sky-500/15"
+                title="Fetch daily attendance, apply the existing attendance-mark criteria, and save the calculated marks"
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.9">
+                  <path d="M4 5h16v14H4z" strokeLinejoin="round" />
+                  <path d="M8 3v4M16 3v4M4 9h16" strokeLinecap="round" />
+                  <path d="m9 14 2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                {syncingAttendanceMarks ? "Fetching Attendance..." : "Fetch Attendance"}
               </button>
 
               {["theory", "lab"].includes(courseType) && (
