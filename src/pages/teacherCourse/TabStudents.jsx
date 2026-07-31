@@ -141,6 +141,7 @@ export default function TabStudents({ courseId }) {
   });
   const [addingStudent, setAddingStudent] = useState(false);
   const [lastAddedInfo, setLastAddedInfo] = useState(null);
+  const [addToolsOpen, setAddToolsOpen] = useState(false);
 
   const [bulkText, setBulkText] = useState("");
   const [bulkResult, setBulkResult] = useState(null);
@@ -169,12 +170,16 @@ export default function TabStudents({ courseId }) {
   const [editError, setEditError] = useState("");
 
   useEffect(() => {
+    setAddToolsOpen(false);
+
     async function load() {
       setLoadingStudents(true);
       setStudentError("");
       try {
         const data = await getCourseStudents(courseId);
-        setStudents(data || []);
+        const loadedStudents = Array.isArray(data) ? data : [];
+        setStudents(loadedStudents);
+        setAddToolsOpen(loadedStudents.length === 0);
       } catch (err) {
         console.error(err);
         setStudentError(err?.response?.data?.message || "Failed to load students");
@@ -792,7 +797,17 @@ export default function TabStudents({ courseId }) {
               </p>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setAddToolsOpen((current) => !current)}
+                aria-expanded={addToolsOpen}
+                className="inline-flex items-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-semibold text-indigo-700 shadow-sm transition hover:border-indigo-300 hover:bg-indigo-100 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-200 dark:hover:bg-indigo-500/20"
+              >
+                <UserPlusIconSmall />
+                {addToolsOpen ? "Hide Add Options" : "Add Students"}
+                <AddOptionsChevron open={addToolsOpen} />
+              </button>
               <StatPill label="Total" value={students.length} />
               <StatPill label="Visible" value={filteredStudents.length} />
             </div>
@@ -806,7 +821,8 @@ export default function TabStudents({ courseId }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+      {addToolsOpen && (
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center gap-3 border-b border-slate-100 px-6 py-4 dark:border-slate-800">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-indigo-100 bg-indigo-50 dark:border-indigo-500/20 dark:bg-indigo-500/10">
@@ -1056,7 +1072,8 @@ export default function TabStudents({ courseId }) {
             )}
           </div>
         </div>
-      </div>
+        </div>
+      )}
 
       <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-col gap-4 border-b border-slate-100 px-6 py-4 xl:flex-row xl:items-center xl:justify-between dark:border-slate-800">
@@ -1171,7 +1188,7 @@ export default function TabStudents({ courseId }) {
                 No students found
               </h5>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Add students above or try another search term.
+                Use the Add Students button above, or try another search term.
               </p>
             </div>
           ) : (
@@ -1538,6 +1555,21 @@ function SkeletonRow() {
       <div className="h-3 w-28 rounded bg-slate-200 dark:bg-slate-700" />
       <div className="mt-2 h-3 w-64 rounded bg-slate-200 dark:bg-slate-700" />
     </div>
+  );
+}
+
+function AddOptionsChevron({ open }) {
+  return (
+    <svg
+      className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
   );
 }
 

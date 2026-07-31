@@ -12,7 +12,7 @@ function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [checkingLogin, setCheckingLogin] = useState(true);
   const [error, setError] = useState("");
-  const [rememberMe, setRememberMe] = useState(true);
+  const [rememberMe, setRememberMe] = useState(false);
 
   const goToDashboard = (role) => {
     if (role === "teacher") {

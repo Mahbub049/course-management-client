@@ -95,7 +95,12 @@ function buildUpcomingSchedule(calendar, facultyEvents, startDate, endDate) {
         endDate: rangeEnd,
         displayDate: rangeStart < startDate ? startDate : rangeStart,
         startTime: "",
+        endTime: "",
+        details: event.note || "",
+        dateText: event.dateText || "",
+        dayText: event.dayText || "",
         visibility: "university",
+        creatorName: "BUBT Academic Calendar",
         canEdit: false,
         sortOrder: Number.isFinite(Number(event.sortOrder)) ? Number(event.sortOrder) : index,
         createdAt: event.createdAt || "",
@@ -118,7 +123,10 @@ function buildUpcomingSchedule(calendar, facultyEvents, startDate, endDate) {
         endDate: eventEnd,
         displayDate: eventStart < startDate ? startDate : eventStart,
         startTime: event.startTime || "",
+        endTime: event.endTime || "",
+        details: event.details || "",
         visibility: event.visibility || "personal",
+        creatorName: event.creatorName || event.faculty?.name || "",
         canEdit: event.canEdit !== false,
         sortOrder: Number.isFinite(Number(event.sortOrder)) ? Number(event.sortOrder) : 0,
         createdAt: event.createdAt || "",
@@ -205,6 +213,7 @@ useEffect(() => {
   const [pendingCounsellingCount, setPendingCounsellingCount] = useState(0);
   const [latestCounsellingRequest, setLatestCounsellingRequest] = useState(null);
   const [upcomingSchedule, setUpcomingSchedule] = useState([]);
+  const [selectedScheduleItem, setSelectedScheduleItem] = useState(null);
 
   useEffect(() => {
 if (role !== "teacher") return;
@@ -326,6 +335,7 @@ if (role !== "teacher") return;
           loading={statsLoading}
           compact
           onOpenCalendar={() => navigate("/academic-calendar")}
+          onOpenItem={setSelectedScheduleItem}
         />
       </section>
 
@@ -415,6 +425,7 @@ if (role !== "teacher") return;
         items={upcomingSchedule}
         loading={statsLoading}
         onOpenCalendar={() => navigate("/academic-calendar")}
+        onOpenItem={setSelectedScheduleItem}
       />
 
       {/* Stats */}
@@ -487,11 +498,24 @@ if (role !== "teacher") return;
         />
       </section>
       </div>
+
+      {selectedScheduleItem && (
+        <DashboardCalendarDetailModal
+          item={selectedScheduleItem}
+          onClose={() => setSelectedScheduleItem(null)}
+        />
+      )}
     </div>
   );
 }
 
-function UpcomingScheduleCard({ items, loading, onOpenCalendar, compact = false }) {
+function UpcomingScheduleCard({
+  items,
+  loading,
+  onOpenCalendar,
+  onOpenItem,
+  compact = false,
+}) {
   const typeStyles = {
     Task: "bg-emerald-500",
     Exam: "bg-amber-500",
@@ -555,7 +579,7 @@ function UpcomingScheduleCard({ items, loading, onOpenCalendar, compact = false 
                 <button
                   key={`${item.source}-${item.id}`}
                   type="button"
-                  onClick={onOpenCalendar}
+                  onClick={() => onOpenItem?.(item)}
                   className="group flex w-full items-start gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 text-left transition hover:border-violet-300 hover:bg-violet-50/45 dark:border-slate-700 dark:bg-slate-950 dark:hover:border-violet-500/40 dark:hover:bg-violet-500/5"
                   title={`${formatFriendlyDate(item.startDate, { includeYear: true })}${isRange ? ` – ${formatFriendlyDate(item.endDate, { includeYear: true })}` : ""}`}
                 >
@@ -587,6 +611,115 @@ function UpcomingScheduleCard({ items, loading, onOpenCalendar, compact = false 
         </div>
       </div>
     </section>
+  );
+}
+
+function DashboardCalendarDetailModal({ item, onClose }) {
+  const isRange = item.startDate !== item.endDate;
+  const dateLabel = isRange
+    ? `${formatFriendlyDate(item.startDate, { includeYear: true })} – ${formatFriendlyDate(item.endDate, { includeYear: true })}`
+    : formatFriendlyDate(item.startDate, { includeYear: true });
+  const timeLabel = item.startTime
+    ? `${formatClock(item.startTime)}${item.endTime ? ` – ${formatClock(item.endTime)}` : ""}`
+    : "All day";
+  const visibilityLabel =
+    item.source === "academic"
+      ? "Official academic calendar"
+      : item.visibility === "university"
+      ? "Visible to all teachers"
+      : "Visible only to you";
+  const sourceLabel = item.source === "academic" ? "Official BUBT item" : "Teacher-created item";
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="dashboard-calendar-detail-title"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-5 dark:border-slate-800 sm:p-6">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-bold text-violet-700 dark:border-violet-500/25 dark:bg-violet-500/10 dark:text-violet-200">
+                {item.type || "Event"}
+              </span>
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                {sourceLabel}
+              </span>
+            </div>
+            <h3
+              id="dashboard-calendar-detail-title"
+              className="mt-3 break-words text-xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-2xl"
+            >
+              {item.title}
+            </h3>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+            aria-label="Close event details"
+          >
+            <CloseIcon />
+          </button>
+        </div>
+
+        <div className="grid gap-3 p-5 sm:grid-cols-2 sm:p-6">
+          <DashboardInfoCard label="Date" value={dateLabel} icon={<CalendarIcon />} />
+          <DashboardInfoCard label="Time" value={timeLabel} icon={<ClockIcon />} />
+          <DashboardInfoCard label="Visibility" value={visibilityLabel} icon={<EyeIcon />} />
+          <DashboardInfoCard
+            label="Created by"
+            value={item.creatorName || (item.source === "academic" ? "BUBT Academic Calendar" : "You")}
+            icon={<UserInfoIcon />}
+          />
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-950/70 sm:col-span-2">
+            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+              Details
+            </p>
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">
+              {item.details || "No additional details were added for this item."}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex justify-end border-t border-slate-200 p-5 dark:border-slate-800 sm:px-6">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-2xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DashboardInfoCard({ label, value, icon }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950">
+      <div className="flex items-start gap-3">
+        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">
+          {icon}
+        </span>
+        <span className="min-w-0">
+          <span className="block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+            {label}
+          </span>
+          <span className="mt-1 block break-words text-sm font-semibold leading-5 text-slate-900 dark:text-white">
+            {value}
+          </span>
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -720,6 +853,41 @@ function ActionCard({ title, desc, onClick, icon, accent }) {
 }
 
 /* ---------- Icons ---------- */
+
+function CloseIcon() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M6 6l12 12M18 6 6 18" />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+function EyeIcon() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z" />
+      <circle cx="12" cy="12" r="2.5" />
+    </svg>
+  );
+}
+
+function UserInfoIcon() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21a8 8 0 0 1 16 0" />
+    </svg>
+  );
+}
 
 function CalendarIcon() {
   return (

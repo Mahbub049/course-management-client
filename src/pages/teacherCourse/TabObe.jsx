@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import Swal from "sweetalert2";
 import { saveAs } from "file-saver";
 
@@ -42,6 +43,8 @@ const defaultLevels = [
   { min: 40, max: 49.99, level: 1 },
   { min: 0, max: 39.99, level: 0 },
 ];
+
+const OBE_SUBTAB_IDS = ["setup", "blueprint", "marks", "output"];
 
 const emptySetup = {
   thresholdPercent: 40,
@@ -265,7 +268,18 @@ export default function TabObe({ courseId, course }) {
     ? ["mid", "final"]
     : ["ct", "assignment", "mid", "final", "attendance"];
 
-  const [activeSubtab, setActiveSubtab] = useState("setup");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedSubtab = searchParams.get("obeSubtab");
+  const activeSubtab = OBE_SUBTAB_IDS.includes(requestedSubtab)
+    ? requestedSubtab
+    : "setup";
+
+  const setActiveSubtab = (nextSubtab) => {
+    const safeSubtab = OBE_SUBTAB_IDS.includes(nextSubtab) ? nextSubtab : "setup";
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("obeSubtab", safeSubtab);
+    setSearchParams(nextParams);
+  };
 
   const [setup, setSetup] = useState(emptySetup);
   const [setupLoading, setSetupLoading] = useState(true);

@@ -4,6 +4,7 @@ import Swal from "sweetalert2";
 import { academicCalendarService } from "../services/academicCalendarService";
 import { getAuthItem } from "../utils/authStorage";
 import {
+  addDays,
   buildMonthDays,
   dateFromIso,
   daysBetween,
@@ -55,6 +56,7 @@ const VISIBILITY_OPTIONS = [
 ];
 
 const MAX_EVENT_LANES = 3;
+const CALENDAR_DRAG_TYPE = "application/x-marks-calendar-event";
 
 const categoryStyles = {
   Holiday:
@@ -483,6 +485,64 @@ export default function AcademicCalendarPage() {
     }
   };
 
+  const handleMoveFacultyEvent = async (draggedItem, targetDate) => {
+    if (
+      !draggedItem?.id ||
+      draggedItem.source !== "faculty" ||
+      !draggedItem.canEdit ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(String(targetDate || "")) ||
+      draggedItem.startDate === targetDate
+    ) {
+      return;
+    }
+
+    const originalStart = dateFromIso(draggedItem.startDate);
+    const originalEnd = dateFromIso(draggedItem.endDate || draggedItem.startDate);
+    const movedStart = dateFromIso(targetDate);
+    if (!originalStart || !originalEnd || !movedStart) return;
+
+    const durationDays = Math.max(0, daysBetween(originalStart, originalEnd));
+    const movedEndDate = isoFromDate(addDays(movedStart, durationDays));
+    const previousEvents = facultyEvents;
+
+    setFacultyEvents((current) =>
+      current.map((event) =>
+        String(event._id) === String(draggedItem.id)
+          ? { ...event, date: targetDate, endDate: movedEndDate }
+          : event
+      )
+    );
+
+    try {
+      const response = await academicCalendarService.updateFacultyEvent(draggedItem.id, {
+        title: draggedItem.title || "",
+        type: draggedItem.raw?.type || draggedItem.type || "Task",
+        date: targetDate,
+        endDate: movedEndDate,
+        startTime: draggedItem.startTime || "",
+        endTime: draggedItem.endTime || "",
+        details: draggedItem.details || "",
+        visibility: draggedItem.visibility || "personal",
+      });
+
+      if (response?.event) {
+        setFacultyEvents((current) =>
+          current.map((event) =>
+            String(event._id) === String(draggedItem.id) ? response.event : event
+          )
+        );
+      }
+    } catch (error) {
+      console.error(error);
+      setFacultyEvents(previousEvents);
+      Swal.fire(
+        "Move failed",
+        error?.response?.data?.message || "Could not move the calendar item to the selected date.",
+        "error"
+      );
+    }
+  };
+
   const openCreateModal = (date = isoFromDate(new Date())) => {
     if (!isTeacher) return;
     setAgendaDate("");
@@ -833,7 +893,7 @@ export default function AcademicCalendarPage() {
                     {monthLabel(currentMonth)}
                   </h2>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Click a date to add an item. Your own items appear first and can be dragged to reorder on the same date.
+                    Click a date to add an item. Drag your own items to another date, or reorder them on the same date.
                   </p>
                 </div>
                 {facultyEventsLoading && (
@@ -917,6 +977,7 @@ export default function AcademicCalendarPage() {
                   onOpenItem={openCalendarItem}
                   onOpenAgenda={setAgendaDate}
                   onReorder={handleReorderFacultyEvents}
+                  onMoveDate={handleMoveFacultyEvent}
                 />
               ))}
             </div>
@@ -955,9 +1016,19 @@ export default function AcademicCalendarPage() {
   );
 }
 
-function CalendarWeek({ days, items, isLast, onCreate, onOpenItem, onOpenAgenda, onReorder }) {
+function CalendarWeek({
+  days,
+  items,
+  isLast,
+  onCreate,
+  onOpenItem,
+  onOpenAgenda,
+  onReorder,
+  onMoveDate,
+}) {
   const [draggedId, setDraggedId] = useState("");
   const [dragTargetId, setDragTargetId] = useState("");
+  const [dragTargetDate, setDragTargetDate] = useState("");
   const suppressClickRef = useRef(false);
 
   const { visibleSegments, hiddenByDate } = useMemo(
@@ -980,12 +1051,48 @@ function CalendarWeek({ days, items, isLast, onCreate, onOpenItem, onOpenAgenda,
               key={day.iso}
               type="button"
               onClick={() => onCreate(day.iso)}
+              onDragOver={(event) => {
+                if (!Array.from(event.dataTransfer?.types || []).includes(CALENDAR_DRAG_TYPE)) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                setDragTargetDate(day.iso);
+              }}
+              onDragLeave={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget)) {
+                  setDragTargetDate((current) => (current === day.iso ? "" : current));
+                }
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const eventId =
+                  event.dataTransfer.getData(CALENDAR_DRAG_TYPE) ||
+                  event.dataTransfer.getData("text/plain") ||
+                  draggedId;
+                const draggedItem = items.find(
+                  (item) =>
+                    item.source === "faculty" &&
+                    item.canEdit &&
+                    String(item.id) === String(eventId)
+                );
+                if (draggedItem) onMoveDate?.(draggedItem, day.iso);
+                setDraggedId("");
+                setDragTargetId("");
+                setDragTargetDate("");
+                window.setTimeout(() => {
+                  suppressClickRef.current = false;
+                }, 0);
+              }}
               className={`relative block p-2.5 text-left transition focus:outline-none focus:ring-2 focus:ring-inset focus:ring-violet-500 ${
                 index < 6 ? "border-r border-slate-200 dark:border-slate-700/70" : ""
               } ${
                 day.inCurrentMonth
                   ? "bg-white hover:bg-violet-50/45 dark:bg-[#08111f] dark:hover:bg-[#101b2e]"
                   : "bg-slate-50/65 hover:bg-slate-100 dark:bg-[#060d18] dark:hover:bg-[#0b1424]"
+              } ${
+                dragTargetDate === day.iso
+                  ? "z-10 bg-violet-100/80 ring-2 ring-inset ring-violet-500 dark:bg-violet-500/15"
+                  : ""
               }`}
             >
               <span
@@ -1042,19 +1149,11 @@ function CalendarWeek({ days, items, isLast, onCreate, onOpenItem, onOpenAgenda,
                 suppressClickRef.current = true;
                 setDraggedId(segment.id);
                 event.dataTransfer.effectAllowed = "move";
-                event.dataTransfer.setData("text/plain", segment.id);
+                event.dataTransfer.setData(CALENDAR_DRAG_TYPE, String(segment.id));
+                event.dataTransfer.setData("text/plain", String(segment.id));
               }}
               onDragOver={(event) => {
-                const draggedSegment = visibleSegments.find((item) => item.id === draggedId);
-                if (
-                  !draggedSegment ||
-                  segment.id === draggedId ||
-                  segment.source !== "faculty" ||
-                  !segment.canEdit ||
-                  draggedSegment.startDate !== segment.startDate
-                ) {
-                  return;
-                }
+                if (!Array.from(event.dataTransfer?.types || []).includes(CALENDAR_DRAG_TYPE)) return;
                 event.preventDefault();
                 event.dataTransfer.dropEffect = "move";
                 setDragTargetId(segment.id);
@@ -1065,10 +1164,33 @@ function CalendarWeek({ days, items, isLast, onCreate, onOpenItem, onOpenAgenda,
               onDrop={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                const draggedSegment = visibleSegments.find((item) => item.id === draggedId);
-                if (draggedSegment) onReorder?.(draggedSegment, segment);
+                const eventId =
+                  event.dataTransfer.getData(CALENDAR_DRAG_TYPE) ||
+                  event.dataTransfer.getData("text/plain") ||
+                  draggedId;
+                const draggedSegment = items.find(
+                  (item) =>
+                    item.source === "faculty" &&
+                    item.canEdit &&
+                    String(item.id) === String(eventId)
+                );
+                const targetDate = days[segment.startColumn]?.iso || segment.startDate;
+
+                if (draggedSegment) {
+                  if (
+                    draggedSegment.startDate === targetDate &&
+                    segment.source === "faculty" &&
+                    segment.canEdit
+                  ) {
+                    onReorder?.(draggedSegment, segment);
+                  } else {
+                    onMoveDate?.(draggedSegment, targetDate);
+                  }
+                }
+
                 setDraggedId("");
                 setDragTargetId("");
+                setDragTargetDate("");
                 window.setTimeout(() => {
                   suppressClickRef.current = false;
                 }, 0);
@@ -1076,6 +1198,7 @@ function CalendarWeek({ days, items, isLast, onCreate, onOpenItem, onOpenAgenda,
               onDragEnd={() => {
                 setDraggedId("");
                 setDragTargetId("");
+                setDragTargetDate("");
                 window.setTimeout(() => {
                   suppressClickRef.current = false;
                 }, 0);
@@ -1098,7 +1221,7 @@ function CalendarWeek({ days, items, isLast, onCreate, onOpenItem, onOpenAgenda,
               }}
               title={`${segment.title}\n${formatRange(segment)}${
                 segment.details ? `\n${segment.details}` : ""
-              }${segment.source === "faculty" && segment.canEdit ? "\nDrag to reorder your items on this date." : ""}`}
+              }${segment.source === "faculty" && segment.canEdit ? "\nDrag to another date, or drop on one of your items to reorder." : ""}`}
             >
               <span
                 className={`h-1.5 w-1.5 shrink-0 rounded-full ${
