@@ -5,6 +5,11 @@ import {
   getTeacherCounsellingBookings,
   updateTeacherCounsellingBooking,
 } from "../services/routineService";
+import {
+  CounsellingCreateModal,
+  CounsellingRegisterSection,
+  CounsellingReportModal,
+} from "../components/CounsellingRegister";
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const STATUS_OPTIONS = [
@@ -186,16 +191,28 @@ function StatCard({ title, value, subtitle, tone = "violet", icon }) {
 
 function TeacherCounsellingPage() {
   const navigate = useNavigate();
-  const [data, setData] = useState({ counsellingSlots: [], timeSlots: [], bookings: [] });
+  const [data, setData] = useState({
+    counsellingSlots: [],
+    timeSlots: [],
+    bookings: [],
+    records: [],
+    courses: [],
+    teacher: null,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [bookingForms, setBookingForms] = useState({});
   const [updatingBookingId, setUpdatingBookingId] = useState("");
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [reportModalOpen, setReportModalOpen] = useState(false);
 
   const counsellingSlots = data.counsellingSlots || [];
   const timeSlots = data.timeSlots || [];
   const bookings = data.bookings || [];
+  const records = data.records || [];
+  const courses = data.courses || [];
+  const teacher = data.teacher || null;
 
   const groupedSlots = useMemo(() => groupCounsellingSlots(counsellingSlots), [counsellingSlots]);
 
@@ -218,11 +235,14 @@ function TeacherCounsellingPage() {
   }, [bookings, statusFilter]);
 
   const loadData = async () => {
-    const result = await getTeacherCounsellingBookings();
+    const result = await getTeacherCounsellingBookings({ includeRegister: true });
     setData({
       counsellingSlots: result?.counsellingSlots || [],
       timeSlots: result?.timeSlots || [],
       bookings: result?.bookings || [],
+      records: result?.records || [],
+      courses: result?.courses || [],
+      teacher: result?.teacher || null,
     });
   };
 
@@ -233,12 +253,15 @@ function TeacherCounsellingPage() {
       try {
         setLoading(true);
         setError("");
-        const result = await getTeacherCounsellingBookings();
+        const result = await getTeacherCounsellingBookings({ includeRegister: true });
         if (ignore) return;
         setData({
           counsellingSlots: result?.counsellingSlots || [],
           timeSlots: result?.timeSlots || [],
           bookings: result?.bookings || [],
+          records: result?.records || [],
+          courses: result?.courses || [],
+          teacher: result?.teacher || null,
         });
       } catch (err) {
         console.error(err);
@@ -381,14 +404,32 @@ function TeacherCounsellingPage() {
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => navigate("/teacher/routine/manage")}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700"
-          >
-            <CalendarIcon />
-            Manage Weekly Schedule
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setReportModalOpen(true)}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-violet-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-violet-700 shadow-sm transition hover:bg-white dark:border-violet-500/20 dark:bg-slate-950/60 dark:text-violet-300 dark:hover:bg-slate-950"
+            >
+              <PrintIcon />
+              Print Counselling List
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreateModalOpen(true)}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700"
+            >
+              <AddIcon />
+              Add Counselling
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate("/teacher/routine/manage")}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-white dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-200 dark:hover:bg-slate-950"
+            >
+              <CalendarIcon />
+              Manage Weekly Schedule
+            </button>
+          </div>
         </div>
       </section>
 
@@ -713,7 +754,45 @@ function TeacherCounsellingPage() {
           )}
         </div>
       </section>
+
+      <CounsellingRegisterSection
+        records={records}
+        courses={courses}
+        onChanged={loadData}
+      />
+
+      <CounsellingCreateModal
+        open={createModalOpen}
+        courses={courses}
+        onClose={() => setCreateModalOpen(false)}
+        onSaved={loadData}
+      />
+
+      <CounsellingReportModal
+        open={reportModalOpen}
+        courses={courses}
+        teacher={teacher}
+        onClose={() => setReportModalOpen(false)}
+      />
     </div>
+  );
+}
+
+function AddIcon() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+function PrintIcon() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M7 8V3h10v5" />
+      <path d="M7 17H5a2 2 0 0 1-2-2v-4a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v4a2 2 0 0 1-2 2h-2" />
+      <path d="M7 14h10v7H7z" />
+    </svg>
   );
 }
 

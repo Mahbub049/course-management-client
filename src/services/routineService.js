@@ -33,8 +33,10 @@ export const downloadRoutineDocument = async (kind) => {
   window.URL.revokeObjectURL(url);
 };
 
-export const getTeacherCounsellingBookings = async () => {
-  const res = await api.get("/routine/my/counselling-bookings");
+export const getTeacherCounsellingBookings = async ({ includeRegister = false } = {}) => {
+  const res = await api.get("/routine/my/counselling-bookings", {
+    params: includeRegister ? { includeRegister: true } : undefined,
+  });
   return res.data;
 };
 
@@ -60,5 +62,20 @@ export const deleteStudentCounsellingBooking = async (bookingId) => {
 
 export const deleteTeacherCounsellingBooking = async (bookingId) => {
   const res = await api.delete(`/routine/my/counselling-bookings/${bookingId}`);
+  return res.data;
+};
+
+export const createTeacherCounsellingRecord = async (payload) => {
+  const res = await api.post("/routine/my/counselling-records", payload);
+  return res.data;
+};
+
+export const deleteTeacherCounsellingRecord = async (recordId) => {
+  const res = await api.delete(`/routine/my/counselling-records/${recordId}`);
+  return res.data;
+};
+
+export const getTeacherCounsellingReport = async (params = {}) => {
+  const res = await api.get("/routine/my/counselling-records/report", { params });
   return res.data;
 };
