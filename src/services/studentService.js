@@ -11,11 +11,9 @@ export const fetchStudentCourses = async () => {
 // Detailed marks for ONE course for this student
 export const fetchStudentCourseDetails = async (courseId) => {
   const res = await api.get(`/student/courses/${courseId}`, {
+    // The timestamp prevents stale responses without adding unnecessary CORS
+    // request headers to the hosted API call.
     params: { _ts: Date.now() },
-    headers: {
-      "Cache-Control": "no-cache",
-      Pragma: "no-cache",
-    },
   });
 
   return res.data; // { course, assessments, totalObtained, grade, aPlusInfo, ... }

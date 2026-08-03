@@ -1,7 +1,15 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { loginRequest } from "../services/authService";
-import { getAuthItem, saveAuthData } from "../utils/authStorage";
+import {
+  loginRequest,
+  validateSessionRequest,
+  warmUpApi,
+} from "../services/authService";
+import {
+  clearAuthData,
+  getAuthItem,
+  saveAuthData,
+} from "../utils/authStorage";
 
 function LoginPage() {
   const navigate = useNavigate();
@@ -25,15 +33,61 @@ function LoginPage() {
   };
 
   useEffect(() => {
-    const token = getAuthItem("marksPortalToken");
-    const role = getAuthItem("marksPortalRole");
+    let cancelled = false;
 
-    if (token && role) {
-      goToDashboard(role);
-      return;
-    }
+    const initialiseLogin = async () => {
+      const notice = sessionStorage.getItem("marksPortalLoginNotice");
+      if (notice) {
+        sessionStorage.removeItem("marksPortalLoginNotice");
+        setError(notice);
+      }
 
-    setCheckingLogin(false);
+      const token = getAuthItem("marksPortalToken");
+      const storedRole = getAuthItem("marksPortalRole");
+
+      if (!token || !storedRole) {
+        if (!cancelled) setCheckingLogin(false);
+
+        // Start waking the API while the user enters credentials. Failure here
+        // is intentionally silent because login will show the real result.
+        warmUpApi().catch(() => {});
+        return;
+      }
+
+      try {
+        await warmUpApi();
+        const profile = await validateSessionRequest();
+        if (cancelled) return;
+
+        goToDashboard(profile?.role || storedRole);
+      } catch (err) {
+        console.error("Stored session validation failed", err);
+        clearAuthData();
+
+        if (!cancelled) {
+          if (!err?.response) {
+            setError(
+              "The server is taking longer than usual to respond. Please wait a moment and log in again."
+            );
+          } else if (Number(err.response.status) === 401) {
+            setError("Your session expired. Please log in again.");
+          } else {
+            setError(
+              err?.response?.data?.message ||
+                "Your previous session could not be verified. Please log in again."
+            );
+          }
+
+          setCheckingLogin(false);
+        }
+      }
+    };
+
+    initialiseLogin();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleSubmit = async (e) => {
@@ -49,7 +103,20 @@ function LoginPage() {
       goToDashboard(data.role);
     } catch (err) {
       console.error(err);
-      setError(err?.response?.data?.message || "Invalid username or password");
+
+      const status = Number(err?.response?.status || 0);
+
+      if (!err?.response) {
+        setError(
+          "The server could not be reached. It may still be starting; please wait a few seconds and try again."
+        );
+      } else if ([502, 503, 504].includes(status)) {
+        setError(
+          "The server is starting or temporarily unavailable. Please wait a few seconds and try again."
+        );
+      } else {
+        setError(err?.response?.data?.message || "Invalid username or password");
+      }
     } finally {
       setLoading(false);
     }

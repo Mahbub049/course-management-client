@@ -7,6 +7,7 @@ import {
 } from "../services/routineService";
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const EMPTY_LIST = Object.freeze([]);
 
 function todayString() {
   return new Date().toISOString().slice(0, 10);
@@ -104,8 +105,10 @@ function StudentCounsellingPage() {
   const requestBookingRef = useRef(null);
   const myRequestsRef = useRef(null);
 
-  const counsellingSlots = info?.counsellingSlots || [];
-  const bookings = info?.bookings || [];
+  const counsellingSlots = Array.isArray(info?.counsellingSlots)
+    ? info.counsellingSlots
+    : EMPTY_LIST;
+  const bookings = Array.isArray(info?.bookings) ? info.bookings : EMPTY_LIST;
 
   const selectedDay = useMemo(() => getDateDayName(form.date), [form.date]);
 
@@ -170,12 +173,18 @@ function StudentCounsellingPage() {
   }, []);
 
   useEffect(() => {
-    if (!availableSlotsForDate.some((slot) => slot.slotId === form.slotId)) {
-      setForm((prev) => ({
-        ...prev,
-        slotId: availableSlotsForDate[0]?.slotId || "",
-      }));
-    }
+    const currentSlotStillAvailable = availableSlotsForDate.some(
+      (slot) => slot.slotId === form.slotId
+    );
+
+    if (currentSlotStillAvailable) return;
+
+    const nextSlotId = availableSlotsForDate[0]?.slotId || "";
+    if (nextSlotId === form.slotId) return;
+
+    setForm((prev) =>
+      prev.slotId === nextSlotId ? prev : { ...prev, slotId: nextSlotId }
+    );
   }, [availableSlotsForDate, form.slotId]);
 
   const updateField = (field, value) => {

@@ -210,6 +210,7 @@ export default function StudentCoursePage() {
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
 
   const [course, setCourse] = useState(null);
   const [assessments, setAssessments] = useState([]);
@@ -267,6 +268,64 @@ export default function StudentCoursePage() {
   }, [activeTab, setSearchParams]);
 
   useEffect(() => {
+    let active = true;
+
+    const loadSupplementaryData = async () => {
+      const [attendanceRes, materialsRes, complaintsRes] =
+        await Promise.allSettled([
+          fetchStudentAttendanceSheet(courseId),
+          fetchStudentCourseMaterials(courseId),
+          fetchStudentComplaints(),
+        ]);
+
+      if (!active) return;
+
+      if (attendanceRes.status === "fulfilled") {
+        setAttData(attendanceRes.value);
+      } else {
+        setAttError(
+          attendanceRes.reason?.response?.data?.message ||
+            "Attendance data is not available yet."
+        );
+      }
+
+      if (materialsRes.status === "fulfilled") {
+        setMaterials(
+          Array.isArray(materialsRes.value) ? materialsRes.value : []
+        );
+      } else {
+        setMaterialsError(
+          materialsRes.reason?.response?.data?.message ||
+            "Course materials are not available yet."
+        );
+      }
+
+      if (complaintsRes.status === "fulfilled") {
+        const attendanceKeys = new Set(
+          (Array.isArray(complaintsRes.value) ? complaintsRes.value : [])
+            .filter(
+              (complaint) =>
+                complaint?.category === "attendance" &&
+                complaint?.course &&
+                complaint?.attendanceRef?.date &&
+                complaint?.attendanceRef?.period != null
+            )
+            .map((complaint) =>
+              getAttendanceComplaintKey(
+                complaint.course?._id || complaint.course,
+                complaint.attendanceRef.date,
+                complaint.attendanceRef.period
+              )
+            )
+        );
+
+        setSubmittedAttendanceKeys(attendanceKeys);
+      }
+
+      setAttLoading(false);
+      setMaterialsLoading(false);
+    };
+
     const load = async () => {
       setLoading(true);
       setLoadError("");
@@ -275,90 +334,75 @@ export default function StudentCoursePage() {
       setAttError("");
       setAttData(null);
 
+      setMaterialsLoading(true);
+      setMaterialsError("");
+      setMaterials([]);
+
       try {
-        const [marksRes, attendanceRes, materialsRes, complaintsRes] =
-          await Promise.allSettled([
-            fetchStudentCourseMarks(courseId),
-            fetchStudentAttendanceSheet(courseId),
-            fetchStudentCourseMaterials(courseId),
-            fetchStudentComplaints(),
-          ]);
+        // Load the essential course/marks request first. Previously four large
+        // requests started together, which could overwhelm a waking hosted API
+        // and cause the marks request itself to time out.
+        const data = await fetchStudentCourseMarks(courseId);
 
-        if (marksRes.status === "fulfilled") {
-          const data = marksRes.value;
+        if (!active) return;
 
-          setCourse(data.course || null);
-          setAssessments(data.assessments || []);
+        setCourse(data.course || null);
+        setAssessments(data.assessments || []);
 
-          if (data.summary) {
-            setSummary(data.summary);
-            setBaseTotal(data.summary.currentTotal ?? data.summary.totalObtained ?? 0);
-            setBaseGrade(data.summary.grade ?? "-");
-            setBaseAPlusInfo(data.summary.aPlusInfo || null);
-          } else {
-            const total = data.totalObtained ?? 0;
-            setBaseTotal(total);
-            setBaseGrade(data.grade ?? "-");
-            setBaseAPlusInfo(data.aPlusInfo || null);
-          }
-        } else {
-          throw marksRes.reason;
-        }
-
-        if (attendanceRes.status === "fulfilled") {
-          setAttData(attendanceRes.value);
-        } else {
-          setAttError(
-            attendanceRes.reason?.response?.data?.message ||
-            "Attendance data is not available yet."
+        if (data.summary) {
+          setSummary(data.summary);
+          setBaseTotal(
+            data.summary.currentTotal ?? data.summary.totalObtained ?? 0
           );
-        }
-
-        if (materialsRes.status === "fulfilled") {
-          setMaterials(Array.isArray(materialsRes.value) ? materialsRes.value : []);
+          setBaseGrade(data.summary.grade ?? "-");
+          setBaseAPlusInfo(data.summary.aPlusInfo || null);
         } else {
-          setMaterialsError(
-            materialsRes.reason?.response?.data?.message ||
-            "Course materials are not available yet."
-          );
+          const total = data.totalObtained ?? 0;
+          setBaseTotal(total);
+          setBaseGrade(data.grade ?? "-");
+          setBaseAPlusInfo(data.aPlusInfo || null);
         }
 
-        if (complaintsRes.status === "fulfilled") {
-          const attendanceKeys = new Set(
-            (Array.isArray(complaintsRes.value) ? complaintsRes.value : [])
-              .filter(
-                (complaint) =>
-                  complaint?.category === "attendance" &&
-                  complaint?.course &&
-                  complaint?.attendanceRef?.date &&
-                  complaint?.attendanceRef?.period != null
-              )
-              .map((complaint) =>
-                getAttendanceComplaintKey(
-                  complaint.course?._id || complaint.course,
-                  complaint.attendanceRef.date,
-                  complaint.attendanceRef.period
-                )
-              )
-          );
-
-          setSubmittedAttendanceKeys(attendanceKeys);
-        }
-      } catch (err) {
-        console.error(err);
-        const msg =
-          err?.response?.data?.message ||
-          "Failed to load course marks. Please try again.";
-        setLoadError(msg);
-      } finally {
+        // The main page can render now. Attendance, materials and complaint
+        // metadata continue loading without being allowed to block marks.
         setLoading(false);
+        loadSupplementaryData();
+      } catch (err) {
+        if (!active) return;
+
+        console.error("Student course load failed", err);
+
+        const status = Number(err?.response?.status || 0);
+        const code = String(err?.code || "");
+        let msg = err?.response?.data?.message || "";
+
+        if (code === "ECONNABORTED" || code === "ETIMEDOUT") {
+          msg =
+            "The course request timed out. Please try again; the server may still be starting.";
+        } else if (!err?.response) {
+          msg =
+            "The portal could not reach the API server. Check the API address or internet connection, then try again.";
+        } else if ([502, 503, 504].includes(status)) {
+          msg =
+            "The server is starting or temporarily unavailable. Please wait a few seconds and try again.";
+        } else if (!msg) {
+          msg = "Failed to load course marks. Please try again.";
+        }
+
+        setLoadError(msg);
         setAttLoading(false);
         setMaterialsLoading(false);
+      } finally {
+        if (active) setLoading(false);
       }
     };
 
     if (courseId) load();
-  }, [courseId]);
+
+    return () => {
+      active = false;
+    };
+  }, [courseId, reloadKey]);
 
   const courseType = useMemo(() => getCourseType(course), [course]);
 
@@ -821,14 +865,24 @@ export default function StudentCoursePage() {
           <div className="opacity-90">{loadError}</div>
         </div>
 
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-          onClick={() => navigate("/student/dashboard")}
-        >
-          <ArrowLeftIcon />
-          Back to My Courses
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
+            onClick={() => setReloadKey((value) => value + 1)}
+          >
+            Try Again
+          </button>
+
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+            onClick={() => navigate("/student/dashboard")}
+          >
+            <ArrowLeftIcon />
+            Back to My Courses
+          </button>
+        </div>
       </div>
     );
   }
