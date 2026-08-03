@@ -143,8 +143,8 @@ function LoginPage() {
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(99,102,241,0.10),transparent_35%)] dark:bg-[radial-gradient(circle_at_top,rgba(99,102,241,0.16),transparent_35%)]" />
         </div>
 
-        <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-7xl items-center justify-center px-4 py-8 sm:px-6 lg:px-8">
-          <div className="grid w-full max-w-6xl overflow-hidden rounded-3xl border border-slate-200 bg-white/90 shadow-2xl backdrop-blur dark:border-slate-800 dark:bg-slate-900/90 lg:grid-cols-2">
+        <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-7xl items-center justify-center px-3 py-3 sm:px-6 sm:py-8 lg:px-8">
+          <div className="grid w-full max-w-[380px] overflow-hidden rounded-[22px] border border-slate-200 bg-white/90 shadow-xl backdrop-blur dark:border-slate-800 dark:bg-slate-900/90 sm:max-w-6xl sm:rounded-3xl sm:shadow-2xl lg:grid-cols-2">
             {/* Left side branding */}
             <div className="relative hidden bg-gradient-to-br from-indigo-600 via-indigo-700 to-sky-600 p-10 text-white lg:flex lg:flex-col lg:items-center lg:justify-center">
               <div className="text-center">
@@ -169,24 +169,24 @@ function LoginPage() {
             </div>
 
             {/* Right side form */}
-            <div className="flex items-center justify-center p-5 sm:p-8 lg:p-10">
+            <div className="flex items-center justify-center p-4 sm:p-8 lg:p-10">
               <div className="w-full max-w-md">
                 {/* Mobile logo/brand */}
-                <div className="mb-8 text-center lg:hidden">
-                  <div className="mb-4 flex justify-center">
-                    <div className="flex h-20 w-20 items-center justify-center rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                <div className="mb-4 text-center sm:mb-8 lg:hidden">
+                  <div className="mb-3 flex justify-center sm:mb-4">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 sm:h-20 sm:w-20 sm:rounded-3xl">
                       <img
-                        className="h-12 w-12 object-contain"
+                        className="h-8 w-8 object-contain sm:h-12 sm:w-12"
                         src="/logo.png"
                         alt="BUBT"
                       />
                     </div>
                   </div>
 
-                  <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+                  <h1 className="mx-auto max-w-[250px] text-xl font-extrabold leading-tight tracking-tight text-slate-900 dark:text-white sm:max-w-none sm:text-3xl">
                     Course Management System
                   </h1>
-                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                  <p className="mt-1.5 text-xs leading-5 text-slate-500 dark:text-slate-400 sm:mt-2 sm:text-sm">
                     Sign in with your roll or teacher ID.
                   </p>
                 </div>
@@ -212,13 +212,13 @@ function LoginPage() {
                   </div>
                 )}
 
-                <form onSubmit={handleSubmit} className="space-y-5">
+                <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
                   <Field
                     label="Username"
                     
                   >
                     <div className="relative">
-                      <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+                      <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 sm:left-4 text-slate-400 dark:text-slate-500">
                         <UserIcon />
                       </span>
 
@@ -230,14 +230,14 @@ function LoginPage() {
                         onChange={(e) => setUsername(e.target.value)}
                         required
                         placeholder="Enter your username"
-                        className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
+                        className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900 sm:h-12 sm:rounded-2xl sm:pl-11"
                       />
                     </div>
                   </Field>
 
                   <Field label="Password">
                     <div className="relative">
-                      <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+                      <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 sm:left-4 text-slate-400 dark:text-slate-500">
                         <LockIcon />
                       </span>
 
@@ -248,7 +248,7 @@ function LoginPage() {
                         onChange={(e) => setPassword(e.target.value)}
                         required
                         placeholder="Enter your password"
-                        className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-12 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
+                        className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-11 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900 sm:h-12 sm:rounded-2xl sm:pl-11 sm:pr-12"
                       />
 
                       <button
@@ -265,19 +265,19 @@ function LoginPage() {
                   </Field>
 
                   <div className="flex items-center justify-between gap-3">
-                    <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
+                    <label className="inline-flex min-w-0 cursor-pointer items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300 sm:text-sm">
                       <input
                         type="checkbox"
                         checked={rememberMe}
                         onChange={(e) => setRememberMe(e.target.checked)}
                         className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-900"
                       />
-                      Keep me logged in
+                      <span className="leading-4">Keep me logged in</span>
                     </label>
 
                     <Link
                       to="/forgot-password"
-                      className="text-sm font-semibold text-indigo-600 transition hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
+                      className="shrink-0 whitespace-nowrap text-xs font-semibold text-indigo-600 transition hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 sm:text-sm"
                     >
                       Forgot password?
                     </Link>
@@ -286,7 +286,7 @@ function LoginPage() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.99]"
+                    className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.99] sm:h-12 sm:rounded-2xl"
                   >
                     {loading ? (
                       <>
@@ -313,7 +313,7 @@ function LoginPage() {
                   </div> */}
                 </form>
 
-                <p className="mt-6 text-center text-[14px] text-slate-400 dark:text-slate-500">
+                <p className="mt-4 text-center text-[11px] leading-5 text-slate-400 dark:text-slate-500 sm:mt-6 sm:text-[14px]">
                   Developed By:{" "}
                   <a
                     href="https://mahbub-sarwar.vercel.app/"
@@ -340,7 +340,7 @@ export default LoginPage;
 function Field({ label, hint, children }) {
   return (
     <div>
-      <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">
+      <label className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-200 sm:text-sm">
         {label}
       </label>
 

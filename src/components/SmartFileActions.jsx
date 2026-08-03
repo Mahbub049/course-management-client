@@ -110,6 +110,9 @@ export default function SmartFileActions({
   className = "",
   compact = false,
   fullWidth = false,
+  previewLabel = "Preview File",
+  downloadLabel = "Download",
+  showDownload = true,
 }) {
   const normalizedFile = useMemo(() => normalizeFile(file), [file]);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -200,20 +203,22 @@ export default function SmartFileActions({
           title={`Preview ${normalizedFile.name}`}
         >
           <EyeIcon />
-          Preview File
+          {previewLabel}
         </button>
 
-        <a
-          href={normalizedFile.url}
-          download
-          className={`inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800 ${buttonSize} ${
-            fullWidth ? "flex-1" : ""
-          }`}
-          title={`Download ${normalizedFile.name}`}
-        >
-          <DownloadIcon />
-          Download
-        </a>
+        {showDownload ? (
+          <a
+            href={normalizedFile.url}
+            download
+            className={`inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800 ${buttonSize} ${
+              fullWidth ? "flex-1" : ""
+            }`}
+            title={`Download ${normalizedFile.name}`}
+          >
+            <DownloadIcon />
+            {downloadLabel}
+          </a>
+        ) : null}
       </div>
 
       {previewOpen ? (
