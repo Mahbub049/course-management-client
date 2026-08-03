@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
+import RoutineImportModal from "../components/RoutineImportModal";
 import {
   downloadRoutineDocument,
   getMyRoutine,
@@ -27,6 +28,7 @@ import {
   roomKey,
   roomLabel,
 } from "../utils/routineConfig";
+import { importedRoomDirectoryEntry } from "../utils/routineImport";
 
 const SEMESTERS = ["Spring", "Summer", "Fall"];
 
@@ -51,6 +53,7 @@ function TeacherRoutineBuilderPage() {
   const [saving, setSaving] = useState(false);
   const [downloading, setDownloading] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const [showRoutineImport, setShowRoutineImport] = useState(false);
   const [showRuleCheck, setShowRuleCheck] = useState(false);
   const [newRoom, setNewRoom] = useState({ buildingName: "", roomNo: "", roomTitle: "Theory", liftLevel: "" });
   const [roomSearch, setRoomSearch] = useState("");
@@ -612,6 +615,168 @@ function TeacherRoutineBuilderPage() {
     }
   };
 
+  const handleApplyRoutineImport = async (importResult) => {
+    const validRecords = (importResult?.records || []).filter(
+      (record) => record.day && record.slotId && record.courseCode && record.room
+    );
+    if (!validRecords.length) {
+      Swal.fire("No complete classes", "Keep at least one row with day, time, course code, and room.", "warning");
+      return false;
+    }
+
+    const importedDays = [...new Set(validRecords.map((record) => record.day))];
+    if (importedDays.length > 5) {
+      Swal.fire("More than five working days", "The imported classes use more than five days. Remove or move some rows before applying.", "warning");
+      return false;
+    }
+
+    const occupiedActivityConflicts = validRecords.filter((record) => {
+      const current = routine.entries?.[record.day]?.[record.slotId];
+      return current && current.type !== "CLASS";
+    });
+    if (occupiedActivityConflicts.length && !importResult.replaceOccupiedActivities) {
+      const conflictLabels = occupiedActivityConflicts
+        .slice(0, 5)
+        .map((record) => `${DAY_LABELS[record.day]} · ${SLOT_MAP[record.slotId]?.label || record.slotLabel}`)
+        .join("<br>");
+      const confirmation = await Swal.fire({
+        icon: "warning",
+        title: "Some class slots already contain activities",
+        html: `${conflictLabels}${occupiedActivityConflicts.length > 5 ? "<br>…" : ""}<br><br>These rows will be skipped unless exact imported slots are enabled. Continue?`,
+        showCancelButton: true,
+        confirmButtonText: "Continue and skip",
+        cancelButtonText: "Go back",
+      });
+      if (!confirmation.isConfirmed) return false;
+    }
+
+    const skippedConflicts = importResult.replaceOccupiedActivities ? 0 : occupiedActivityConflicts.length;
+    const importBatchId = Date.now();
+    setRoutine((previous) => {
+      const allDays = OFFICIAL_DAYS.map((item) => item.id).filter(
+        (day) => previous.days.includes(day) || importedDays.includes(day)
+      );
+      const entries = {};
+      allDays.forEach((day) => {
+        entries[day] = {};
+        OFFICIAL_TIME_SLOTS.forEach((slot) => {
+          const existing = previous.entries?.[day]?.[slot.id] || null;
+          entries[day][slot.id] = importResult.replaceClasses && existing?.type === "CLASS" ? null : existing;
+        });
+      });
+
+      const importedPlacements = [];
+      validRecords.forEach((record) => {
+        const existing = entries?.[record.day]?.[record.slotId];
+        if (existing && existing.type !== "CLASS" && !importResult.replaceOccupiedActivities) return;
+        const course = courses.find((item) => courseKey(item) === record.courseId);
+        const slot = SLOT_MAP[record.slotId];
+        const courseType = String(course?.courseType || record.courseType || "theory").toLowerCase();
+        const entry = {
+          type: "CLASS",
+          courseId: course ? courseKey(course) : record.courseId || "",
+          courseCode: course?.code || String(record.courseCode || "").trim().toUpperCase(),
+          courseTitle: course?.title || record.courseTitle || "",
+          intake: course?.intake || String(record.intake || "").trim(),
+          section: course?.section || String(record.section || "").trim(),
+          room: String(record.room || "").trim(),
+          courseType: ["theory", "lab", "hybrid"].includes(courseType) ? courseType : "theory",
+          courseShift: slot?.shift || course?.shift || record.courseShift || "",
+          linkedGroupId: "",
+          secondLabDayConfirmed: false,
+          specialSameDayConfirmed: false,
+          specialLabSplitConfirmed: false,
+        };
+        entries[record.day][record.slotId] = entry;
+        importedPlacements.push({ day: record.day, slotId: record.slotId, entry });
+      });
+
+      const courseGroups = new Map();
+      importedPlacements.forEach((placement) => {
+        const key = [placement.entry.courseCode, placement.entry.intake, placement.entry.section]
+          .map((value) => String(value || "").trim().toLowerCase())
+          .join("|");
+        if (!courseGroups.has(key)) courseGroups.set(key, []);
+        courseGroups.get(key).push(placement);
+      });
+
+      courseGroups.forEach((placements) => {
+        const sample = placements[0]?.entry;
+        if (!sample) return;
+        const byDay = new Map();
+        placements.forEach((placement) => {
+          if (!byDay.has(placement.day)) byDay.set(placement.day, []);
+          byDay.get(placement.day).push(placement);
+        });
+
+        if (sample.courseType === "lab") {
+          const splitAcrossDays = byDay.size > 1;
+          placements.forEach((placement) => {
+            if (splitAcrossDays) placement.entry.specialLabSplitConfirmed = true;
+          });
+          byDay.forEach((dayPlacements, day) => {
+            const sorted = [...dayPlacements].sort(
+              (a, b) => (SLOT_MAP[a.slotId]?.order || 0) - (SLOT_MAP[b.slotId]?.order || 0)
+            );
+            for (let index = 0; index < sorted.length - 1; index += 1) {
+              const current = sorted[index];
+              const next = sorted[index + 1];
+              if (SLOT_MAP[current.slotId]?.nextSlotId !== next.slotId) continue;
+              const groupId = `import_lab_${importBatchId}_${day}_${index}`;
+              current.entry.linkedGroupId = groupId;
+              next.entry.linkedGroupId = groupId;
+              index += 1;
+            }
+          });
+        } else {
+          byDay.forEach((dayPlacements) => {
+            if (dayPlacements.length > 1 && sample.courseShift === "Day") {
+              dayPlacements.forEach((placement) => {
+                placement.entry.specialSameDayConfirmed = true;
+              });
+            }
+          });
+        }
+      });
+
+      const roomMap = new Map((previous.rooms || []).map((room) => [roomKey(room).toLowerCase(), room]));
+      validRecords.forEach((record) => {
+        const room = importedRoomDirectoryEntry(record);
+        if (!room?.roomNo) return;
+        const key = room.roomNo.toLowerCase();
+        if (!roomMap.has(key)) roomMap.set(key, room);
+      });
+
+      const workingDays = [...importedDays];
+      (previous.workingDays || []).forEach((day) => {
+        if (workingDays.length < 5 && !workingDays.includes(day)) workingDays.push(day);
+      });
+      OFFICIAL_DAYS.forEach((item) => {
+        if (workingDays.length < 5 && !workingDays.includes(item.id)) workingDays.push(item.id);
+      });
+
+      return {
+        ...previous,
+        semester: importResult.useDocumentTerm && importResult.semester ? importResult.semester : previous.semester,
+        year: importResult.useDocumentTerm && importResult.year ? Number(importResult.year) : previous.year,
+        days: allDays,
+        workingDays,
+        entries,
+        rooms: [...roomMap.values()].sort((a, b) => roomKey(a).localeCompare(roomKey(b), undefined, { numeric: true })),
+      };
+    });
+
+    setShowRuleCheck(true);
+    setSelectedTool("CLASS");
+    const appliedCount = validRecords.length - skippedConflicts;
+    await Swal.fire({
+      icon: "success",
+      title: "Routine classes imported",
+      text: `${appliedCount} class${appliedCount === 1 ? "" : "es"} placed in the detected slots${skippedConflicts ? `; ${skippedConflicts} occupied slot${skippedConflicts === 1 ? " was" : "s were"} skipped` : ""}. Review the grid, add weekly activities, then save the routine.`,
+    });
+    return true;
+  };
+
   if (loading || !routine) {
     return <div className="flex min-h-[55vh] items-center justify-center text-sm font-semibold text-slate-500">Loading routine...</div>;
   }
@@ -630,6 +795,7 @@ function TeacherRoutineBuilderPage() {
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
             <button type="button" onClick={() => navigate("/teacher/routine")} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold dark:border-slate-700">Back</button>
             <button type="button" onClick={() => window.open("/routine-reference", "_blank", "noopener,noreferrer")} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold dark:border-slate-700">Public Schedule</button>
+            <button type="button" onClick={() => setShowRoutineImport(true)} className="rounded-xl border border-violet-300 bg-violet-50 px-4 py-2.5 text-sm font-bold text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300">Import Routine</button>
             <button type="button" onClick={handleSave} disabled={saving} className="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-60">{saving ? "Saving..." : "Save Routine"}</button>
             <button type="button" onClick={() => handleDownload("class-routine")} disabled={Boolean(downloading)} className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700 disabled:opacity-60 dark:bg-emerald-500/10 dark:text-emerald-300">{downloading === "class-routine" ? "Preparing..." : "Routine DOCX"}</button>
             <button type="button" onClick={() => handleDownload("faculty-nameplate")} disabled={Boolean(downloading)} className="rounded-xl border border-sky-300 bg-sky-50 px-4 py-2.5 text-sm font-bold text-sky-700 disabled:opacity-60 dark:bg-sky-500/10 dark:text-sky-300">{downloading === "faculty-nameplate" ? "Preparing..." : "Nameplate DOCX"}</button>
@@ -818,6 +984,14 @@ function TeacherRoutineBuilderPage() {
           )}
         </div>
       </section>
+
+      <RoutineImportModal
+        open={showRoutineImport}
+        onClose={() => setShowRoutineImport(false)}
+        onApply={handleApplyRoutineImport}
+        courses={courses}
+        routine={routine}
+      />
 
       {classTarget && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-4" onMouseDown={(event) => event.target === event.currentTarget && setClassTarget(null)}>
