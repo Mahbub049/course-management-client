@@ -7,7 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "mobile:add:android": "npm run build && npx cap add android && npx cap sync android && node scripts/configure-android-app.mjs",
+    "mobile:sync": "npm run build && npx cap sync android && node scripts/configure-android-app.mjs",
+    "mobile:open": "node scripts/configure-android-app.mjs && npx cap open android",
+    "mobile:android": "npm run build && npx cap sync android && node scripts/configure-android-app.mjs && npx cap open android"
   },
   "dependencies": {
     "@headlessui/react": "^2.2.10",
@@ -24,7 +28,11 @@
     "sweetalert2": "^11.26.10",
     "tesseract.js": "^7.0.0",
     "xlsx": "^0.18.5",
-    "xlsx-js-style": "^1.2.0"
+    "xlsx-js-style": "^1.2.0",
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/core": "^8.4.2",
+    "@capacitor/local-notifications": "^8.2.1",
+    "@capacitor/push-notifications": "^8.1.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
@@ -38,6 +46,7 @@
     "globals": "^16.5.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.18",
-    "vite": "^7.2.4"
+    "vite": "^7.2.4",
+    "@capacitor/cli": "^8.4.2"
   }
 }

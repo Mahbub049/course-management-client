@@ -22,6 +22,8 @@ import PublicSubmissionPage from "./pages/PublicSubmissionPage.jsx";
 import PublicRoutineReferencePage from "./pages/PublicRoutineReferencePage.jsx";
 import TeacherNotebookPage from "./pages/TeacherNotebookPage.jsx";
 import StudentCounsellingPage from "./pages/StudentCounsellingPage.jsx";
+import NotificationSettingsPage from "./pages/NotificationSettingsPage.jsx";
+import MobileNotificationBridge from "./components/MobileNotificationBridge.jsx";
 import TeacherCounsellingPage from "./pages/TeacherCounsellingPage.jsx";
 
 import AppLayout from './layouts/AppLayout.jsx';
@@ -31,7 +33,9 @@ import { StudentCoursesPage } from './pages/StudentCoursesPage.jsx';
 
 function App() {
   return (
-    <Routes>
+    <>
+      <MobileNotificationBridge />
+      <Routes>
       {/* Public route */}
       <Route path="/login" element={<LoginPage />} />
 
@@ -90,8 +94,10 @@ function App() {
           path="/change-password"
           element={<ChangePasswordPage />}
         />
+        <Route path="/notifications" element={<NotificationSettingsPage />} />
       </Route>
-    </Routes>
+      </Routes>
+    </>
   );
 }
 

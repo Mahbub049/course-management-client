@@ -2,6 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import { academicCalendarService } from "../services/academicCalendarService";
+import {
+  isNativeMobileApp,
+  syncMobileNotifications,
+} from "../services/mobileNotificationService";
 import { getAuthItem } from "../utils/authStorage";
 import {
   addDays,
@@ -57,6 +61,17 @@ const VISIBILITY_OPTIONS = [
 
 const MAX_EVENT_LANES = 3;
 const CALENDAR_DRAG_TYPE = "application/x-marks-calendar-event";
+
+async function refreshNativePhoneReminders() {
+  if (!isNativeMobileApp()) return;
+  try {
+    await syncMobileNotifications();
+  } catch (error) {
+    // Saving the calendar item succeeded even if reminder refresh temporarily fails.
+    // The global mobile bridge will retry when the app becomes active again.
+    console.error("Could not refresh phone reminders after calendar change", error);
+  }
+}
 
 const categoryStyles = {
   Holiday:
@@ -532,6 +547,7 @@ export default function AcademicCalendarPage() {
           )
         );
       }
+      await refreshNativePhoneReminders();
     } catch (error) {
       console.error(error);
       setFacultyEvents(previousEvents);
@@ -628,6 +644,7 @@ export default function AcademicCalendarPage() {
       }
 
       await loadFacultyEvents();
+      await refreshNativePhoneReminders();
       setEventModalOpen(false);
       setEditingEvent(null);
       setModalMode("create");
@@ -672,6 +689,7 @@ export default function AcademicCalendarPage() {
       setSavingEvent(true);
       await academicCalendarService.deleteFacultyEvent(editingEvent.id);
       await loadFacultyEvents();
+      await refreshNativePhoneReminders();
       setEventModalOpen(false);
       setEditingEvent(null);
       setModalMode("create");

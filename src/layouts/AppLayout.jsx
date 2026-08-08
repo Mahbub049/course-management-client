@@ -90,6 +90,7 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
       label: "Academic Calendar",
       icon: <AcademicCalendarIcon />,
     },
+    { to: "/notifications", label: "Notifications", icon: <NotificationIcon /> },
   ];
 
   const studentLinks = [
@@ -103,6 +104,7 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
       label: "Academic Calendar",
       icon: <AcademicCalendarIcon />,
     },
+    { to: "/notifications", label: "Notifications", icon: <NotificationIcon /> },
     { to: "/change-password", label: "Account", icon: <UserIcon /> },
 
   ];
@@ -725,6 +727,14 @@ function AcademicCalendarIcon() {
       <path d="M16 14h.01" />
       <path d="M8 18h.01" />
       <path d="M12 18h.01" />
+    </svg>
+  );
+}
+function NotificationIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" />
+      <path strokeLinecap="round" d="M10 21h4" />
     </svg>
   );
 }
