@@ -4,7 +4,7 @@ import { notificationService } from "./notificationService";
 import { loadPortalNotificationItems } from "../utils/notificationItems";
 import { getAuthItem } from "../utils/authStorage";
 
-const CHANNEL_ID = "marks-portal-reminders-v2";
+const CHANNEL_ID = "bubt-portal-reminders-v3";
 const ACTION_PENDING = "MARKS_PORTAL_PENDING";
 const ACTION_INFO = "MARKS_PORTAL_INFO";
 const ACTION_DONE = "MARKS_PORTAL_DONE";
@@ -192,7 +192,7 @@ export async function ensureNativeNotificationSetup({ requestPermission = false 
       try {
         await LocalNotifications.createChannel({
           id: CHANNEL_ID,
-          name: "BUBT Marks Portal reminders",
+          name: "BUBT Portal reminders",
           description: "Deadlines, tasks, exams and important BUBT portal dates",
           importance: 5,
           visibility: 1,
@@ -304,7 +304,7 @@ export async function sendImmediateTestNotification() {
     notifications: [
       {
         id,
-        title: "BUBT Marks Portal",
+        title: "BUBT Portal",
         body: "Test notification successful. Phone notifications are working.",
         ...commonNotificationFields(),
         actionTypeId: ACTION_INFO,
@@ -349,7 +349,7 @@ export async function scheduleOneMinuteTestNotification() {
       {
         id,
         title: "Scheduled test",
-        body: "This notification was scheduled one minute ago by BUBT Marks Portal.",
+        body: "This notification was scheduled one minute ago by BUBT Portal.",
         ...commonNotificationFields(),
         actionTypeId: ACTION_INFO,
         schedule: { at, allowWhileIdle: true },
@@ -372,6 +372,42 @@ export async function scheduleOneMinuteTestNotification() {
     systemEnabled: setup.systemEnabled,
     exactAlarm: setup.exactAlarm,
   };
+}
+
+export async function showForegroundPushNotification(pushNotification = {}) {
+  if (!isNative()) return { native: false };
+
+  const title = String(pushNotification?.title || "BUBT Portal");
+  const body = String(
+    pushNotification?.body || pushNotification?.data?.body || "You have a new portal notification."
+  );
+  const data = pushNotification?.data || {};
+  const id = hashToNotificationId(
+    `push:${data.eventId || data.sourceKey || title}:${Date.now()}`
+  );
+
+  await ensureNativeNotificationSetup();
+  await LocalNotifications.schedule({
+    notifications: [
+      {
+        id,
+        title,
+        body,
+        ...commonNotificationFields(),
+        actionTypeId: ACTION_INFO,
+        extra: {
+          marksPortal: true,
+          remotePush: true,
+          route: data.route || "/academic-calendar",
+          sourceKey: data.sourceKey || "",
+          title,
+          category: data.eventType || data.category || "event",
+        },
+      },
+    ],
+  });
+
+  return { native: true, displayed: true };
 }
 
 export async function syncMobileNotifications({ requestPermission = false } = {}) {
@@ -416,6 +452,13 @@ export async function syncMobileNotifications({ requestPermission = false } = {}
   });
   const completed = stateMap(profileData?.states || []);
   const categories = preferences.categories || {};
+  const hasNativePushDevice = Array.isArray(preferences.deviceTokens)
+    ? preferences.deviceTokens.some((device) =>
+        ["android", "ios"].includes(String(device?.platform || ""))
+      )
+    : false;
+  const useServerFacultyPush =
+    profileData?.serverPushEnabled === true && hasNativePushDevice;
   const offsets = Array.isArray(preferences.reminderOffsetsMinutes)
     ? preferences.reminderOffsetsMinutes
     : [1440, 180, 60];
@@ -432,6 +475,10 @@ export async function syncMobileNotifications({ requestPermission = false } = {}
   const notifications = [];
 
   for (const item of items) {
+    // Faculty calendar reminders are sent by the server through FCM when push
+    // is configured. Skipping them locally prevents duplicate reminders while
+    // still leaving local scheduling as a fallback before FCM is configured.
+    if (useServerFacultyPush && item.source === "faculty") continue;
     if (categories[item.category] === false) continue;
     if (completed.get(item.sourceKey) === true) continue;
 

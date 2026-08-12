@@ -51,10 +51,11 @@ export default function MobileNotificationBridge() {
 
     if (activeTokenRef.current !== token) {
       activeTokenRef.current = token;
-      sync(false);
-      initializePushNotifications().catch((error) => {
-        console.error("Push notification initialization failed", error);
-      });
+      initializePushNotifications()
+        .catch((error) => {
+          console.error("Push notification initialization failed", error);
+        })
+        .finally(() => sync(false));
     }
 
     window.addEventListener("marksPortalNotificationNavigate", onNavigate);

@@ -33,4 +33,9 @@ export const notificationService = {
     });
     return response.data;
   },
+
+  sendServerPushTest: async () => {
+    const response = await api.post("/notifications/test-push");
+    return response.data;
+  },
 };

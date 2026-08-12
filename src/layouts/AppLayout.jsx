@@ -2,11 +2,14 @@ import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { useTheme } from "../context/ThemeContext";
 import { clearAuthData, getAuthItem } from "../utils/authStorage";
+import { Capacitor } from "@capacitor/core";
 
 function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { isDark, toggleTheme } = useTheme();
+  const isNativeApp = Capacitor.isNativePlatform();
+  const portalBrandName = isNativeApp ? "BUBT Portal" : "BUBT Marks Portal";
 
 const [role, setRole] = useState(() => getAuthItem("marksPortalRole"));
 const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") || "");
@@ -90,7 +93,9 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
       label: "Academic Calendar",
       icon: <AcademicCalendarIcon />,
     },
-    { to: "/notifications", label: "Notifications", icon: <NotificationIcon /> },
+    ...(isNativeApp
+      ? [{ to: "/notifications", label: "Notifications", icon: <NotificationIcon /> }]
+      : []),
   ];
 
   const studentLinks = [
@@ -104,7 +109,9 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
       label: "Academic Calendar",
       icon: <AcademicCalendarIcon />,
     },
-    { to: "/notifications", label: "Notifications", icon: <NotificationIcon /> },
+    ...(isNativeApp
+      ? [{ to: "/notifications", label: "Notifications", icon: <NotificationIcon /> }]
+      : []),
     { to: "/change-password", label: "Account", icon: <UserIcon /> },
 
   ];
@@ -117,8 +124,8 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
   const pageTitle = useMemo(() => {
     if (location.pathname.startsWith("/change-password")) return "Account";
     const found = links.find((l) => location.pathname.startsWith(l.to));
-    return found?.label || "BUBT Marks Portal";
-  }, [location.pathname, links]);
+    return found?.label || portalBrandName;
+  }, [location.pathname, links, portalBrandName]);
 
   const SidebarContent = ({ isMobile = false, collapsed = false }) => (
     <div className="flex h-full flex-col">
@@ -147,7 +154,7 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
                 Course Management
               </div>
               <div className="truncate text-xs text-slate-500 dark:text-slate-400">
-                BUBT Marks Portal
+                {portalBrandName}
               </div>
             </div>
           )}
@@ -352,7 +359,7 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
                   </div>
                   <div className="min-w-0 leading-tight">
                     <div className="truncate text-sm font-semibold text-slate-900 dark:text-white">
-                      BUBT Marks Portal
+                      {portalBrandName}
                     </div>
                     <div className="truncate text-[11px] text-slate-500 dark:text-slate-400">
                       {pageTitle}

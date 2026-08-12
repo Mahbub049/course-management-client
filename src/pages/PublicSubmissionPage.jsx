@@ -4,7 +4,9 @@ import Swal from "sweetalert2";
 import SmartFileActions from "../components/SmartFileActions";
 import {
   fetchCurrentPublicSubmissionPage,
+  fetchPublicSubmissionDeviceSession,
   fetchPublicSubmissionPage,
+  getPublicSubmissionDeviceId,
   submitPublicLabAssessmentFile,
   verifyPublicSubmissionRoll,
 } from "../services/labSubmissionService";
@@ -106,6 +108,174 @@ function PublicBadge({ children, className = "" }) {
   );
 }
 
+const PUBLIC_SUBMISSION_LOCK_CACHE_PREFIX = "bubtPublicSubmissionLock:";
+const PUBLIC_SUBMISSION_ACTIVE_LOCK_KEY = "bubtPublicSubmissionActiveLock";
+
+function getPublicSubmissionLockCacheKey(token = "") {
+  const cleanToken = String(token || "").trim();
+  return cleanToken ? `${PUBLIC_SUBMISSION_LOCK_CACHE_PREFIX}${cleanToken}` : "";
+}
+
+function parseStoredLock(raw) {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed?.student?.roll) return null;
+    return parsed;
+  } catch (_err) {
+    return null;
+  }
+}
+
+function readPublicSubmissionLockCache(token = "") {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const key = getPublicSubmissionLockCacheKey(token);
+    const tokenCache = key ? parseStoredLock(window.localStorage.getItem(key)) : null;
+    if (tokenCache) return tokenCache;
+
+    // /submit does not know its token until the current portal is loaded.
+    // Keep one active-lock pointer so refreshes can still recover the student
+    // even if the public link token is recreated/changed by the teacher.
+    return parseStoredLock(window.localStorage.getItem(PUBLIC_SUBMISSION_ACTIVE_LOCK_KEY));
+  } catch (_err) {
+    return null;
+  }
+}
+
+function writePublicSubmissionLockCache(token, payload) {
+  if (typeof window === "undefined") return;
+  const key = getPublicSubmissionLockCacheKey(token);
+
+  try {
+    if (!payload?.student?.roll) {
+      if (key) window.localStorage.removeItem(key);
+      return;
+    }
+
+    const record = {
+      token: String(token || ""),
+      courseId: String(payload.courseId || ""),
+      linkId: String(payload.linkId || ""),
+      student: payload.student,
+      deviceLock: payload.deviceLock || { locked: true },
+      assessmentIds: Array.isArray(payload.assessmentIds)
+        ? payload.assessmentIds.map((id) => String(id))
+        : [],
+      savedAt: Date.now(),
+    };
+
+    const serialized = JSON.stringify(record);
+    if (key) window.localStorage.setItem(key, serialized);
+    window.localStorage.setItem(PUBLIC_SUBMISSION_ACTIVE_LOCK_KEY, serialized);
+  } catch (_err) {
+    // The backend claim still prevents another roll from using the same device.
+  }
+}
+
+function clearPublicSubmissionLockCache(token = "") {
+  if (typeof window === "undefined") return;
+  const key = getPublicSubmissionLockCacheKey(token);
+
+  try {
+    if (key) window.localStorage.removeItem(key);
+
+    const active = parseStoredLock(window.localStorage.getItem(PUBLIC_SUBMISSION_ACTIVE_LOCK_KEY));
+    if (!active || !token || !active.token || String(active.token) === String(token)) {
+      window.localStorage.removeItem(PUBLIC_SUBMISSION_ACTIVE_LOCK_KEY);
+    }
+  } catch (_err) {
+    // Ignore storage failures.
+  }
+}
+
+function clearAllPublicSubmissionLockCaches() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(PUBLIC_SUBMISSION_ACTIVE_LOCK_KEY);
+    for (let i = window.localStorage.length - 1; i >= 0; i -= 1) {
+      const key = window.localStorage.key(i);
+      if (key?.startsWith(PUBLIC_SUBMISSION_LOCK_CACHE_PREFIX)) {
+        window.localStorage.removeItem(key);
+      }
+    }
+  } catch (_err) {
+    // Ignore storage failures.
+  }
+}
+
+function isCachedLockUsable(cache, assessments = [], nowValue = Date.now(), courseId = "") {
+  if (!cache?.student?.roll) return false;
+
+  if (cache.courseId && courseId && String(cache.courseId) !== String(courseId)) {
+    return false;
+  }
+
+  const lockedUntil = cache.deviceLock?.lockedUntil;
+  if (lockedUntil) {
+    const expiry = new Date(lockedUntil);
+    if (!Number.isNaN(expiry.getTime()) && expiry.getTime() <= nowValue) {
+      return false;
+    }
+    // A server-issued future expiry is enough to preserve the lock. This is
+    // important when the teacher changes which assessment is shown on /submit.
+    return true;
+  }
+
+  const cachedIds = new Set(
+    (cache.assessmentIds || cache.deviceLock?.assessmentIds || []).map((id) => String(id))
+  );
+  const liveAssessmentIds = new Set(
+    (assessments || [])
+      .filter((assessment) => assessment?.submissionsOpen)
+      .map((assessment) => String(assessment?.id || assessment?._id || ""))
+      .filter(Boolean)
+  );
+
+  if (!cachedIds.size) return liveAssessmentIds.size > 0;
+  return [...cachedIds].some((id) => liveAssessmentIds.has(id));
+}
+
+function buildFallbackDeviceLock(assessments = []) {
+  const openAssessments = (assessments || []).filter((assessment) => assessment?.submissionsOpen);
+  if (!openAssessments.length) return null;
+
+  const sorted = [...openAssessments].sort((a, b) => {
+    const aTime = new Date(a?.dueDate || "").getTime();
+    const bTime = new Date(b?.dueDate || "").getTime();
+    const safeA = Number.isNaN(aTime) ? Number.MAX_SAFE_INTEGER : aTime;
+    const safeB = Number.isNaN(bTime) ? Number.MAX_SAFE_INTEGER : bTime;
+    return safeA - safeB;
+  });
+
+  const sessionAssessment = sorted[0];
+  const dueDate = sessionAssessment?.dueDate ? new Date(sessionAssessment.dueDate) : null;
+  const lockedUntil =
+    dueDate && !Number.isNaN(dueDate.getTime()) ? dueDate.toISOString() : null;
+
+  return {
+    locked: true,
+    lockedUntil,
+    assessmentIds: [String(sessionAssessment?.id || sessionAssessment?._id || "")].filter(Boolean),
+    clientFallback: true,
+  };
+}
+
+function isConfirmedReleaseForCache(session, cache) {
+  if (!session?.released) return false;
+
+  const releasedAt = new Date(session?.releasedAt || "");
+  if (Number.isNaN(releasedAt.getTime())) {
+    // Older API versions only returned released=true. That boolean can refer to
+    // an old historical release, so it must not erase a newly-created browser lock.
+    return false;
+  }
+
+  const savedAt = Number(cache?.savedAt || 0);
+  return !savedAt || releasedAt.getTime() >= savedAt;
+}
+
 export default function PublicSubmissionPage({ useDefaultPortal = false }) {
   const { token: routeToken } = useParams();
   const [resolvedToken, setResolvedToken] = useState(routeToken || "");
@@ -113,11 +283,13 @@ export default function PublicSubmissionPage({ useDefaultPortal = false }) {
   const [pageData, setPageData] = useState(null);
   const [roll, setRoll] = useState("");
   const [student, setStudent] = useState(null);
+  const [deviceLock, setDeviceLock] = useState(null);
   const [assessments, setAssessments] = useState([]);
   const [verifying, setVerifying] = useState(false);
   const [uploadingId, setUploadingId] = useState("");
   const [now, setNow] = useState(Date.now());
   const fileInputRefs = useRef({});
+  const deviceId = useMemo(() => getPublicSubmissionDeviceId(), []);
 
   const courseTitle = useMemo(() => {
     const course = pageData?.course;
@@ -154,18 +326,96 @@ export default function PublicSubmissionPage({ useDefaultPortal = false }) {
 
   const loadPage = async () => {
     setLoading(true);
-    setStudent(null);
     try {
       const data = useDefaultPortal
         ? await fetchCurrentPublicSubmissionPage()
         : await fetchPublicSubmissionPage(routeToken);
 
+      const nextToken = data?.link?.token || routeToken || "";
+      const currentCourseId = data?.course?.id || data?.course?._id || "";
+      const currentLinkId = data?.link?.id || data?.link?._id || "";
+      const pageAssessments = Array.isArray(data?.assessments) ? data.assessments : [];
+
       setPageData(data);
-      setResolvedToken(data?.link?.token || routeToken || "");
-      setAssessments(Array.isArray(data?.assessments) ? data.assessments : []);
+      setResolvedToken(nextToken);
+      setAssessments(pageAssessments);
+
+      // Restore the browser-owned student before asking the server. The server
+      // remains authoritative for every upload, but a normal refresh must never
+      // reopen the roll field while the saved session deadline is still active.
+      const cachedLock = readPublicSubmissionLockCache(nextToken);
+      const usableCachedLock = isCachedLockUsable(
+        cachedLock,
+        pageAssessments,
+        Date.now(),
+        currentCourseId
+      );
+
+      if (usableCachedLock) {
+        setStudent(cachedLock.student);
+        setRoll(cachedLock.student.roll || "");
+        setDeviceLock(cachedLock.deviceLock || { locked: true });
+      } else {
+        setStudent(null);
+        setRoll("");
+        setDeviceLock(null);
+      }
+
+      if (nextToken && deviceId) {
+        try {
+          const session = await fetchPublicSubmissionDeviceSession(nextToken, deviceId);
+
+          if (session?.locked && session?.student) {
+            const sessionAssessments = Array.isArray(session?.assessments)
+              ? session.assessments
+              : pageAssessments;
+            const nextDeviceLock = session.deviceLock || { locked: true };
+
+            setStudent(session.student);
+            setRoll(session.student.roll || "");
+            setDeviceLock(nextDeviceLock);
+            setAssessments(sessionAssessments);
+            writePublicSubmissionLockCache(nextToken, {
+              courseId: currentCourseId,
+              linkId: currentLinkId,
+              student: session.student,
+              deviceLock: nextDeviceLock,
+              assessmentIds:
+                nextDeviceLock?.assessmentIds ||
+                sessionAssessments
+                  .filter((assessment) => assessment?.submissionsOpen)
+                  .map((assessment) => assessment?.id || assessment?._id),
+            });
+          } else if (isConfirmedReleaseForCache(session, cachedLock)) {
+            // Only a release that happened after this exact browser lock was saved
+            // may clear it. Historical release records must not unlock a refreshed PC.
+            clearAllPublicSubmissionLockCaches();
+            setStudent(null);
+            setRoll("");
+            setDeviceLock(null);
+          } else if (!usableCachedLock) {
+            setStudent(null);
+            setRoll("");
+            setDeviceLock(null);
+          }
+          // If the server returns a plain "not found" but the local lock is still
+          // within its server-issued deadline, keep it visible. Upload requests
+          // will still be checked against the backend claim.
+        } catch (sessionErr) {
+          console.error("Could not restore public submission device lock", sessionErr);
+          if (!usableCachedLock) {
+            setStudent(null);
+            setRoll("");
+            setDeviceLock(null);
+          }
+        }
+      }
     } catch (err) {
       console.error(err);
       setResolvedToken("");
+      setStudent(null);
+      setRoll("");
+      setDeviceLock(null);
       setPageData({
         error:
           err?.response?.data?.message ||
@@ -186,6 +436,21 @@ export default function PublicSubmissionPage({ useDefaultPortal = false }) {
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    if (!student?.roll || !resolvedToken) return;
+
+    const lockedUntil = deviceLock?.lockedUntil;
+    if (!lockedUntil) return;
+
+    const expiry = new Date(lockedUntil);
+    if (Number.isNaN(expiry.getTime()) || expiry.getTime() > now) return;
+
+    clearAllPublicSubmissionLockCaches();
+    setStudent(null);
+    setRoll("");
+    setDeviceLock(null);
+  }, [now, student?.roll, deviceLock?.lockedUntil, resolvedToken]);
+
   const handleVerifyRoll = async (e) => {
     e.preventDefault();
 
@@ -202,14 +467,71 @@ export default function PublicSubmissionPage({ useDefaultPortal = false }) {
 
     setVerifying(true);
     try {
-      const data = await verifyPublicSubmissionRoll(resolvedToken, cleanRoll);
-      setStudent(data?.student || null);
-      setAssessments(Array.isArray(data?.assessments) ? data.assessments : []);
+      const data = await verifyPublicSubmissionRoll(resolvedToken, cleanRoll, deviceId);
+      const verifiedStudent = data?.student || null;
+      const verifiedAssessments = Array.isArray(data?.assessments) ? data.assessments : [];
+      const verifiedDeviceLock =
+        data?.deviceLock?.locked ? data.deviceLock : buildFallbackDeviceLock(verifiedAssessments);
+
+      setStudent(verifiedStudent);
+      setRoll(verifiedStudent?.roll || cleanRoll);
+      setDeviceLock(verifiedDeviceLock);
+      setAssessments(verifiedAssessments);
+
+      if (verifiedStudent?.roll && verifiedDeviceLock?.locked) {
+        writePublicSubmissionLockCache(resolvedToken, {
+          courseId: pageData?.course?.id || pageData?.course?._id || "",
+          linkId: pageData?.link?.id || pageData?.link?._id || "",
+          student: verifiedStudent,
+          deviceLock: verifiedDeviceLock,
+          assessmentIds:
+            verifiedDeviceLock?.assessmentIds ||
+            verifiedAssessments
+              .filter((assessment) => assessment?.submissionsOpen)
+              .map((assessment) => assessment?.id || assessment?._id),
+        });
+      }
     } catch (err) {
       console.error(err);
-      setStudent(null);
+      const code = err?.response?.data?.code;
+
+      if (code === "DEVICE_LOCKED") {
+        try {
+          const session = await fetchPublicSubmissionDeviceSession(resolvedToken, deviceId);
+          if (session?.locked && session?.student) {
+            const restoredAssessments = Array.isArray(session?.assessments) ? session.assessments : [];
+            const restoredDeviceLock =
+              session?.deviceLock?.locked
+                ? session.deviceLock
+                : buildFallbackDeviceLock(restoredAssessments) || { locked: true };
+            setStudent(session.student);
+            setRoll(session.student.roll || "");
+            setDeviceLock(restoredDeviceLock);
+            setAssessments(restoredAssessments);
+            writePublicSubmissionLockCache(resolvedToken, {
+              courseId: pageData?.course?.id || pageData?.course?._id || "",
+              linkId: pageData?.link?.id || pageData?.link?._id || "",
+              student: session.student,
+              deviceLock: restoredDeviceLock,
+              assessmentIds:
+                restoredDeviceLock?.assessmentIds ||
+                restoredAssessments
+                  .filter((assessment) => assessment?.submissionsOpen)
+                  .map((assessment) => assessment?.id || assessment?._id),
+            });
+          }
+        } catch (_restoreErr) {
+          setStudent(null);
+          setDeviceLock(null);
+        }
+      } else {
+        setStudent(null);
+        setDeviceLock(null);
+        clearPublicSubmissionLockCache(resolvedToken);
+      }
+
       Swal.fire(
-        "Not found",
+        code === "DEVICE_LOCKED" ? "Device already locked" : code === "ROLL_LOCKED" ? "Roll already in use" : "Could not verify",
         err?.response?.data?.message || "Could not verify this roll number.",
         "error"
       );
@@ -220,9 +542,40 @@ export default function PublicSubmissionPage({ useDefaultPortal = false }) {
 
   const refreshVerifiedRoll = async () => {
     if (!student?.roll || !resolvedToken) return;
-    const data = await verifyPublicSubmissionRoll(resolvedToken, student.roll);
-    setStudent(data?.student || null);
-    setAssessments(Array.isArray(data?.assessments) ? data.assessments : []);
+    const data = await fetchPublicSubmissionDeviceSession(resolvedToken, deviceId);
+    if (data?.locked && data?.student) {
+      const refreshedDeviceLock = data?.deviceLock || deviceLock || { locked: true };
+      const refreshedAssessments = Array.isArray(data?.assessments) ? data.assessments : [];
+      setStudent(data.student);
+      setRoll(data.student.roll || student.roll || "");
+      setDeviceLock(refreshedDeviceLock);
+      setAssessments(refreshedAssessments);
+      writePublicSubmissionLockCache(resolvedToken, {
+        courseId: pageData?.course?.id || pageData?.course?._id || "",
+        linkId: pageData?.link?.id || pageData?.link?._id || "",
+        student: data.student,
+        deviceLock: refreshedDeviceLock,
+        assessmentIds:
+          refreshedDeviceLock?.assessmentIds ||
+          refreshedAssessments
+            .filter((assessment) => assessment?.submissionsOpen)
+            .map((assessment) => assessment?.id || assessment?._id),
+      });
+      return;
+    }
+
+    const cachedLock = readPublicSubmissionLockCache(resolvedToken);
+    if (isConfirmedReleaseForCache(data, cachedLock)) {
+      clearAllPublicSubmissionLockCaches();
+      setStudent(null);
+      setRoll("");
+      setDeviceLock(null);
+      return;
+    }
+
+    // The uploaded assessment may have just closed exactly at the deadline.
+    // Keep the verified student on screen for the current response; the timer
+    // effect below clears the identity exactly when its saved lock expires.
   };
 
   const handleUploadButtonClick = (assessment) => {
@@ -282,6 +635,7 @@ export default function PublicSubmissionPage({ useDefaultPortal = false }) {
         assessmentId: assessment.id,
         roll: student.roll,
         file,
+        deviceId,
       });
 
       await refreshVerifiedRoll();
@@ -397,34 +751,47 @@ export default function PublicSubmissionPage({ useDefaultPortal = false }) {
 
           <div className="grid gap-6 p-5 lg:grid-cols-[360px_minmax(0,1fr)] sm:p-6">
             <div className="space-y-4">
-              <form
-                onSubmit={handleVerifyRoll}
-                className="rounded-3xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-700 dark:bg-slate-800"
-              >
-                <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  Student Roll Number
-                </label>
-                <input
-                  type="text"
-                  value={roll}
-                  onChange={(e) => setRoll(e.target.value)}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                  placeholder="Full roll or last 3/4 digits"
-                />
+              {!student ? (
+                <>
+                  <form
+                    onSubmit={handleVerifyRoll}
+                    className="rounded-3xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-700 dark:bg-slate-800"
+                  >
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Student Roll Number
+                    </label>
+                    <input
+                      type="text"
+                      value={roll}
+                      onChange={(e) => setRoll(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                      placeholder="Full roll or last 3/4 digits"
+                    />
 
-                <button
-                  type="submit"
-                  disabled={verifying}
-                  className="mt-3 w-full rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-60"
-                >
-                  {verifying ? "Checking..." : "Continue"}
-                </button>
-              </form>
+                    <button
+                      type="submit"
+                      disabled={verifying}
+                      className="mt-3 w-full rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-60"
+                    >
+                      {verifying ? "Checking..." : "Continue & Lock Roll"}
+                    </button>
+                  </form>
 
-              {student ? (
+                  <div className="rounded-3xl border border-slate-200 bg-white p-5 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+                    Enter your roll number once. This browser will stay assigned to that roll until the current submission session ends.
+                  </div>
+                </>
+              ) : (
                 <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5 dark:border-emerald-500/20 dark:bg-emerald-500/10">
-                  <div className="text-xs font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
-                    Verified Student
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                      Verified Student
+                    </div>
+                    {deviceLock?.locked ? (
+                      <span className="rounded-full border border-emerald-300 bg-white/70 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:border-emerald-500/30 dark:bg-slate-900/60 dark:text-emerald-300">
+                        Device Locked
+                      </span>
+                    ) : null}
                   </div>
                   <div className="mt-2 text-lg font-bold text-slate-900 dark:text-white">
                     {student.name || "Student"}
@@ -432,10 +799,14 @@ export default function PublicSubmissionPage({ useDefaultPortal = false }) {
                   <div className="text-sm text-slate-600 dark:text-slate-300">
                     Roll: {student.roll}
                   </div>
-                </div>
-              ) : (
-                <div className="rounded-3xl border border-slate-200 bg-white p-5 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-                  Enter your roll number to view your upload status and submit files.
+                  <div className="mt-3 rounded-2xl border border-emerald-200/70 bg-white/60 p-3 text-xs leading-5 text-emerald-800 dark:border-emerald-500/20 dark:bg-slate-900/40 dark:text-emerald-200">
+                    This browser is assigned to this roll for the current open submission session. Refreshing or reopening this page will keep the same roll.
+                    {deviceLock?.lockedUntil ? (
+                      <span className="mt-1 block font-semibold">
+                        Lock ends with the session: {formatDateTime(deviceLock.lockedUntil)}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               )}
 

@@ -173,6 +173,26 @@ export const syncAllSubmissionMarks = async (courseId, assessmentId) => {
 // Public no-login submission link
 // =========================
 
+const PUBLIC_SUBMISSION_DEVICE_KEY = "bubtPublicSubmissionDeviceId";
+
+export const getPublicSubmissionDeviceId = () => {
+  if (typeof window === "undefined") return "";
+
+  try {
+    const existing = window.localStorage.getItem(PUBLIC_SUBMISSION_DEVICE_KEY);
+    if (existing && existing.length >= 20) return existing;
+
+    const generated =
+      window.crypto?.randomUUID?.() ||
+      `bubt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+
+    window.localStorage.setItem(PUBLIC_SUBMISSION_DEVICE_KEY, generated);
+    return generated;
+  } catch (_err) {
+    return `bubt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+  }
+};
+
 export const fetchTeacherPublicSubmissionLink = async (courseId) => {
   const res = await api.get(
     `/public-lab-submissions/teacher/courses/${courseId}/link`
@@ -184,6 +204,21 @@ export const updateTeacherPublicSubmissionLink = async (courseId, payload) => {
   const res = await api.patch(
     `/public-lab-submissions/teacher/courses/${courseId}/link`,
     payload
+  );
+  return res.data;
+};
+
+
+export const fetchTeacherPublicSubmissionClaims = async (courseId) => {
+  const res = await api.get(
+    `/public-lab-submissions/teacher/courses/${courseId}/claims`
+  );
+  return res.data;
+};
+
+export const releaseTeacherPublicSubmissionClaim = async (courseId, claimId) => {
+  const res = await api.post(
+    `/public-lab-submissions/teacher/courses/${courseId}/claims/${claimId}/release`
   );
   return res.data;
 };
@@ -203,16 +238,30 @@ export const fetchPublicSubmissionPage = async (token) => {
   return res.data;
 };
 
-export const verifyPublicSubmissionRoll = async (token, roll) => {
-  const res = await api.post(`/public-lab-submissions/${token}/verify-roll`, {
-    roll,
+export const fetchPublicSubmissionDeviceSession = async (token, deviceId) => {
+  const resolvedDeviceId = deviceId || getPublicSubmissionDeviceId();
+  const res = await api.get(`/public-lab-submissions/${token}/device-session`, {
+    // Query parameters survive refresh/proxy/CORS setups more reliably than a
+    // custom request header, and the server accepts deviceId from req.query.
+    params: { deviceId: resolvedDeviceId },
   });
   return res.data;
 };
 
-export const fetchPublicSubmittedFiles = async (token, roll) => {
+export const verifyPublicSubmissionRoll = async (token, roll, deviceId) => {
+  const res = await api.post(`/public-lab-submissions/${token}/verify-roll`, {
+    roll,
+    deviceId: deviceId || getPublicSubmissionDeviceId(),
+  });
+  return res.data;
+};
+
+export const fetchPublicSubmittedFiles = async (token, roll, deviceId) => {
   const res = await api.get(`/public-lab-submissions/${token}/submitted-files`, {
-    params: { roll },
+    params: {
+      roll,
+      deviceId: deviceId || getPublicSubmissionDeviceId(),
+    },
   });
   return res.data;
 };
@@ -222,9 +271,11 @@ export const submitPublicLabAssessmentFile = async ({
   assessmentId,
   roll,
   file,
+  deviceId,
 }) => {
   const formData = new FormData();
   formData.append("roll", roll);
+  formData.append("deviceId", deviceId || getPublicSubmissionDeviceId());
   formData.append("file", file);
 
   const res = await api.post(

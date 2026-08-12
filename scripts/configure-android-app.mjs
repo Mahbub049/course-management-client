@@ -10,6 +10,9 @@ const appMain = path.join(androidRoot, "app", "src", "main");
 const manifestPath = path.join(appMain, "AndroidManifest.xml");
 const targetRes = path.join(appMain, "res");
 const sourceRes = path.join(projectRoot, "mobile-assets", "android");
+const firebaseConfigSource = path.join(projectRoot, "mobile-assets", "google-services.json");
+const firebaseConfigTarget = path.join(androidRoot, "app", "google-services.json");
+const stringsPath = path.join(appMain, "res", "values", "strings.xml");
 
 if (!existsSync(androidRoot) || !existsSync(manifestPath)) {
   console.log("Android project not found yet; skipping native notification/icon configuration.");
@@ -73,4 +76,62 @@ for (const density of ["mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi"]) {
 
 await copyTree(sourceRes, targetRes);
 console.log("Applied BUBT launcher icon and notification icons.");
+
+// Keep the installed Android application label in sync even for an already-generated
+// Capacitor project. `cap sync` does not always rewrite the existing strings.xml.
+if (existsSync(stringsPath)) {
+  let stringsXml = await readFile(stringsPath, "utf8");
+  const setString = (name, value) => {
+    const pattern = new RegExp(`<string\\s+name=["']${name}["'][^>]*>[^<]*<\\/string>`);
+    if (pattern.test(stringsXml)) {
+      stringsXml = stringsXml.replace(pattern, `<string name="${name}">${value}</string>`);
+    }
+  };
+  setString("app_name", "BUBT Portal");
+  setString("title_activity_main", "BUBT Portal");
+  await writeFile(stringsPath, stringsXml, "utf8");
+  console.log("Set Android app name to BUBT Portal.");
+}
+
+if (!existsSync(firebaseConfigSource)) {
+  throw new Error(
+    "FCM SETUP REQUIRED: client/mobile-assets/google-services.json is missing. " +
+      "Download the Android google-services.json for package com.bubt.marksportal from Firebase and place it there before rebuilding."
+  );
+}
+
+let firebaseConfig;
+try {
+  firebaseConfig = JSON.parse(await readFile(firebaseConfigSource, "utf8"));
+} catch (error) {
+  throw new Error(`FCM SETUP ERROR: google-services.json is not valid JSON: ${error.message}`);
+}
+
+const packageNames = (firebaseConfig?.client || [])
+  .map((client) => client?.client_info?.android_client_info?.package_name)
+  .filter(Boolean);
+const projectId = String(firebaseConfig?.project_info?.project_id || "").trim();
+const matchingClient = (firebaseConfig?.client || []).find(
+  (client) => client?.client_info?.android_client_info?.package_name === "com.bubt.marksportal"
+);
+const mobileSdkAppId = String(matchingClient?.client_info?.mobilesdk_app_id || "").trim();
+const apiKeys = (matchingClient?.api_key || []).map((entry) => entry?.current_key).filter(Boolean);
+
+if (!packageNames.includes("com.bubt.marksportal")) {
+  throw new Error(
+    `FCM SETUP ERROR: google-services.json is for the wrong Android package. ` +
+      `Expected com.bubt.marksportal; found ${packageNames.join(", ") || "none"}. ` +
+      `Register/download the Firebase Android app using exactly com.bubt.marksportal.`
+  );
+}
+if (!projectId || !mobileSdkAppId || !apiKeys.length) {
+  throw new Error(
+    "FCM SETUP ERROR: google-services.json is incomplete for com.bubt.marksportal. " +
+      "Download a fresh file from Firebase Project settings > Your apps > Android app."
+  );
+}
+
+await copyFile(firebaseConfigSource, firebaseConfigTarget);
+console.log(`Verified Firebase Android config: ${projectId} / com.bubt.marksportal.`);
+console.log("Applied Firebase google-services.json for FCM push notifications.");
 console.log("Android native configuration is ready.");

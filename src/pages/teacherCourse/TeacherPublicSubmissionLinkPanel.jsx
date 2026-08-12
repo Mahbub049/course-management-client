@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import {
+  fetchTeacherPublicSubmissionClaims,
   fetchTeacherPublicSubmissionLink,
+  releaseTeacherPublicSubmissionClaim,
   updateTeacherPublicSubmissionLink,
 } from "../../services/labSubmissionService";
 
@@ -21,6 +23,12 @@ function toIsoOrNull(value) {
 
 function getAssessmentId(item) {
   return String(item?.id || item?._id || "");
+}
+
+function formatDateTime(value) {
+  if (!value) return "Until submission closes";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Until submission closes" : date.toLocaleString();
 }
 
 function CopyIcon() {
@@ -47,6 +55,10 @@ export default function TeacherPublicSubmissionLinkPanel({
 }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [togglingPublic, setTogglingPublic] = useState(false);
+  const [claimsLoading, setClaimsLoading] = useState(false);
+  const [claims, setClaims] = useState([]);
+  const [releasingClaimId, setReleasingClaimId] = useState("");
   const [link, setLink] = useState(null);
   const [form, setForm] = useState({
     isActive: false,
@@ -100,8 +112,23 @@ export default function TeacherPublicSubmissionLinkPanel({
     }
   };
 
+  const loadClaims = async () => {
+    if (!courseId) return;
+    setClaimsLoading(true);
+    try {
+      const data = await fetchTeacherPublicSubmissionClaims(courseId);
+      setClaims(Array.isArray(data?.claims) ? data.claims : []);
+    } catch (err) {
+      console.error(err);
+      setClaims([]);
+    } finally {
+      setClaimsLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadLink();
+    loadClaims();
   }, [courseId]);
 
   const toggleAssessment = (assessmentId) => {
@@ -176,6 +203,7 @@ export default function TeacherPublicSubmissionLinkPanel({
       });
 
       applyLinkToForm(data?.link || null);
+      await loadClaims();
 
       await Swal.fire(
         "Saved",
@@ -193,6 +221,95 @@ export default function TeacherPublicSubmissionLinkPanel({
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  const togglePublicSubmissionNow = async () => {
+    const enableNow = !(form.isActive && form.showOnPortal);
+
+    if (enableNow && !form.assessmentIds.length) {
+      await Swal.fire(
+        "Select a submission",
+        "Choose at least one assessment before enabling the public /submit page.",
+        "warning"
+      );
+      return;
+    }
+
+    if (!enableNow) {
+      const confirmation = await Swal.fire({
+        title: "Disable public submission?",
+        text: "Students will no longer be able to open this course from /submit until you enable it again.",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Disable",
+      });
+      if (!confirmation.isConfirmed) return;
+    }
+
+    setTogglingPublic(true);
+    try {
+      const data = await updateTeacherPublicSubmissionLink(courseId, {
+        isActive: enableNow,
+        showOnPortal: enableNow,
+        // Enable Now intentionally ignores an old/future public-link schedule.
+        // Assessment deadlines still control whether each task accepts files.
+        portalVisibleFrom: enableNow ? null : toIsoOrNull(form.portalVisibleFrom),
+        portalVisibleUntil: enableNow ? null : toIsoOrNull(form.portalVisibleUntil),
+        title: form.title,
+        instructions: form.instructions,
+        assessmentIds: form.assessmentIds,
+      });
+
+      applyLinkToForm(data?.link || null);
+      await loadClaims();
+      await Swal.fire(
+        enableNow ? "Enabled" : "Disabled",
+        enableNow
+          ? "Public submission is enabled now. No public-link start/end schedule is being used."
+          : "Public submission has been disabled.",
+        "success"
+      );
+    } catch (err) {
+      console.error(err);
+      Swal.fire(
+        "Failed",
+        err?.response?.data?.message ||
+          `Could not ${enableNow ? "enable" : "disable"} public submission.`,
+        "error"
+      );
+    } finally {
+      setTogglingPublic(false);
+    }
+  };
+
+  const releaseClaim = async (claim) => {
+    if (!claim?.id) return;
+
+    const confirmation = await Swal.fire({
+      title: "Release device lock?",
+      text: `This will allow ${claim?.student?.roll || claim?.roll || "this student"} and this browser/device to be claimed again for the active submission session.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Release Lock",
+    });
+
+    if (!confirmation.isConfirmed) return;
+
+    setReleasingClaimId(claim.id);
+    try {
+      await releaseTeacherPublicSubmissionClaim(courseId, claim.id);
+      await loadClaims();
+      await Swal.fire("Released", "The submission device lock was released.", "success");
+    } catch (err) {
+      console.error(err);
+      Swal.fire(
+        "Failed",
+        err?.response?.data?.message || "Could not release the submission device lock.",
+        "error"
+      );
+    } finally {
+      setReleasingClaimId("");
     }
   };
 
@@ -445,6 +562,11 @@ export default function TeacherPublicSubmissionLinkPanel({
                         <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
                           Full marks: {item.fullMarks || 0} • Submissions: {item.submissionCount || 0}
                         </span>
+                        <span className="mt-1 block text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                          Audience: {item.eligibilityMode === "selected"
+                            ? `${item.eligibleStudentCount || 0} selected student${Number(item.eligibleStudentCount || 0) === 1 ? "" : "s"}`
+                            : "All students"}
+                        </span>
                       </span>
                     </label>
                   );
@@ -455,25 +577,130 @@ export default function TeacherPublicSubmissionLinkPanel({
         </div>
       )}
 
-      <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-900/60 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-5">
+      <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-900/60 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">
             {portalStatus}
           </div>
           <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-            Only one course can use /submit at a time. Selecting this course removes the previous course from /submit, while all course-specific links continue to work.
+            Only one course can use /submit at a time. Use Enable Now when you want to open public submission immediately without setting a public-link schedule.
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={saveLink}
-          disabled={saving || loading}
-          className="w-full rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:opacity-60 sm:w-auto"
-        >
-          {saving ? "Saving..." : "Save Public Submission Settings"}
-        </button>
+        <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
+          <button
+            type="button"
+            onClick={togglePublicSubmissionNow}
+            disabled={togglingPublic || saving || loading}
+            className={`w-full rounded-2xl border px-5 py-3 text-sm font-bold transition disabled:opacity-60 sm:w-auto ${
+              form.isActive && form.showOnPortal
+                ? "border-rose-300 bg-white text-rose-700 hover:bg-rose-50 dark:border-rose-500/30 dark:bg-slate-950 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                : "border-emerald-300 bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-500/30"
+            }`}
+          >
+            {togglingPublic
+              ? "Updating..."
+              : form.isActive && form.showOnPortal
+                ? "Disable Public Submission"
+                : "Enable Public Submission Now"}
+          </button>
+
+          <button
+            type="button"
+            onClick={saveLink}
+            disabled={saving || togglingPublic || loading}
+            className="w-full rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:opacity-60 sm:w-auto"
+          >
+            {saving ? "Saving..." : "Save Public Submission Settings"}
+          </button>
+        </div>
       </div>
+
+      {!loading ? (
+        <div className="border-t border-slate-200 bg-white px-4 py-5 dark:border-slate-800 dark:bg-slate-950 sm:px-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Active Submission Device Locks
+              </div>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                A verified roll and browser stay paired until the active submission ends. Release a lock only for a wrong roll, crashed PC, or required machine change.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={loadClaims}
+              disabled={claimsLoading}
+              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              {claimsLoading ? "Refreshing..." : "Refresh Locks"}
+            </button>
+          </div>
+
+          {claimsLoading && !claims.length ? (
+            <div className="mt-4 rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+              Loading active device locks...
+            </div>
+          ) : !claims.length ? (
+            <div className="mt-4 rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+              No active device locks right now.
+            </div>
+          ) : (
+            <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+              <table className="min-w-[920px] w-full border-collapse text-left text-sm">
+                <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+                  <tr>
+                    <th className="px-4 py-3 font-bold">Student</th>
+                    <th className="px-4 py-3 font-bold">Roll</th>
+                    <th className="px-4 py-3 font-bold">Assessment</th>
+                    <th className="px-4 py-3 font-bold">Device Ref</th>
+                    <th className="px-4 py-3 font-bold">Locked Until</th>
+                    <th className="px-4 py-3 text-right font-bold">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-800 dark:bg-slate-950">
+                  {claims.map((claim) => (
+                    <tr key={claim.id} className="align-middle">
+                      <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">
+                        <div className="flex items-center gap-2">
+                          <span>{claim?.student?.name || "Student"}</span>
+                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+                            Locked
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-200">
+                        {claim?.student?.roll || claim?.roll || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                        {Array.isArray(claim.assessments) && claim.assessments.length
+                          ? claim.assessments.map((assessment) => assessment.name).join(", ")
+                          : "—"}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs font-semibold text-slate-700 dark:text-slate-200">
+                        {claim.deviceRef || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                        {formatDateTime(claim.lockedUntil)}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => releaseClaim(claim)}
+                          disabled={releasingClaimId === claim.id}
+                          className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-50 disabled:opacity-50 dark:border-rose-500/20 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                        >
+                          {releasingClaimId === claim.id ? "Releasing..." : "Release Lock"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

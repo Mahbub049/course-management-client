@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import { notificationService } from "../services/notificationService";
+import { initializePushNotifications } from "../services/pushNotificationService";
 import {
   getNativeNotificationDiagnostics,
   isNativeMobileApp,
@@ -59,6 +60,7 @@ export default function NotificationSettingsPage() {
     nextScheduledAt: null,
   });
   const [deviceBusy, setDeviceBusy] = useState(false);
+  const [pushRegistration, setPushRegistration] = useState(null);
 
   const states = useMemo(
     () => new Map((profile?.states || []).map((state) => [state.sourceKey, Boolean(state.completed)])),
@@ -187,17 +189,66 @@ export default function NotificationSettingsPage() {
     }
   };
 
+  const registerPhoneForServerPush = async ({ quiet = false } = {}) => {
+    if (!native) return null;
+    try {
+      const result = await initializePushNotifications({ force: true });
+      setPushRegistration(result);
+      if (result?.tokenSaved) {
+        await load();
+        if (!quiet) {
+          await Swal.fire({
+            icon: "success",
+            title: "Phone registered",
+            text: "This phone is now connected to server push notifications.",
+          });
+        }
+        return result;
+      }
+
+      if (!quiet) {
+        const reasonText =
+          result?.reason === "registration-timeout"
+            ? "FCM did not return a registration identifier. Check that google-services.json belongs to com.bubt.marksportal, rebuild the Android app, and make sure Google Play services and internet access are available."
+            : result?.reason === "server-save-failed"
+              ? "The phone received an FCM registration identifier, but the Marks Portal server could not save it. Check the server/API connection and try again."
+              : result?.reason === "native-registration-error" || result?.reason === "register-call-failed"
+                ? `Android/Firebase registration failed${result?.errorMessage ? `: ${result.errorMessage}` : "."} Verify the Firebase Android configuration and rebuild the app.`
+                : result?.permission !== "granted"
+                  ? "Android notification permission is not granted."
+                  : "FCM could not register this installation. Rebuild the app after verifying google-services.json and try again.";
+        await Swal.fire({
+          icon: "warning",
+          title: "Phone is not registered for server push",
+          text: reasonText,
+        });
+      }
+      return result;
+    } catch (error) {
+      console.error("Could not register phone for server push", error);
+      if (!quiet) {
+        await Swal.fire({
+          icon: "error",
+          title: "Server push registration failed",
+          text: error?.message || "The phone could not register with Firebase Cloud Messaging.",
+        });
+      }
+      return { registered: false, tokenSaved: false, reason: "exception", error };
+    }
+  };
+
   const enablePhoneNotifications = async () => {
     setDeviceBusy(true);
     try {
       const result = await syncMobileNotifications({ requestPermission: true });
       await refreshDeviceStatus();
+      const pushResult = await registerPhoneForServerPush({ quiet: true });
 
       if (result?.permission !== "granted" || result?.systemEnabled === false) {
         await Swal.fire({
           icon: "warning",
           title: "Notification permission is off",
-          text: "Allow notifications for BUBT Marks Portal in Android settings, then return here.",
+          text: "Allow notifications for BUBT Portal in Android settings, then return here.",
         });
         return;
       }
@@ -209,7 +260,7 @@ export default function NotificationSettingsPage() {
           result?.exactAlarm === "granted"
             ? " Exact timing is enabled."
             : " Exact alarm access is still needed for precise reminder times."
-        }`,
+        }${pushResult?.tokenSaved ? " Server push is connected." : " Server push still needs registration."}`,
       });
     } catch (error) {
       console.error(error);
@@ -285,6 +336,59 @@ export default function NotificationSettingsPage() {
         icon: "error",
         title: "Test failed",
         text: error?.message || "The phone could not display a test notification.",
+      });
+    } finally {
+      setDeviceBusy(false);
+    }
+  };
+
+  const sendServerPushTest = async () => {
+    setDeviceBusy(true);
+    try {
+      // Always refresh FCM registration first. This makes the test self-healing
+      // after app reinstall, token rotation, a previous timeout, or a temporary
+      // failure while saving the token to the server.
+      const registration = await registerPhoneForServerPush({ quiet: true });
+      if (!registration?.tokenSaved) {
+        const reasonText =
+          registration?.reason === "registration-timeout"
+            ? "Firebase did not return a registration identifier within 15 seconds. Verify google-services.json for com.bubt.marksportal and rebuild the app."
+            : registration?.reason === "server-save-failed"
+              ? "Firebase registered the phone, but the portal server could not save this phone. Check the API/server deployment."
+              : registration?.permission !== "granted"
+                ? "Android notification permission is not granted."
+                : "This installation could not register with Firebase Cloud Messaging.";
+        await Swal.fire({
+          icon: "error",
+          title: "Phone registration failed",
+          text: reasonText,
+        });
+        return;
+      }
+
+      const response = await notificationService.sendServerPushTest();
+      await load();
+      if (response?.success) {
+        Swal.fire({
+          icon: "success",
+          title: "Server push sent",
+          text: "You should receive an FCM notification even if the app is not kept in the background.",
+        });
+      } else {
+        Swal.fire({
+          icon: "warning",
+          title: "Server push was not delivered",
+          text: response?.message || "Please check the Firebase push setup.",
+        });
+      }
+    } catch (error) {
+      console.error(error);
+      Swal.fire({
+        icon: "error",
+        title: "Server push test failed",
+        text:
+          error?.response?.data?.message ||
+          "The server could not send an FCM notification to this phone.",
       });
     } finally {
       setDeviceBusy(false);
@@ -436,6 +540,30 @@ export default function NotificationSettingsPage() {
                       good={deviceStatus.exactAlarm === "granted" || deviceStatus.exactAlarm === "not-required"}
                     />
                     <DeviceStatusRow
+                      label="Server push (FCM)"
+                      value={
+                        profile?.serverPushEnabled !== true
+                          ? "Server not configured"
+                          : Array.isArray(preferences.deviceTokens) &&
+                              preferences.deviceTokens.some((device) =>
+                                ["android", "ios"].includes(String(device?.platform || ""))
+                              )
+                            ? "Connected"
+                            : pushRegistration?.reason === "registration-timeout"
+                              ? "Registration timed out"
+                              : pushRegistration?.reason === "server-save-failed"
+                                ? "Could not save phone"
+                                : "Not registered"
+                      }
+                      good={
+                        profile?.serverPushEnabled === true &&
+                        Array.isArray(preferences.deviceTokens) &&
+                        preferences.deviceTokens.some((device) =>
+                          ["android", "ios"].includes(String(device?.platform || ""))
+                        )
+                      }
+                    />
+                    <DeviceStatusRow
                       label="Scheduled on this phone"
                       value={String(deviceStatus.pendingCount || 0)}
                       good={(deviceStatus.pendingCount || 0) > 0}
@@ -487,6 +615,22 @@ export default function NotificationSettingsPage() {
                     className="min-h-10 rounded-xl border border-violet-200 bg-violet-50 px-3 text-xs font-black text-violet-700 hover:bg-violet-100 disabled:opacity-60 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300"
                   >
                     Schedule 1-minute test
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => registerPhoneForServerPush()}
+                    disabled={deviceBusy || profile?.serverPushEnabled !== true}
+                    className="min-h-10 rounded-xl border border-sky-200 bg-sky-50 px-3 text-xs font-black text-sky-700 hover:bg-sky-100 disabled:opacity-60 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300"
+                  >
+                    Register this phone for server push
+                  </button>
+                  <button
+                    type="button"
+                    onClick={sendServerPushTest}
+                    disabled={deviceBusy || profile?.serverPushEnabled !== true}
+                    className="min-h-10 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-black text-emerald-700 hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+                  >
+                    Test server push (FCM)
                   </button>
                   <button
                     type="button"

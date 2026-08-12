@@ -15,6 +15,7 @@ import {
   updateTeacherSubmissionAssessment,
 } from "../../services/labSubmissionService";
 import TeacherPublicSubmissionLinkPanel from "./TeacherPublicSubmissionLinkPanel";
+import { getCourseStudents } from "../../services/enrollmentService";
 
 const FILE_TYPE_OPTIONS = [
   { value: "pdf", label: "PDF" },
@@ -97,6 +98,9 @@ const initialForm = {
   resourceUrl: "",
   allowedExtensions: DEFAULT_ALLOWED_EXTENSIONS,
   customExtension: "",
+  eligibilityMode: "all",
+  eligibleStudentIds: [],
+  studentSearch: "",
 };
 
 const TAB_ITEMS = [
@@ -369,6 +373,8 @@ export default function TeacherLabSubmissions({ courseId }) {
   const [previewText, setPreviewText] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
+  const [courseStudents, setCourseStudents] = useState([]);
+  const [loadingCourseStudents, setLoadingCourseStudents] = useState(false);
 
   const dateInputRef = useRef(null);
   const timeInputRef = useRef(null);
@@ -404,6 +410,19 @@ export default function TeacherLabSubmissions({ courseId }) {
   const customSelectedExtensions = selectedAllowedExtensions.filter(
     (ext) => !FIXED_FILE_TYPE_VALUES.has(ext)
   );
+
+  const filteredCourseStudents = useMemo(() => {
+    const query = String(form.studentSearch || "").trim().toLowerCase();
+    const students = Array.isArray(courseStudents) ? courseStudents : [];
+    if (!query) return students;
+    return students.filter((student) =>
+      `${student?.roll || ""} ${student?.name || ""}`.toLowerCase().includes(query)
+    );
+  }, [courseStudents, form.studentSearch]);
+
+  const selectedStudentCount = Array.isArray(form.eligibleStudentIds)
+    ? form.eligibleStudentIds.length
+    : 0;
 
   const clearSubmissionTimers = (submissionId) => {
     const autoSaveTimer = autoSaveTimersRef.current.get(submissionId);
@@ -510,6 +529,34 @@ export default function TeacherLabSubmissions({ courseId }) {
 
   useEffect(() => {
     if (courseId) loadAssessments();
+  }, [courseId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!courseId) {
+      setCourseStudents([]);
+      return undefined;
+    }
+
+    const loadCourseStudents = async () => {
+      setLoadingCourseStudents(true);
+      try {
+        const data = await getCourseStudents(courseId);
+        if (!cancelled) {
+          setCourseStudents(Array.isArray(data) ? data : []);
+        }
+      } catch (err) {
+        console.error("Could not load course students for submission audience", err);
+        if (!cancelled) setCourseStudents([]);
+      } finally {
+        if (!cancelled) setLoadingCourseStudents(false);
+      }
+    };
+
+    loadCourseStudents();
+    return () => {
+      cancelled = true;
+    };
   }, [courseId]);
 
   useEffect(() => {
@@ -638,6 +685,15 @@ export default function TeacherLabSubmissions({ courseId }) {
       return;
     }
 
+    if (form.eligibilityMode === "selected" && !selectedStudentCount) {
+      Swal.fire(
+        "Select students",
+        "Choose at least one student who is allowed to submit this assessment.",
+        "warning"
+      );
+      return;
+    }
+
     setSavingForm(true);
 
     try {
@@ -649,6 +705,9 @@ export default function TeacherLabSubmissions({ courseId }) {
           dueDate: combineDateTime(form.dueDate, form.dueTime),
           maxFileSizeMB,
           allowResubmission: !!form.allowResubmission,
+          eligibilityMode: form.eligibilityMode === "selected" ? "selected" : "all",
+          eligibleStudentIds:
+            form.eligibilityMode === "selected" ? form.eligibleStudentIds : [],
           resourceTitle: form.resourceTitle,
           resourceUrl: form.resourceUrl,
           allowedExtensions,
@@ -667,6 +726,8 @@ export default function TeacherLabSubmissions({ courseId }) {
             dueDate: payload.submissionConfig.dueDate,
             maxFileSizeMB: payload.submissionConfig.maxFileSizeMB,
             allowResubmission: payload.submissionConfig.allowResubmission,
+            eligibilityMode: payload.submissionConfig.eligibilityMode,
+            eligibleStudentIds: payload.submissionConfig.eligibleStudentIds,
             resourceTitle: payload.submissionConfig.resourceTitle,
             resourceUrl: payload.submissionConfig.resourceUrl,
             allowedExtensions: payload.submissionConfig.allowedExtensions,
@@ -719,6 +780,11 @@ export default function TeacherLabSubmissions({ courseId }) {
       resourceUrl: item.resourceUrl || "",
       allowedExtensions: normalizeAllowedExtensions(item.allowedExtensions),
       customExtension: "",
+      eligibilityMode: item.eligibilityMode === "selected" ? "selected" : "all",
+      eligibleStudentIds: Array.isArray(item.eligibleStudentIds)
+        ? item.eligibleStudentIds.map(String)
+        : [],
+      studentSearch: "",
     });
     setActiveTab("create");
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1179,6 +1245,37 @@ export default function TeacherLabSubmissions({ courseId }) {
     });
   };
 
+
+  const toggleEligibleStudent = (studentId) => {
+    const id = String(studentId || "");
+    if (!id) return;
+
+    setForm((previous) => {
+      const current = Array.isArray(previous.eligibleStudentIds)
+        ? previous.eligibleStudentIds.map(String)
+        : [];
+      return {
+        ...previous,
+        eligibleStudentIds: current.includes(id)
+          ? current.filter((item) => item !== id)
+          : [...current, id],
+      };
+    });
+  };
+
+  const selectAllEligibleStudents = () => {
+    setForm((previous) => ({
+      ...previous,
+      eligibleStudentIds: (Array.isArray(courseStudents) ? courseStudents : [])
+        .map((student) => String(student?.id || ""))
+        .filter(Boolean),
+    }));
+  };
+
+  const clearEligibleStudents = () => {
+    setForm((previous) => ({ ...previous, eligibleStudentIds: [] }));
+  };
+
   const isDeadlinePassed = !!selectedAssessment?.dueDatePassed;
   const submissionToggleAction = selectedAssessment?.submissionsOpen
     ? "close"
@@ -1565,6 +1662,138 @@ export default function TeacherLabSubmissions({ courseId }) {
                 </button>
               </div>
             </div>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  Submission Audience
+                </div>
+                <div className="mt-1 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  Choose who is allowed to submit this assessment
+                </div>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  All students is selected by default. Choose selected students only when this task is for a specific group.
+                </p>
+              </div>
+
+              {form.eligibilityMode === "selected" ? (
+                <span className="w-fit rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300">
+                  {selectedStudentCount} selected
+                </span>
+              ) : null}
+            </div>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setForm((previous) => ({
+                    ...previous,
+                    eligibilityMode: "all",
+                    studentSearch: "",
+                  }))
+                }
+                className={`rounded-xl border px-4 py-3 text-left transition ${
+                  form.eligibilityMode !== "selected"
+                    ? "border-indigo-300 bg-indigo-50 dark:border-indigo-500/30 dark:bg-indigo-500/10"
+                    : "border-slate-200 bg-white hover:border-indigo-300 dark:border-slate-700 dark:bg-slate-900"
+                }`}
+              >
+                <span className="block text-sm font-bold text-slate-900 dark:text-white">All Students</span>
+                <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">Every enrolled student can submit.</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setForm((previous) => ({
+                    ...previous,
+                    eligibilityMode: "selected",
+                  }))
+                }
+                className={`rounded-xl border px-4 py-3 text-left transition ${
+                  form.eligibilityMode === "selected"
+                    ? "border-indigo-300 bg-indigo-50 dark:border-indigo-500/30 dark:bg-indigo-500/10"
+                    : "border-slate-200 bg-white hover:border-indigo-300 dark:border-slate-700 dark:bg-slate-900"
+                }`}
+              >
+                <span className="block text-sm font-bold text-slate-900 dark:text-white">Selected Students</span>
+                <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">Only manually chosen students can submit.</span>
+              </button>
+            </div>
+
+            {form.eligibilityMode === "selected" ? (
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <input
+                    type="text"
+                    value={form.studentSearch}
+                    onChange={(event) =>
+                      setForm((previous) => ({
+                        ...previous,
+                        studentSearch: event.target.value,
+                      }))
+                    }
+                    className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                    placeholder="Search by roll or student name"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={selectAllEligibleStudents}
+                      disabled={!courseStudents.length}
+                      className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={clearEligibleStudents}
+                      disabled={!selectedStudentCount}
+                      className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+
+                {loadingCourseStudents ? (
+                  <div className="py-5 text-center text-sm text-slate-500 dark:text-slate-400">Loading students...</div>
+                ) : !courseStudents.length ? (
+                  <div className="py-5 text-center text-sm text-slate-500 dark:text-slate-400">No enrolled students found in this course.</div>
+                ) : !filteredCourseStudents.length ? (
+                  <div className="py-5 text-center text-sm text-slate-500 dark:text-slate-400">No students match this search.</div>
+                ) : (
+                  <div className="mt-3 max-h-64 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                    {filteredCourseStudents.map((student) => {
+                      const studentId = String(student?.id || "");
+                      const checked = form.eligibleStudentIds.includes(studentId);
+                      return (
+                        <label
+                          key={studentId || student?.enrollmentId}
+                          className="flex cursor-pointer items-center gap-3 border-b border-slate-100 px-3 py-2.5 last:border-b-0 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/70"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleEligibleStudent(studentId)}
+                            className="h-4 w-4 accent-indigo-600"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
+                              {student?.name || "Student"}
+                            </span>
+                            <span className="block text-xs text-slate-500 dark:text-slate-400">Roll: {student?.roll || "—"}</span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
 
           <div className="mt-4">
@@ -2241,11 +2470,29 @@ export default function TeacherLabSubmissions({ courseId }) {
                             </div>
                           </div>
 
-                          {row.isPublicSubmission ||
-                          row.source === "public-link" ? (
-                            <Badge tone="emerald">Public Link</Badge>
-                          ) : null}
+                          <div className="flex flex-col items-end gap-1.5">
+                            {row.isPublicSubmission || row.source === "public-link" ? (
+                              <Badge tone="emerald">Public Link</Badge>
+                            ) : null}
+                            {row?.integrity?.exactDuplicate ? (
+                              <Badge tone="rose">Exact Duplicate</Badge>
+                            ) : row?.integrity?.sameContent ? (
+                              <Badge tone="amber">Matching Content</Badge>
+                            ) : null}
+                          </div>
                         </div>
+
+                        {row?.integrity?.matches?.length ? (
+                          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
+                            <div className="font-bold">Potential copied/duplicate submission</div>
+                            <div className="mt-1">
+                              Matches: {Array.from(new Set(row.integrity.matches.map((item) => item.roll))).join(", ")}
+                            </div>
+                            <div className="mt-1 text-[11px] opacity-80">
+                              This is a review flag only. Confirm the files before applying any penalty.
+                            </div>
+                          </div>
+                        ) : null}
 
                         <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
                           <div className="break-words text-sm font-semibold leading-snug text-slate-900 dark:text-white">
@@ -2334,10 +2581,19 @@ export default function TeacherLabSubmissions({ courseId }) {
                               <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                                 {row.roll}
                               </div>
-                              {row.isPublicSubmission ||
-                              row.source === "public-link" ? (
-                                <div className="mt-2">
+                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                {row.isPublicSubmission || row.source === "public-link" ? (
                                   <Badge tone="emerald">Public Link</Badge>
+                                ) : null}
+                                {row?.integrity?.exactDuplicate ? (
+                                  <Badge tone="rose">Exact Duplicate</Badge>
+                                ) : row?.integrity?.sameContent ? (
+                                  <Badge tone="amber">Matching Content</Badge>
+                                ) : null}
+                              </div>
+                              {row?.integrity?.matches?.length ? (
+                                <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-[11px] leading-4 text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
+                                  Matches: {Array.from(new Set(row.integrity.matches.map((item) => item.roll))).join(", ")}
                                 </div>
                               ) : null}
                             </td>

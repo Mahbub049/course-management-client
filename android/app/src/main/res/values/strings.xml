@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">BUBT Marks Portal</string>
-    <string name="title_activity_main">BUBT Marks Portal</string>
+    <string name="app_name">BUBT Portal</string>
+    <string name="title_activity_main">BUBT Portal</string>
     <string name="package_name">com.bubt.marksportal</string>
     <string name="custom_url_scheme">com.bubt.marksportal</string>
 </resources>
