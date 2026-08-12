@@ -800,10 +800,10 @@ export default function PublicSubmissionPage({ useDefaultPortal = false }) {
                     Roll: {student.roll}
                   </div>
                   <div className="mt-3 rounded-2xl border border-emerald-200/70 bg-white/60 p-3 text-xs leading-5 text-emerald-800 dark:border-emerald-500/20 dark:bg-slate-900/40 dark:text-emerald-200">
-                    This browser is assigned to this roll for the current open submission session. Refreshing or reopening this page will keep the same roll.
+                    Your device is locked to this roll for the current submission session. Contact the course teacher if any correction is required.
                     {deviceLock?.lockedUntil ? (
                       <span className="mt-1 block font-semibold">
-                        Lock ends with the session: {formatDateTime(deviceLock.lockedUntil)}
+                        Lock ends: {formatDateTime(deviceLock.lockedUntil)}
                       </span>
                     ) : null}
                   </div>
