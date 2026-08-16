@@ -16,29 +16,21 @@ import {
   saveNotebookMarkSync,
   syncNotebookMarks,
 } from "../services/notebookService";
+import GroupPresentationEditor from "../components/notebook/GroupPresentationEditor";
 
 const TYPE_LABELS = {
   evaluation: "Evaluation Sheet",
   simple: "Simple Note",
 };
 
-const DEFAULT_MCQ_FIELD = {
-  id: "mcq_1",
-  label: "Marking Category",
-  options: ["High", "Medium", "Low"],
-};
-
-const DEFAULT_BLANK_FIELD = {
-  id: "blank_1",
-  label: "Marks",
-};
-
-const DEFAULT_CHECKBOX_FIELD = {
-  id: "checkbox_1",
-  label: "Completed",
-};
+const DEFAULT_MCQ_FIELD = { id: "mcq_1", label: "Marking Category", options: ["High", "Medium", "Low"], entryMode: "group" };
+const DEFAULT_BLANK_FIELD = { id: "blank_1", label: "Marks", entryMode: "group" };
+const DEFAULT_CHECKBOX_FIELD = { id: "checkbox_1", label: "Completed", entryMode: "group" };
 
 const DEFAULT_SETTINGS = {
+  groupWise: false,
+  groupMarkMode: "group", // legacy default used when old group sheets have no per-field scope
+  feedbackEntryMode: "group",
   includeRoll: true,
   includeName: true,
   includeFeedback: true,
@@ -54,91 +46,47 @@ const DEFAULT_SETTINGS = {
   blankFields: [DEFAULT_BLANK_FIELD],
 };
 
-const makeMcqField = (index = 1) => ({
-  id: `mcq_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-  label: index === 1 ? "Marking Category" : `Category ${index}`,
-  options: ["High", "Medium", "Low"],
-});
+const makeId = (prefix) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const makeMcqField = (index = 1) => ({ id: makeId("mcq"), label: index === 1 ? "Marking Category" : `Category ${index}`, options: ["High", "Medium", "Low"], entryMode: "group" });
+const makeBlankField = (index = 1) => ({ id: makeId("blank"), label: index === 1 ? "Marks" : `Blank Field ${index}`, entryMode: "group" });
+const makeCheckboxField = (index = 1) => ({ id: makeId("checkbox"), label: index === 1 ? "Completed" : `Checkbox ${index}`, entryMode: "group" });
+const editableText = (value, fallback = "") => value === undefined || value === null ? fallback : String(value);
+const displayText = (value, fallback = "") => String(value ?? "").trim() || fallback;
+const cleanOptions = (options) => Array.isArray(options) && options.map((x) => String(x ?? "").trim()).filter(Boolean).length ? options.map((x) => String(x ?? "").trim()).filter(Boolean) : [...DEFAULT_MCQ_FIELD.options];
 
-const makeBlankField = (index = 1) => ({
-  id: `blank_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-  label: index === 1 ? "Marks" : `Blank Field ${index}`,
-});
-
-const makeCheckboxField = (index = 1) => ({
-  id: `checkbox_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-  label: index === 1 ? "Completed" : `Checkbox ${index}`,
-});
-
-const cleanMcqOptions = (options) => {
-  if (!Array.isArray(options)) return [...DEFAULT_MCQ_FIELD.options];
-  const cleaned = options.map((item) => String(item || "").trim()).filter(Boolean);
-  return cleaned.length ? cleaned : [...DEFAULT_MCQ_FIELD.options];
-};
-
-const normalizeMcqOptions = (options) => {
-  if (!Array.isArray(options) || options.length === 0) return [...DEFAULT_MCQ_FIELD.options];
-  return options.map((item) => (item === undefined || item === null ? "" : String(item)));
-};
-
-const editableText = (value, fallback = "") =>
-  value === undefined || value === null ? fallback : String(value);
-
-const displayText = (value, fallback = "") => {
-  const text = value === undefined || value === null ? "" : String(value).trim();
-  return text || fallback;
-};
-
-const openNativePicker = (event) => {
-  const input = event.currentTarget;
-  if (typeof input.showPicker !== "function") return;
-  try {
-    input.showPicker();
-  } catch {
-    // Some browsers only allow showPicker from direct user gestures.
-  }
-};
+const normalizeEntryMode = (value, fallback = "group") =>
+  String(value || fallback).toLowerCase() === "individual" ? "individual" : "group";
 
 const normalizeMcqFields = (settings = {}) => {
-  const fromNewShape = Array.isArray(settings.mcqFields) && settings.mcqFields.length > 0;
-  const rawFields = fromNewShape
+  const legacyMode = normalizeEntryMode(settings.groupMarkMode, "group");
+  const source = Array.isArray(settings.mcqFields) && settings.mcqFields.length
     ? settings.mcqFields
-    : [
-        {
-          id: DEFAULT_MCQ_FIELD.id,
-          label: settings.mcqLabel || DEFAULT_MCQ_FIELD.label,
-          options: settings.mcqOptions || DEFAULT_MCQ_FIELD.options,
-        },
-      ];
-
-  return rawFields.map((field, index) => ({
+    : [{ id: "mcq_1", label: settings.mcqLabel || DEFAULT_MCQ_FIELD.label, options: settings.mcqOptions || DEFAULT_MCQ_FIELD.options, entryMode: legacyMode }];
+  return source.map((field, index) => ({
     id: String(field?.id || `mcq_${index + 1}`),
     label: editableText(field?.label ?? field?.mcqLabel, `Category ${index + 1}`),
-    options: normalizeMcqOptions(field?.options ?? field?.mcqOptions),
+    options: Array.isArray(field?.options ?? field?.mcqOptions) ? (field?.options ?? field?.mcqOptions).map((x) => x == null ? "" : String(x)) : [...DEFAULT_MCQ_FIELD.options],
+    entryMode: normalizeEntryMode(field?.entryMode, legacyMode),
   }));
 };
 
 const normalizeBlankFields = (settings = {}) => {
-  const rawFields =
-    Array.isArray(settings.blankFields) && settings.blankFields.length > 0
-      ? settings.blankFields
-      : [DEFAULT_BLANK_FIELD];
-
-  return rawFields.map((field, index) => ({
+  const legacyMode = normalizeEntryMode(settings.groupMarkMode, "group");
+  const source = Array.isArray(settings.blankFields) && settings.blankFields.length ? settings.blankFields : [{ ...DEFAULT_BLANK_FIELD, entryMode: legacyMode }];
+  return source.map((field, index) => ({
     id: String(field?.id || `blank_${index + 1}`),
     label: editableText(field?.label, `Blank Field ${index + 1}`),
+    entryMode: normalizeEntryMode(field?.entryMode, legacyMode),
   }));
 };
 
 const normalizeCheckboxFields = (settings = {}) => {
-  const rawFields =
-    Array.isArray(settings.checkboxFields) && settings.checkboxFields.length > 0
-      ? settings.checkboxFields
-      : [DEFAULT_CHECKBOX_FIELD];
-
-  return rawFields.map((field, index) => ({
+  const legacyMode = normalizeEntryMode(settings.groupMarkMode, "group");
+  const source = Array.isArray(settings.checkboxFields) && settings.checkboxFields.length ? settings.checkboxFields : [{ ...DEFAULT_CHECKBOX_FIELD, entryMode: legacyMode }];
+  return source.map((field, index) => ({
     id: String(field?.id || `checkbox_${index + 1}`),
     label: editableText(field?.label, `Checkbox ${index + 1}`),
+    entryMode: normalizeEntryMode(field?.entryMode, legacyMode),
   }));
 };
 
@@ -146,9 +94,11 @@ const normalizeSettings = (settings = {}) => {
   const mcqFields = normalizeMcqFields(settings);
   const blankFields = normalizeBlankFields(settings);
   const checkboxFields = normalizeCheckboxFields(settings);
-  const firstField = mcqFields[0] || DEFAULT_MCQ_FIELD;
-
+  const firstMcq = mcqFields[0] || DEFAULT_MCQ_FIELD;
   const normalized = {
+    groupWise: settings.groupWise === undefined ? false : Boolean(settings.groupWise),
+    groupMarkMode: normalizeEntryMode(settings.groupMarkMode, "group"),
+    feedbackEntryMode: normalizeEntryMode(settings.feedbackEntryMode, settings.groupMarkMode || "group"),
     includeRoll: settings.includeRoll === undefined ? true : Boolean(settings.includeRoll),
     includeName: settings.includeName === undefined ? true : Boolean(settings.includeName),
     includeFeedback: settings.includeFeedback === undefined ? true : Boolean(settings.includeFeedback),
@@ -156,178 +106,78 @@ const normalizeSettings = (settings = {}) => {
     includeCheckbox: settings.includeCheckbox === undefined ? false : Boolean(settings.includeCheckbox),
     includeBlankFields: settings.includeBlankFields === undefined ? false : Boolean(settings.includeBlankFields),
     includeTotal: settings.includeTotal === undefined ? false : Boolean(settings.includeTotal),
-    mcqLabel: firstField.label,
-    mcqOptions: firstField.options,
+    mcqLabel: firstMcq.label,
+    mcqOptions: firstMcq.options,
     mcqFields,
     checkboxFields,
     blankFields,
   };
-
-  return {
-    ...normalized,
-    columnOrder: normalizeColumnOrder(settings.columnOrder, normalized),
-  };
+  return { ...normalized, columnOrder: normalizeColumnOrder(settings.columnOrder, normalized) };
 };
 
-const getRowMcqValue = (row, field, fieldIndex = 0) => {
-  const selectedOptions = row?.selectedOptions || {};
-  if (selectedOptions[field.id] !== undefined) return selectedOptions[field.id] || "";
-  return fieldIndex === 0 ? row?.selectedOption || "" : "";
+const getRowMcqValue = (row, field, fieldIndex = 0) => row?.selectedOptions?.[field.id] !== undefined ? row.selectedOptions[field.id] || "" : fieldIndex === 0 ? row?.selectedOption || "" : "";
+const getRowBlankValue = (row, field) => row?.blankValues?.[field.id] !== undefined ? row.blankValues[field.id] || "" : "";
+const getRowCheckboxValue = (row, field) => Boolean(row?.checkboxValues?.[field.id]);
+const calculateTotal = (row, fields = []) => {
+  const values = fields.map((field) => String(getRowBlankValue(row, field) ?? "").trim()).filter(Boolean);
+  if (!values.length) return { value: "", error: false };
+  const nums = values.map(Number);
+  if (nums.some(Number.isNaN)) return { value: "Please input number", error: true };
+  const total = nums.reduce((sum, value) => sum + value, 0);
+  return { value: Number.isInteger(total) ? String(total) : String(Number(total.toFixed(2))), error: false };
 };
 
-const getRowBlankValue = (row, field) => {
-  const blankValues = row?.blankValues || {};
-  return blankValues[field.id] !== undefined ? blankValues[field.id] || "" : "";
-};
-
-const getRowCheckboxValue = (row, field) =>
-  Boolean(row?.checkboxValues?.[field.id]);
-
-const formatTotalValue = (value) => {
-  if (value === "") return "";
-  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2)));
-};
-
-const calculateBlankFieldsTotal = (row, fields = []) => {
-  const values = fields
-    .map((field) => String(getRowBlankValue(row, field) ?? "").trim())
-    .filter(Boolean);
-
-  if (values.length === 0) return { hasError: false, value: "" };
-
-  const numbers = values.map((value) => Number(value));
-  if (numbers.some((value) => Number.isNaN(value))) {
-    return { hasError: true, value: "Please input number" };
-  }
-
-  return {
-    hasError: false,
-    value: formatTotalValue(numbers.reduce((sum, value) => sum + value, 0)),
-  };
-};
-
-
-const COLUMN_IDS = {
-  roll: "roll",
-  name: "name",
-  feedback: "feedback",
-  total: "total",
-};
-
+const COLUMN_IDS = { roll: "roll", name: "name", feedback: "feedback", total: "total" };
 const blankColumnId = (field) => `blank:${field.id}`;
 const mcqColumnId = (field) => `mcq:${field.id}`;
 const checkboxColumnId = (field) => `checkbox:${field.id}`;
-
-const getAllMovableColumnIds = (settings = {}) => {
-  const blankFields = Array.isArray(settings.blankFields) ? settings.blankFields : [];
-  const mcqFields = Array.isArray(settings.mcqFields) ? settings.mcqFields : [];
-  const checkboxFields = Array.isArray(settings.checkboxFields) ? settings.checkboxFields : [];
-  return [
-    COLUMN_IDS.roll,
-    COLUMN_IDS.name,
-    ...blankFields.map(blankColumnId),
-    ...mcqFields.map(mcqColumnId),
-    ...checkboxFields.map(checkboxColumnId),
-    COLUMN_IDS.feedback,
-  ];
-};
-
+const getMovableColumnIds = (settings = {}) => [
+  COLUMN_IDS.roll,
+  COLUMN_IDS.name,
+  ...(Array.isArray(settings.blankFields) ? settings.blankFields.map(blankColumnId) : []),
+  ...(Array.isArray(settings.mcqFields) ? settings.mcqFields.map(mcqColumnId) : []),
+  ...(Array.isArray(settings.checkboxFields) ? settings.checkboxFields.map(checkboxColumnId) : []),
+  COLUMN_IDS.feedback,
+];
 const normalizeColumnOrder = (order = [], settings = {}) => {
-  const allIds = getAllMovableColumnIds(settings);
+  const allIds = getMovableColumnIds(settings);
   const allowed = new Set(allIds);
   const seen = new Set();
-  const savedOrder = Array.isArray(order) ? order : [];
-  const normalized = savedOrder
+  const saved = Array.isArray(order) ? order : [];
+  const normalized = saved
     .map((item) => String(item || ""))
     .filter((id) => allowed.has(id) && !seen.has(id) && seen.add(id));
   return [...normalized, ...allIds.filter((id) => !seen.has(id))];
 };
-
 const buildVisibleColumns = (settings = {}, { includeCourse = false } = {}) => {
-  const blankFields = Array.isArray(settings.blankFields) ? settings.blankFields : [];
-  const mcqFields = Array.isArray(settings.mcqFields) ? settings.mcqFields : [];
-  const checkboxFields = Array.isArray(settings.checkboxFields) ? settings.checkboxFields : [];
-  const allColumns = [];
-
-  if (settings.includeRoll) {
-    allColumns.push({ id: COLUMN_IDS.roll, type: "roll", label: "Roll", minWidth: "min-w-32" });
-  }
-  if (settings.includeName) {
-    allColumns.push({ id: COLUMN_IDS.name, type: "name", label: "Name", minWidth: "min-w-56" });
-  }
-  if (includeCourse) {
-    allColumns.push({ id: "course", type: "course", label: "Course", minWidth: "min-w-56", locked: true });
-  }
+  const columns = [];
+  if (settings.includeRoll) columns.push({ id: COLUMN_IDS.roll, type: "roll", label: "Roll" });
+  if (settings.includeName) columns.push({ id: COLUMN_IDS.name, type: "name", label: "Name" });
   if (settings.includeBlankFields) {
-    blankFields.forEach((field, fieldIndex) => {
-      allColumns.push({
-        id: blankColumnId(field),
-        type: "blank",
-        label: displayText(field.label, `Blank Field ${fieldIndex + 1}`),
-        field,
-        fieldIndex,
-        minWidth: "min-w-44",
-      });
-    });
+    (settings.blankFields || []).forEach((field, fieldIndex) =>
+      columns.push({ id: blankColumnId(field), type: "blank", field, fieldIndex, label: displayText(field.label, `Blank Field ${fieldIndex + 1}`) })
+    );
   }
   if (settings.includeMcq) {
-    mcqFields.forEach((field, fieldIndex) => {
-      allColumns.push({
-        id: mcqColumnId(field),
-        type: "mcq",
-        label: displayText(field.label, `Category ${fieldIndex + 1}`),
-        field,
-        fieldIndex,
-        minWidth: "min-w-52",
-      });
-    });
+    (settings.mcqFields || []).forEach((field, fieldIndex) =>
+      columns.push({ id: mcqColumnId(field), type: "mcq", field, fieldIndex, label: displayText(field.label, `Category ${fieldIndex + 1}`) })
+    );
   }
   if (settings.includeCheckbox) {
-    checkboxFields.forEach((field, fieldIndex) => {
-      allColumns.push({
-        id: checkboxColumnId(field),
-        type: "checkbox",
-        label: displayText(field.label, `Checkbox ${fieldIndex + 1}`),
-        field,
-        fieldIndex,
-        minWidth: "min-w-36",
-      });
-    });
+    (settings.checkboxFields || []).forEach((field, fieldIndex) =>
+      columns.push({ id: checkboxColumnId(field), type: "checkbox", field, fieldIndex, label: displayText(field.label, `Checkbox ${fieldIndex + 1}`) })
+    );
   }
-  if (settings.includeFeedback) {
-    allColumns.push({ id: COLUMN_IDS.feedback, type: "feedback", label: "Feedback / Comments", minWidth: "min-w-[320px]" });
-  }
+  if (settings.includeFeedback) columns.push({ id: COLUMN_IDS.feedback, type: "feedback", label: "Feedback / Comments" });
 
-  const byId = new Map(allColumns.map((column) => [column.id, column]));
-  const ordered = normalizeColumnOrder(settings.columnOrder, settings)
-    .map((id) => byId.get(id))
-    .filter(Boolean);
-
+  const byId = new Map(columns.map((column) => [column.id, column]));
+  const ordered = normalizeColumnOrder(settings.columnOrder, settings).map((id) => byId.get(id)).filter(Boolean);
   if (includeCourse) {
-    const courseColumn = byId.get("course");
     const nameIndex = ordered.findIndex((column) => column.id === COLUMN_IDS.name);
-    ordered.splice(nameIndex >= 0 ? nameIndex + 1 : 0, 0, courseColumn);
+    ordered.splice(nameIndex >= 0 ? nameIndex + 1 : 0, 0, { id: "course", type: "course", label: "Course", locked: true });
   }
-
-  if (settings.includeTotal) {
-    ordered.push({ id: COLUMN_IDS.total, type: "total", label: "Total", minWidth: "min-w-40", locked: true });
-  }
-
+  if (settings.includeTotal) ordered.push({ id: COLUMN_IDS.total, type: "total", label: "Total", locked: true });
   return ordered;
-};
-
-const getColumnExportValue = (column, row, settings) => {
-  if (column.type === "roll") return row.roll || "";
-  if (column.type === "name") return row.name || "";
-  if (column.type === "course") return row.courseLabel || "";
-  if (column.type === "blank") return getRowBlankValue(row, column.field);
-  if (column.type === "mcq") return getRowMcqValue(row, column.field, column.fieldIndex);
-  if (column.type === "checkbox") return getRowCheckboxValue(row, column.field) ? "Yes" : "No";
-  if (column.type === "feedback") return row.feedback || "";
-  if (column.type === "total") {
-    return calculateBlankFieldsTotal(row, settings.includeBlankFields ? settings.blankFields : []).value || "";
-  }
-  return "";
 };
 
 const todayInput = () => new Date().toISOString().slice(0, 10);
@@ -335,67 +185,26 @@ const timeInput = () => {
   const d = new Date();
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 };
-
 const getNoteId = (note) => note?._id || note?.id;
-const getCourseId = (course) => {
-  if (!course) return "";
-  if (typeof course === "string") return course;
-  return String(course._id || course.id || "");
-};
-
+const getCourseId = (course) => !course ? "" : typeof course === "string" ? course : String(course._id || course.id || "");
 const formatCourseLabel = (course) => {
   if (!course) return "No course selected";
-  const code = course.code || "Course";
-  const title = course.title ? ` - ${course.title}` : "";
-  const section = course.section ? ` (${course.section})` : "";
-  return `${code}${title}${section}`;
+  return `${course.code || "Course"}${course.title ? ` - ${course.title}` : ""}${course.section ? ` (${course.section})` : ""}`;
 };
-
-const semesterKey = (semester, year) => {
-  const cleanSemester = String(semester || "").trim();
-  const cleanYear = String(year || "").trim();
-  return cleanSemester && cleanYear ? `${cleanSemester}::${cleanYear}` : "";
-};
-
-const semesterLabelFromKey = (key) => {
-  const [semester = "", year = ""] = String(key || "").split("::");
-  return [semester, year].filter(Boolean).join(" ");
-};
-
-const getNoteSemesterKey = (note) =>
-  semesterKey(
-    note?.courseScope === "all" ? note?.scopeSemester : note?.course?.semester,
-    note?.courseScope === "all" ? note?.scopeYear : note?.course?.year
-  );
-
-const formatNoteCourseLabel = (note) => {
-  if (note?.courseScope === "all") {
-    const scope = semesterKey(note?.scopeSemester, note?.scopeYear);
-    return scope ? `All Courses - ${semesterLabelFromKey(scope)}` : "All Courses";
-  }
-  return formatCourseLabel(note?.course);
-};
-
+const semesterKey = (semester, year) => String(semester || "").trim() && String(year || "").trim() ? `${String(semester).trim()}::${String(year).trim()}` : "";
+const semesterLabelFromKey = (key) => String(key || "").split("::").filter(Boolean).join(" ");
+const getNoteSemesterKey = (note) => semesterKey(note?.courseScope === "all" ? note?.scopeSemester : note?.course?.semester, note?.courseScope === "all" ? note?.scopeYear : note?.course?.year);
+const formatNoteCourseLabel = (note) => note?.courseScope === "all" ? `All Courses${getNoteSemesterKey(note) ? ` - ${semesterLabelFromKey(getNoteSemesterKey(note))}` : ""}` : formatCourseLabel(note?.course);
 const pickCurrentSemesterKey = (courses = []) => {
-  const counts = new Map();
-  courses.forEach((course) => {
-    const key = semesterKey(course?.semester, course?.year);
-    if (key) counts.set(key, (counts.get(key) || 0) + 1);
-  });
-
-  const seasonRank = { spring: 1, summer: 2, fall: 3 };
-  return [...counts.keys()].sort((a, b) => {
-    const [semesterA, yearA] = a.split("::");
-    const [semesterB, yearB] = b.split("::");
-    const yearDifference = Number(yearB || 0) - Number(yearA || 0);
-    if (yearDifference) return yearDifference;
-    const seasonDifference =
-      (seasonRank[String(semesterB).toLowerCase()] || 0) -
-      (seasonRank[String(semesterA).toLowerCase()] || 0);
-    if (seasonDifference) return seasonDifference;
-    return (counts.get(b) || 0) - (counts.get(a) || 0);
+  const ranks = { spring: 1, summer: 2, fall: 3 };
+  return [...new Set(courses.map((c) => semesterKey(c?.semester, c?.year)).filter(Boolean))].sort((a, b) => {
+    const [sa, ya] = a.split("::");
+    const [sb, yb] = b.split("::");
+    return Number(yb) - Number(ya) || (ranks[String(sb).toLowerCase()] || 0) - (ranks[String(sa).toLowerCase()] || 0);
   })[0] || "all";
 };
+const safeFileName = (value = "notebook") => String(value).trim().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "_").slice(0, 80) || "notebook";
+const stripHtml = (html = "") => String(html).replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>/gi, "\n").replace(/<\/div>/gi, "\n").replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
 
 const buildSavePayload = (note) => ({
   title: note?.title || "Untitled",
@@ -403,34 +212,13 @@ const buildSavePayload = (note) => ({
   time: note?.time || timeInput(),
   settings: normalizeSettings(note?.settings || {}),
   evaluationRows: Array.isArray(note?.evaluationRows) ? note.evaluationRows : [],
+  groupRows: Array.isArray(note?.groupRows) ? note.groupRows : [],
   content: note?.content || "",
   courseScope: note?.courseScope || (note?.course ? "single" : undefined),
   scopeSemester: note?.scopeSemester || "",
   scopeYear: note?.scopeYear || "",
 });
-
 const serializeNote = (note) => JSON.stringify(buildSavePayload(note));
-
-const stripHtml = (html = "") =>
-  String(html)
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<\/div>/gi, "\n")
-    .replace(/<\/li>/gi, "\n")
-    .replace(/<[^>]*>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-
-const safeFileName = (value = "notebook") =>
-  String(value)
-    .trim()
-    .replace(/[\\/:*?"<>|]+/g, "-")
-    .replace(/\s+/g, "_")
-    .slice(0, 80) || "notebook";
 
 export default function TeacherNotebookPage() {
   const [notes, setNotes] = useState([]);
@@ -446,7 +234,6 @@ export default function TeacherNotebookPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [saveStatus, setSaveStatus] = useState("Saved");
   const [refreshingStudents, setRefreshingStudents] = useState(false);
-
   const saveTimerRef = useRef(null);
   const lastSavedRef = useRef("");
 
@@ -454,10 +241,7 @@ export default function TeacherNotebookPage() {
     setLoading(true);
     setError("");
     try {
-      const [notesData, courseData] = await Promise.all([
-        fetchNotebookNotes(),
-        fetchTeacherCourses({ archived: false }),
-      ]);
+      const [notesData, courseData] = await Promise.all([fetchNotebookNotes(), fetchTeacherCourses()]);
       const nextNotes = Array.isArray(notesData) ? notesData : [];
       const nextCourses = Array.isArray(courseData) ? courseData : [];
       setNotes(nextNotes);
@@ -471,120 +255,53 @@ export default function TeacherNotebookPage() {
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
   useEffect(() => {
     if (!selectedNote) return undefined;
-
-    const currentSerialized = serializeNote(selectedNote);
-    if (currentSerialized === lastSavedRef.current) return undefined;
-
+    const serialized = serializeNote(selectedNote);
+    if (serialized === lastSavedRef.current) return undefined;
     setSaveStatus("Unsaved changes");
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-
     saveTimerRef.current = setTimeout(async () => {
       const noteId = getNoteId(selectedNote);
       if (!noteId) return;
-
       try {
         setSaveStatus("Saving...");
-        const payload = buildSavePayload(selectedNote);
-        const saved = await updateNotebookNote(noteId, payload);
+        const saved = await updateNotebookNote(noteId, buildSavePayload(selectedNote));
         lastSavedRef.current = serializeNote(saved);
+        setSelectedNote((current) => current && getNoteId(current) === noteId ? { ...current, ...saved } : current);
+        setNotes((prev) => prev.map((item) => getNoteId(item) === noteId ? { ...item, ...saved } : item));
         setSaveStatus("Saved");
-        setNotes((prev) =>
-          prev.map((item) => (getNoteId(item) === noteId ? { ...item, ...saved } : item))
-        );
       } catch (err) {
         console.error(err);
         setSaveStatus("Save failed");
       }
     }, 900);
-
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    };
+    return () => saveTimerRef.current && clearTimeout(saveTimerRef.current);
   }, [selectedNote]);
 
-  const courseFilterOptions = useMemo(() => {
-    const byId = new Map();
-
-    [...courses, ...notes.map((note) => note.course).filter(Boolean)].forEach(
-      (course) => {
-        const id = getCourseId(course);
-        if (!id || byId.has(id)) return;
-        byId.set(id, course);
-      }
-    );
-
-    return [...byId.values()]
-      .filter((course) => {
-        if (!semesterFilter || semesterFilter === "all") return true;
-        return semesterKey(course?.semester, course?.year) === semesterFilter;
-      })
-      .sort((a, b) =>
-      formatCourseLabel(a).localeCompare(formatCourseLabel(b), undefined, {
-        numeric: true,
-        sensitivity: "base",
-      })
-    );
+  const semesterOptions = useMemo(() => [...new Set([...courses.map((c) => semesterKey(c.semester, c.year)), ...notes.map(getNoteSemesterKey)].filter(Boolean))].sort().reverse(), [courses, notes]);
+  const courseOptions = useMemo(() => {
+    const map = new Map();
+    [...courses, ...notes.map((n) => n.course).filter(Boolean)].forEach((course) => {
+      const id = getCourseId(course);
+      if (id && !map.has(id)) map.set(id, course);
+    });
+    return [...map.values()].filter((course) => !semesterFilter || semesterFilter === "all" || semesterKey(course.semester, course.year) === semesterFilter).sort((a, b) => formatCourseLabel(a).localeCompare(formatCourseLabel(b), undefined, { numeric: true }));
   }, [courses, notes, semesterFilter]);
 
-  const semesterFilterOptions = useMemo(() => {
-    const keys = new Set();
-    notes.forEach((note) => {
-      const key = getNoteSemesterKey(note);
-      if (key) keys.add(key);
-    });
-    courses.forEach((course) => {
-      const key = semesterKey(course?.semester, course?.year);
-      if (key) keys.add(key);
-    });
-
-    return [...keys].sort((a, b) => {
-      const [, yearA] = a.split("::");
-      const [, yearB] = b.split("::");
-      const yearDifference = Number(yearB || 0) - Number(yearA || 0);
-      return yearDifference || semesterLabelFromKey(a).localeCompare(semesterLabelFromKey(b));
-    });
-  }, [courses, notes]);
-
-  useEffect(() => {
-    if (["all", "unassigned"].includes(courseFilter)) return;
-    if (!courseFilterOptions.some((course) => getCourseId(course) === courseFilter)) {
-      setCourseFilter("all");
-    }
-  }, [courseFilter, courseFilterOptions]);
-
   const filteredNotes = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const term = query.trim().toLowerCase();
     return notes.filter((note) => {
       const type = note.type || "simple";
-      const noteCourseId = getCourseId(note.course || note.courseId);
-      const matchesType = typeFilter === "all" ? true : type === typeFilter;
-      const noteSemester = getNoteSemesterKey(note);
-      const matchesSemester =
-        semesterFilter === "all"
-          ? true
-          : semesterFilter === "unassigned"
-            ? !noteSemester
-            : noteSemester === semesterFilter;
-      const matchesCourse =
-        courseFilter === "all"
-          ? true
-          : courseFilter === "unassigned"
-            ? note.courseScope !== "all" && !noteCourseId
-            : noteCourseId === courseFilter;
-      const courseLabel = formatNoteCourseLabel(note).toLowerCase();
-      const matchesQuery =
-        !q ||
-        (note.title || "").toLowerCase().includes(q) ||
-        (TYPE_LABELS[type] || type).toLowerCase().includes(q) ||
-        courseLabel.includes(q) ||
-        (note.date || "").toLowerCase().includes(q);
-      return matchesType && matchesSemester && matchesCourse && matchesQuery;
+      const matchesType = typeFilter === "all" || type === typeFilter;
+      const sem = getNoteSemesterKey(note);
+      const matchesSemester = semesterFilter === "all" || !semesterFilter || sem === semesterFilter;
+      const noteCourse = getCourseId(note.course || note.courseId);
+      const matchesCourse = courseFilter === "all" || noteCourse === courseFilter;
+      const haystack = `${note.title || ""} ${TYPE_LABELS[type] || type} ${formatNoteCourseLabel(note)} ${note.date || ""} ${normalizeSettings(note.settings).groupWise ? "group presentation" : ""}`.toLowerCase();
+      return matchesType && matchesSemester && matchesCourse && (!term || haystack.includes(term));
     });
   }, [notes, query, typeFilter, semesterFilter, courseFilter]);
 
@@ -593,17 +310,12 @@ export default function TeacherNotebookPage() {
     if (!noteId) return;
     try {
       setOpeningId(noteId);
-      const fullNote = await fetchNotebookNoteById(noteId);
-      setSelectedNote(fullNote);
-      lastSavedRef.current = serializeNote(fullNote);
+      const full = await fetchNotebookNoteById(noteId);
+      setSelectedNote(full);
+      lastSavedRef.current = serializeNote(full);
       setSaveStatus("Saved");
     } catch (err) {
-      console.error(err);
-      Swal.fire({
-        title: "Could not open note",
-        text: err?.response?.data?.message || "Please try again.",
-        icon: "error",
-      });
+      Swal.fire({ icon: "error", title: "Could not open note", text: err?.response?.data?.message || "Please try again." });
     } finally {
       setOpeningId(null);
     }
@@ -620,404 +332,92 @@ export default function TeacherNotebookPage() {
 
   const handleDelete = async (note) => {
     const noteId = getNoteId(note);
-    if (!noteId) return;
-
-    const result = await Swal.fire({
-      title: "Delete this note?",
-      text: `${note.title || "Untitled"} will be permanently deleted.`,
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonText: "Yes, delete",
-      cancelButtonText: "Cancel",
-      confirmButtonColor: "#dc2626",
-      reverseButtons: true,
-    });
-
+    const result = await Swal.fire({ title: "Delete this note?", text: `${note.title || "Untitled"} will be permanently deleted.`, icon: "warning", showCancelButton: true, confirmButtonText: "Yes, delete", confirmButtonColor: "#dc2626" });
     if (!result.isConfirmed) return;
-
     try {
       await deleteNotebookNote(noteId);
       setNotes((prev) => prev.filter((item) => getNoteId(item) !== noteId));
-      if (getNoteId(selectedNote) === noteId) {
-        setSelectedNote(null);
-        lastSavedRef.current = "";
-      }
-      Swal.fire({
-        title: "Deleted",
-        text: "The note has been removed.",
-        icon: "success",
-        timer: 1500,
-        showConfirmButton: false,
-      });
+      if (getNoteId(selectedNote) === noteId) setSelectedNote(null);
+      Swal.fire({ icon: "success", title: "Deleted", timer: 1300, showConfirmButton: false });
     } catch (err) {
-      console.error(err);
-      Swal.fire({
-        title: "Delete failed",
-        text: err?.response?.data?.message || "Please try again.",
-        icon: "error",
-      });
+      Swal.fire({ icon: "error", title: "Delete failed", text: err?.response?.data?.message || "Please try again." });
     }
   };
 
   const handleRefreshStudents = async () => {
     const noteId = getNoteId(selectedNote);
     if (!noteId || selectedNote?.type !== "evaluation") return;
-
     try {
       setRefreshingStudents(true);
-      const currentSerialized = serializeNote(selectedNote);
-
-      if (currentSerialized !== lastSavedRef.current) {
-        setSaveStatus("Saving...");
-        const savedNote = await updateNotebookNote(noteId, buildSavePayload(selectedNote));
-        lastSavedRef.current = serializeNote(savedNote);
-        setSaveStatus("Saved");
+      if (serializeNote(selectedNote) !== lastSavedRef.current) {
+        const saved = await updateNotebookNote(noteId, buildSavePayload(selectedNote));
+        lastSavedRef.current = serializeNote(saved);
       }
-
       const result = await refreshNotebookStudents(noteId);
-      const refreshedNote = result?.note || result;
-      if (refreshedNote) {
-        setSelectedNote(refreshedNote);
-        lastSavedRef.current = serializeNote(refreshedNote);
-        setNotes((prev) =>
-          prev.map((item) => (getNoteId(item) === noteId ? { ...item, ...refreshedNote } : item))
-        );
+      const refreshed = result?.note || result;
+      if (refreshed) {
+        setSelectedNote(refreshed);
+        lastSavedRef.current = serializeNote(refreshed);
+        setNotes((prev) => prev.map((item) => getNoteId(item) === noteId ? { ...item, ...refreshed } : item));
       }
-
-      Swal.fire({
-        title: result?.addedCount > 0 ? "Student data refreshed" : "Already up to date",
-        text:
-          result?.addedCount > 0
-            ? `${result.addedCount} new student entr${result.addedCount === 1 ? "y" : "ies"} added. Existing marks, comments, and selections were kept unchanged.`
-            : "No new enrolled student entry was found for this sheet.",
-        icon: "success",
-        timer: 2200,
-        showConfirmButton: false,
-      });
+      Swal.fire({ icon: "success", title: result?.addedCount ? "Student data refreshed" : "Already up to date", text: result?.message || "Student roster is current.", timer: 2000, showConfirmButton: false });
     } catch (err) {
-      console.error(err);
-      Swal.fire({
-        title: "Refresh failed",
-        text: err?.response?.data?.message || "Please try again.",
-        icon: "error",
-      });
+      Swal.fire({ icon: "error", title: "Refresh failed", text: err?.response?.data?.message || "Please try again." });
     } finally {
       setRefreshingStudents(false);
     }
   };
 
-  const updateSelectedNote = (updater) => {
-    setSelectedNote((prev) => {
-      if (!prev) return prev;
-      const patch = typeof updater === "function" ? updater(prev) : updater;
-      return { ...prev, ...patch };
-    });
-  };
+  const updateSelectedNote = (patchOrFn) => setSelectedNote((prev) => prev ? { ...prev, ...(typeof patchOrFn === "function" ? patchOrFn(prev) : patchOrFn) } : prev);
 
   return (
     <div className="min-w-0 max-w-full space-y-5 overflow-x-hidden text-slate-900 dark:text-slate-100">
       <section className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-br from-white via-slate-50 to-indigo-50 p-5 shadow-sm dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900 sm:p-6">
-        <div className="pointer-events-none absolute inset-0">
-          <div className="absolute -left-20 top-8 h-44 w-44 rounded-full bg-violet-200/40 blur-3xl dark:bg-violet-500/10" />
-          <div className="absolute right-0 top-0 h-56 w-56 rounded-full bg-sky-200/40 blur-3xl dark:bg-sky-500/10" />
-        </div>
-
         <div className="relative flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-violet-200 bg-white/80 px-3 py-1 text-xs font-semibold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
-              <NotebookSmallIcon />
-              Teacher Notebook
-            </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-950 dark:text-white sm:text-3xl">
-              Notebook & Evaluation Sheets
-            </h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-              Create personal class notes, quick evaluation sheets, category-based feedback records, and export them when needed.
-            </p>
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-violet-200 bg-white/80 px-3 py-1 text-xs font-semibold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">Teacher Notebook</div>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-950 dark:text-white sm:text-3xl">Notebook & Evaluation Sheets</h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">Create student-wise evaluations, group presentation marksheets, and class notes. Export individual or group reports whenever needed.</p>
           </div>
-
-          <button
-            type="button"
-            onClick={() => setShowCreateModal(true)}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-violet-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-violet-600/20 transition hover:bg-violet-700"
-          >
-            <PlusIcon />
-            Create Note
-          </button>
+          <button type="button" onClick={() => setShowCreateModal(true)} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-violet-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-violet-600/20 transition hover:bg-violet-700">+ Create Note</button>
         </div>
       </section>
 
       {selectedNote ? (
-        <NotebookEditor
-          note={selectedNote}
-          courses={courses}
-          saveStatus={saveStatus}
-          onBack={() => setSelectedNote(null)}
-          onChange={updateSelectedNote}
-          onDelete={() => handleDelete(selectedNote)}
-          onRefreshStudents={handleRefreshStudents}
-          refreshingStudents={refreshingStudents}
-        />
+        <NotebookEditor note={selectedNote} courses={courses} saveStatus={saveStatus} onBack={() => setSelectedNote(null)} onChange={updateSelectedNote} onDelete={() => handleDelete(selectedNote)} onRefreshStudents={handleRefreshStudents} refreshingStudents={refreshingStudents} />
       ) : (
-        <section className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
+        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
           <div className="border-b border-slate-200 p-4 dark:border-slate-800 sm:p-5">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <h2 className="text-base font-semibold text-slate-950 dark:text-white">Your Notes</h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Showing {filteredNotes.length} of {notes.length}
-                </p>
-              </div>
-
-              <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:w-[1160px] xl:grid-cols-[minmax(0,1fr)_170px_190px_260px]">
-                <div className="relative min-w-0 sm:col-span-2 xl:col-span-1">
-                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                    <SearchIcon />
-                  </span>
-                  <input
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search by title, course, type, date..."
-                    className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm outline-none transition focus:border-violet-400 focus:bg-white dark:border-slate-800 dark:bg-slate-900 dark:text-white dark:focus:border-violet-500"
-                  />
-                </div>
-                <select
-                  value={typeFilter}
-                  onChange={(e) => setTypeFilter(e.target.value)}
-                  className="h-11 min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none transition focus:border-violet-400 focus:bg-white dark:border-slate-800 dark:bg-slate-900 dark:text-white dark:focus:border-violet-500"
-                >
-                  <option value="all">All Templates</option>
-                  <option value="evaluation">Evaluation</option>
-                  <option value="simple">Simple Notes</option>
-                </select>
-
-                <select
-                  value={semesterFilter || "all"}
-                  onChange={(e) => setSemesterFilter(e.target.value)}
-                  className="h-11 min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none transition focus:border-violet-400 focus:bg-white dark:border-slate-800 dark:bg-slate-900 dark:text-white dark:focus:border-violet-500"
-                >
-                  <option value="all">All Semesters</option>
-                  {semesterFilterOptions.map((key) => (
-                    <option key={key} value={key}>
-                      {semesterLabelFromKey(key)}
-                    </option>
-                  ))}
-                  {notes.some((note) => !getNoteSemesterKey(note)) && (
-                    <option value="unassigned">Without Semester</option>
-                  )}
-                </select>
-
-                <select
-                  value={courseFilter}
-                  onChange={(e) => setCourseFilter(e.target.value)}
-                  className="h-11 min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none transition focus:border-violet-400 focus:bg-white dark:border-slate-800 dark:bg-slate-900 dark:text-white dark:focus:border-violet-500"
-                >
-                  <option value="all">All Courses</option>
-                  <option value="unassigned">Without Course</option>
-                  {courseFilterOptions.map((course) => {
-                    const id = getCourseId(course);
-                    return (
-                      <option key={id} value={id}>
-                        {formatCourseLabel(course)}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
+            <div className="grid gap-3 lg:grid-cols-[1fr_180px_190px_260px]">
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search title, course, group presentation..." className="input-soft" />
+              <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="input-soft"><option value="all">All Templates</option><option value="evaluation">Evaluation</option><option value="simple">Simple Notes</option></select>
+              <select value={semesterFilter || "all"} onChange={(e) => setSemesterFilter(e.target.value)} className="input-soft"><option value="all">All Semesters</option>{semesterOptions.map((key) => <option key={key} value={key}>{semesterLabelFromKey(key)}</option>)}</select>
+              <select value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)} className="input-soft"><option value="all">All Courses</option>{courseOptions.map((course) => <option key={getCourseId(course)} value={getCourseId(course)}>{formatCourseLabel(course)}</option>)}</select>
             </div>
           </div>
-
-          {loading ? (
-            <div className="p-8 text-center text-sm text-slate-500 dark:text-slate-400">Loading notebook...</div>
-          ) : error ? (
-            <div className="p-8 text-center text-sm font-semibold text-red-600 dark:text-red-400">{error}</div>
-          ) : filteredNotes.length === 0 ? (
-            <EmptyNotebook onCreate={() => setShowCreateModal(true)} />
-          ) : (
-            <div className="overflow-hidden">
-              <div className="hidden overflow-x-auto lg:block">
-                <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
-                  <thead className="bg-slate-50 dark:bg-slate-900/70">
-                    <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                      <th className="px-4 py-3 font-bold">Title</th>
-                      <th className="px-4 py-3 font-bold">Type</th>
-                      <th className="px-4 py-3 font-bold">Course</th>
-                      <th className="px-4 py-3 font-bold">Date</th>
-                      <th className="px-4 py-3 font-bold">Updated</th>
-                      <th className="px-4 py-3 text-right font-bold">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                    {filteredNotes.map((note) => (
-                      <NoteRow
-                        key={getNoteId(note)}
-                        note={note}
-                        openingId={openingId}
-                        onOpen={() => openNote(note)}
-                        onDelete={() => handleDelete(note)}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="grid min-w-0 max-w-full gap-3 p-4 lg:hidden">
-                {filteredNotes.map((note) => (
-                  <NoteCard
-                    key={getNoteId(note)}
-                    note={note}
-                    openingId={openingId}
-                    onOpen={() => openNote(note)}
-                    onDelete={() => handleDelete(note)}
-                  />
-                ))}
-              </div>
+          {loading ? <div className="p-10 text-center text-sm text-slate-500">Loading notebook...</div> : error ? <div className="p-10 text-center text-red-600">{error}</div> : filteredNotes.length === 0 ? <EmptyNotebook onCreate={() => setShowCreateModal(true)} /> : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
+                <thead className="bg-slate-50 dark:bg-slate-900/70"><tr className="text-left text-[11px] uppercase tracking-wide text-slate-500"><th className="px-4 py-3">Title</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Course</th><th className="px-4 py-3">Date</th><th className="px-4 py-3 text-right">Actions</th></tr></thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">{filteredNotes.map((note) => <NoteRow key={getNoteId(note)} note={note} openingId={openingId} onOpen={() => openNote(note)} onDelete={() => handleDelete(note)} />)}</tbody>
+              </table>
             </div>
           )}
         </section>
       )}
 
-      {showCreateModal && (
-        <CreateNotebookModal
-          courses={courses}
-          onClose={() => setShowCreateModal(false)}
-          onCreate={handleCreate}
-        />
-      )}
+      {showCreateModal && <CreateNotebookModal courses={courses} onClose={() => setShowCreateModal(false)} onCreate={handleCreate} />}
     </div>
   );
 }
 
 function NoteRow({ note, openingId, onOpen, onDelete }) {
-  const noteId = getNoteId(note);
-  return (
-    <tr
-      onClick={onOpen}
-      tabIndex={0}
-      role="button"
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-      className="cursor-pointer text-sm transition hover:bg-slate-50/80 focus:bg-slate-50/80 focus:outline-none dark:hover:bg-slate-900/60 dark:focus:bg-slate-900/60"
-    >
-      <td className="px-4 py-4">
-        <div className="font-medium text-slate-900 dark:text-slate-100">{note.title || "Untitled"}</div>
-        <div className="text-xs text-slate-500 dark:text-slate-400">{note.time || "--:--"}</div>
-      </td>
-      <td className="px-4 py-4">
-        <TypeBadge type={note.type} />
-      </td>
-      <td className="max-w-sm px-4 py-4 text-slate-600 dark:text-slate-300">
-        <span className="line-clamp-2">{formatNoteCourseLabel(note)}</span>
-      </td>
-      <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{note.date || "-"}</td>
-      <td className="px-4 py-4 text-slate-500 dark:text-slate-400">{formatDateTime(note.updatedAt)}</td>
-      <td className="px-4 py-4">
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpen();
-            }}
-            className="rounded-xl border border-violet-200 px-3 py-2 text-xs font-black text-violet-700 transition hover:bg-violet-50 dark:border-violet-500/30 dark:text-violet-300 dark:hover:bg-violet-500/10"
-          >
-            {openingId === noteId ? "Opening..." : "Open"}
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            className="rounded-xl border border-red-200 px-3 py-2 text-xs font-black text-red-600 transition hover:bg-red-50 dark:border-red-500/30 dark:text-red-300 dark:hover:bg-red-500/10"
-          >
-            Delete
-          </button>
-        </div>
-      </td>
-    </tr>
-  );
-}
-
-function NoteCard({ note, openingId, onOpen, onDelete }) {
-  const noteId = getNoteId(note);
-  return (
-    <div
-      onClick={onOpen}
-      tabIndex={0}
-      role="button"
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-      className="w-full min-w-0 max-w-full cursor-pointer overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 p-4 transition hover:border-violet-200 hover:bg-white focus:border-violet-300 focus:bg-white focus:outline-none dark:border-slate-800 dark:bg-slate-900/70 dark:hover:border-violet-500/40 dark:hover:bg-slate-900 dark:focus:border-violet-500/40 dark:focus:bg-slate-900"
-    >
-      <div className="flex min-w-0 items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <h3 className="line-clamp-2 break-words text-sm font-medium text-slate-900 dark:text-slate-100">{note.title || "Untitled"}</h3>
-          <p className="mt-1 line-clamp-2 break-words text-xs leading-5 text-slate-500 dark:text-slate-400">{formatNoteCourseLabel(note)}</p>
-        </div>
-        <span className="max-w-[46%] shrink-0">
-          <TypeBadge type={note.type} />
-        </span>
-      </div>
-      <div className="mt-3 flex min-w-0 flex-wrap gap-2 break-words text-xs text-slate-500 dark:text-slate-400">
-        <span>{note.date || "No date"}</span>
-        <span>•</span>
-        <span>{formatDateTime(note.updatedAt)}</span>
-      </div>
-      <div className="mt-4 flex min-w-0 gap-2">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpen();
-          }}
-          className="flex-1 rounded-2xl bg-violet-600 px-3 py-2 text-xs font-black text-white hover:bg-violet-700"
-        >
-          {openingId === noteId ? "Opening..." : "Open"}
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          className="rounded-2xl border border-red-200 px-3 py-2 text-xs font-black text-red-600 hover:bg-red-50 dark:border-red-500/30 dark:text-red-300 dark:hover:bg-red-500/10"
-        >
-          Delete
-        </button>
-      </div>
-    </div>
-  );
+  const isGroup = note.type === "evaluation" && normalizeSettings(note.settings).groupWise;
+  return <tr onClick={onOpen} className="cursor-pointer text-sm transition hover:bg-slate-50 dark:hover:bg-slate-900/60"><td className="px-4 py-4"><div className="font-semibold text-slate-900 dark:text-white">{note.title || "Untitled"}</div><div className="mt-1 text-xs text-slate-500">{note.time || "--:--"}</div></td><td className="px-4 py-4"><TypeBadge type={note.type} groupWise={isGroup} /></td><td className="px-4 py-4 text-slate-600 dark:text-slate-300">{formatNoteCourseLabel(note)}</td><td className="px-4 py-4 text-slate-600 dark:text-slate-300">{note.date || "-"}</td><td className="px-4 py-4"><div className="flex justify-end gap-2"><button type="button" onClick={(e) => { e.stopPropagation(); onOpen(); }} className="rounded-xl border border-violet-200 px-3 py-2 text-xs font-bold text-violet-700 dark:border-violet-500/30 dark:text-violet-300">{openingId === getNoteId(note) ? "Opening..." : "Open"}</button><button type="button" onClick={(e) => { e.stopPropagation(); onDelete(); }} className="rounded-xl border border-red-200 px-3 py-2 text-xs font-bold text-red-600 dark:border-red-500/30 dark:text-red-300">Delete</button></div></td></tr>;
 }
 
 function EmptyNotebook({ onCreate }) {
-  return (
-    <div className="p-10 text-center">
-      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-3xl bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">
-        <NotebookSmallIcon />
-      </div>
-      <h3 className="mt-4 text-lg font-black text-slate-950 dark:text-white">No notes yet</h3>
-      <p className="mx-auto mt-2 max-w-md text-sm text-slate-500 dark:text-slate-400">
-        Create an evaluation sheet or a simple note to start keeping your class records in one place.
-      </p>
-      <button
-        type="button"
-        onClick={onCreate}
-        className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-violet-600 px-4 py-3 text-sm font-bold text-white hover:bg-violet-700"
-      >
-        <PlusIcon />
-        Create First Note
-      </button>
-    </div>
-  );
+  return <div className="p-10 text-center"><h3 className="text-lg font-black text-slate-950 dark:text-white">No notes yet</h3><p className="mx-auto mt-2 max-w-md text-sm text-slate-500">Create an evaluation sheet, group presentation sheet, or simple note.</p><button type="button" onClick={onCreate} className="mt-5 rounded-2xl bg-violet-600 px-4 py-3 text-sm font-bold text-white">Create First Note</button></div>;
 }
 
 function CreateNotebookModal({ courses, onClose, onCreate }) {
@@ -1029,657 +429,158 @@ function CreateNotebookModal({ courses, onClose, onCreate }) {
   const [settings, setSettings] = useState(() => normalizeSettings(DEFAULT_SETTINGS));
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
-  const [createSettingsOpen, setCreateSettingsOpen] = useState(false);
+  const normalized = normalizeSettings(settings);
 
-  const previousTypeRef = useRef(type);
-
-  useEffect(() => {
-    if (previousTypeRef.current === type) return;
-    if (type === "simple" && title === "Random Mark Evaluation") setTitle("Class Note");
-    if (type === "evaluation" && title === "Class Note") setTitle("Random Mark Evaluation");
-    previousTypeRef.current = type;
-  }, [type, title]);
-
-  const updateSetting = (key, value) => {
-    setSettings((prev) => normalizeSettings({ ...prev, [key]: value }));
+  const setGroupWise = (groupWise) => {
+    if (groupWise) {
+      setSettings(normalizeSettings({ ...DEFAULT_SETTINGS, groupWise: true, groupMarkMode: "group", feedbackEntryMode: "group", includeRoll: false, includeName: false, includeBlankFields: true, includeTotal: true, includeMcq: false, includeFeedback: true, blankFields: [{ id: "blank_1", label: "Presentation Marks", entryMode: "group" }] }));
+      if (title === "Random Mark Evaluation" || title === "Class Note") setTitle("Group Presentation Evaluation");
+      if (courseId === "__all__") setCourseId("");
+    } else {
+      setSettings(normalizeSettings({ ...DEFAULT_SETTINGS, groupWise: false }));
+      if (title === "Group Presentation Evaluation") setTitle("Random Mark Evaluation");
+    }
   };
 
-  const updateMcqField = (fieldId, patch) => {
-    setSettings((prev) => {
-      const normalized = normalizeSettings(prev);
-      const mcqFields = normalized.mcqFields.map((field) =>
-        field.id === fieldId ? { ...field, ...patch } : field
-      );
-      return { ...normalized, mcqFields };
-    });
-  };
-
-  const updateOption = (fieldId, optionIndex, value) => {
-    setSettings((prev) => {
-      const normalized = normalizeSettings(prev);
-      const mcqFields = normalized.mcqFields.map((field) => {
-        if (field.id !== fieldId) return field;
-        return {
-          ...field,
-          options: field.options.map((item, i) => (i === optionIndex ? value : item)),
-        };
-      });
-      return { ...normalized, mcqFields };
-    });
-  };
-
-  const addOption = (fieldId) => {
-    setSettings((prev) => {
-      const normalized = normalizeSettings(prev);
-      const mcqFields = normalized.mcqFields.map((field) => {
-        if (field.id !== fieldId) return field;
-        return {
-          ...field,
-          options: [...field.options, `Option ${field.options.length + 1}`],
-        };
-      });
-      return { ...normalized, mcqFields };
-    });
-  };
-
-  const removeOption = (fieldId, optionIndex) => {
-    setSettings((prev) => {
-      const normalized = normalizeSettings(prev);
-      const mcqFields = normalized.mcqFields.map((field) => {
-        if (field.id !== fieldId) return field;
-        return {
-          ...field,
-          options: field.options.filter((_, i) => i !== optionIndex),
-        };
-      });
-      return normalizeSettings({ ...normalized, mcqFields });
-    });
-  };
-
-  const addMcqField = () => {
-    setSettings((prev) => {
-      const normalized = normalizeSettings(prev);
-      const nextIndex = normalized.mcqFields.length + 1;
-      return normalizeSettings({
-        ...normalized,
-        mcqFields: [...normalized.mcqFields, makeMcqField(nextIndex)],
-      });
-    });
-  };
-
-  const removeMcqField = (fieldId) => {
-    setSettings((prev) => {
-      const normalized = normalizeSettings(prev);
-      return normalizeSettings({
-        ...normalized,
-        mcqFields: normalized.mcqFields.filter((field) => field.id !== fieldId),
-      });
-    });
-  };
-
-  const updateBlankField = (fieldId, patch) => {
-    setSettings((prev) => {
-      const normalized = normalizeSettings(prev);
-      const blankFields = normalized.blankFields.map((field) =>
-        field.id === fieldId ? { ...field, ...patch } : field
-      );
-      return { ...normalized, blankFields };
-    });
-  };
-
-  const addBlankField = () => {
-    setSettings((prev) => {
-      const normalized = normalizeSettings(prev);
-      const nextIndex = normalized.blankFields.length + 1;
-      return normalizeSettings({
-        ...normalized,
-        blankFields: [...normalized.blankFields, makeBlankField(nextIndex)],
-      });
-    });
-  };
-
-  const removeBlankField = (fieldId) => {
-    setSettings((prev) => {
-      const normalized = normalizeSettings(prev);
-      return normalizeSettings({
-        ...normalized,
-        blankFields: normalized.blankFields.filter((field) => field.id !== fieldId),
-      });
-    });
-  };
-
-  const updateCheckboxField = (fieldId, patch) => {
-    setSettings((prev) => {
-      const normalized = normalizeSettings(prev);
-      const checkboxFields = normalized.checkboxFields.map((field) =>
-        field.id === fieldId ? { ...field, ...patch } : field
-      );
-      return { ...normalized, checkboxFields };
-    });
-  };
-
-  const addCheckboxField = () => {
-    setSettings((prev) => {
-      const normalized = normalizeSettings(prev);
-      const nextIndex = normalized.checkboxFields.length + 1;
-      return normalizeSettings({
-        ...normalized,
-        checkboxFields: [
-          ...normalized.checkboxFields,
-          makeCheckboxField(nextIndex),
-        ],
-      });
-    });
-  };
-
-  const removeCheckboxField = (fieldId) => {
-    setSettings((prev) => {
-      const normalized = normalizeSettings(prev);
-      return normalizeSettings({
-        ...normalized,
-        checkboxFields: normalized.checkboxFields.filter(
-          (field) => field.id !== fieldId
-        ),
-      });
-    });
-  };
+  const updateSetting = (key, value) => setSettings((prev) => normalizeSettings({ ...prev, [key]: value }));
+  const updateField = (kind, id, patch) => setSettings((prev) => {
+    const n = normalizeSettings(prev);
+    const key = kind === "blank" ? "blankFields" : kind === "mcq" ? "mcqFields" : "checkboxFields";
+    return normalizeSettings({ ...n, [key]: n[key].map((field) => field.id === id ? { ...field, ...patch } : field) });
+  });
+  const addField = (kind) => setSettings((prev) => {
+    const n = normalizeSettings(prev);
+    const key = kind === "blank" ? "blankFields" : kind === "mcq" ? "mcqFields" : "checkboxFields";
+    const maker = kind === "blank" ? makeBlankField : kind === "mcq" ? makeMcqField : makeCheckboxField;
+    return normalizeSettings({ ...n, [key]: [...n[key], maker(n[key].length + 1)] });
+  });
+  const removeField = (kind, id) => setSettings((prev) => {
+    const n = normalizeSettings(prev);
+    const key = kind === "blank" ? "blankFields" : kind === "mcq" ? "mcqFields" : "checkboxFields";
+    return normalizeSettings({ ...n, [key]: n[key].filter((field) => field.id !== id) });
+  });
 
   const submit = async (e) => {
     e.preventDefault();
     setCreateError("");
-
-    if (!title.trim()) {
-      setCreateError("Please give a name for the note.");
-      return;
-    }
-
-    if (type === "evaluation" && !courseId) {
-      setCreateError("Please select a course for the evaluation sheet.");
-      return;
-    }
-
-    const normalizedSettings = normalizeSettings(settings);
-    const cleanMcqFields = normalizedSettings.mcqFields.map((field, index) => ({
-      id: field.id || `mcq_${index + 1}`,
-      label: String(field.label || `Category ${index + 1}`).trim() || `Category ${index + 1}`,
-      options: cleanMcqOptions(field.options),
-    }));
-    const cleanBlankFields = normalizedSettings.blankFields.map((field, index) => ({
-      id: field.id || `blank_${index + 1}`,
-      label: String(field.label || `Blank Field ${index + 1}`).trim() || `Blank Field ${index + 1}`,
-    }));
-    const cleanCheckboxFields = normalizedSettings.checkboxFields.map((field, index) => ({
-      id: field.id || `checkbox_${index + 1}`,
-      label: String(field.label || `Checkbox ${index + 1}`).trim() || `Checkbox ${index + 1}`,
-    }));
-
-    if (type === "evaluation" && normalizedSettings.includeMcq && cleanMcqFields.length === 0) {
-      setCreateError("Please add at least one MCQ/category column.");
-      return;
-    }
-
+    if (!title.trim()) return setCreateError("Please give a name for the note.");
+    if (type === "evaluation" && !courseId) return setCreateError("Please select a course for the evaluation sheet.");
     try {
       setCreating(true);
-      const allCoursesSelected = type === "evaluation" && courseId === "__all__";
-      const currentSemester = pickCurrentSemesterKey(courses);
-      const [scopeSemester = "", scopeYear = ""] =
-        currentSemester === "all" ? [] : currentSemester.split("::");
+      const n = normalizeSettings(settings);
+      const allCourses = type === "evaluation" && !n.groupWise && courseId === "__all__";
+      const current = pickCurrentSemesterKey(courses);
+      const [scopeSemester = "", scopeYear = ""] = current === "all" ? [] : current.split("::");
       await onCreate({
         type,
         title: title.trim(),
-        courseId: allCoursesSelected ? null : courseId || null,
-        courseScope: allCoursesSelected ? "all" : "single",
-        scopeSemester: allCoursesSelected ? scopeSemester : "",
-        scopeYear: allCoursesSelected ? scopeYear : "",
+        courseId: allCourses ? null : courseId || null,
+        courseScope: allCourses ? "all" : "single",
+        scopeSemester: allCourses ? scopeSemester : "",
+        scopeYear: allCourses ? scopeYear : "",
         date,
         time,
-        settings: normalizeSettings({
-          ...normalizedSettings,
-          mcqFields: cleanMcqFields,
-          checkboxFields: cleanCheckboxFields,
-          blankFields: cleanBlankFields,
-        }),
+        settings: n,
+        groupRows: n.groupWise ? [] : undefined,
         content: type === "simple" ? "" : undefined,
       });
     } catch (err) {
-      console.error(err);
       setCreateError(err?.response?.data?.message || "Failed to create note.");
-    } finally {
-      setCreating(false);
-    }
+    } finally { setCreating(false); }
   };
-
-  const normalizedSettings = normalizeSettings(settings);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
       <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white/95 p-5 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
-          <div>
-            <h2 className="text-lg font-black text-slate-950 dark:text-white">Create New Note</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Choose a template and customize it.</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-2xl border border-slate-200 px-3 py-2 text-sm font-black text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900"
-          >
-            Close
-          </button>
-        </div>
-
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white/95 p-5 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95"><div><h2 className="text-lg font-black text-slate-950 dark:text-white">Create New Note</h2><p className="text-xs text-slate-500">Choose a template and customize it.</p></div><button type="button" onClick={onClose} className="rounded-2xl border border-slate-200 px-3 py-2 text-sm font-black dark:border-slate-800">Close</button></div>
         <form onSubmit={submit} className="space-y-5 p-5">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <TemplateButton
-              active={type === "evaluation"}
-              title="Evaluation Sheet"
-              subtitle="Course-wise roll, blank marks/text columns, dropdowns and feedback table"
-              onClick={() => setType("evaluation")}
-            />
-            <TemplateButton
-              active={type === "simple"}
-              title="Simple Note"
-              subtitle="Free writing space with basic formatting"
-              onClick={() => setType("simple")}
-            />
-          </div>
+          <div className="grid gap-3 sm:grid-cols-2"><TemplateButton active={type === "evaluation"} title="Evaluation Sheet" subtitle="Student-wise or group-wise presentation evaluation" onClick={() => { setType("evaluation"); setSettings(normalizeSettings(DEFAULT_SETTINGS)); if (title === "Class Note") setTitle("Random Mark Evaluation"); }} /><TemplateButton active={type === "simple"} title="Simple Note" subtitle="Free writing space with basic formatting" onClick={() => { setType("simple"); setSettings(normalizeSettings(DEFAULT_SETTINGS)); if (title === "Random Mark Evaluation" || title === "Group Presentation Evaluation") setTitle("Class Note"); }} /></div>
+
+          {type === "evaluation" && (
+            <div className="rounded-3xl border border-violet-200 bg-violet-50/60 p-4 dark:border-violet-500/20 dark:bg-violet-500/5">
+              <div className="text-xs font-black uppercase tracking-wide text-violet-700 dark:text-violet-300">Evaluation Layout</div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <TemplateButton active={!normalized.groupWise} title="Student-wise" subtitle="One row for each enrolled student" onClick={() => setGroupWise(false)} />
+                <TemplateButton active={normalized.groupWise} title="Group-wise Presentation" subtitle="Create custom groups and mix shared + individual fields" onClick={() => setGroupWise(true)} />
+              </div>
+              {normalized.groupWise && (
+                <div className="mt-4 rounded-2xl border border-violet-200 bg-white p-3 text-xs leading-5 text-slate-600 dark:border-violet-500/20 dark:bg-slate-950 dark:text-slate-300">
+                  Each field can be configured separately as <b>Group-shared</b> or <b>Individual</b>. This lets one presentation sheet use both styles at the same time.
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="grid gap-4 lg:grid-cols-2">
-            <Field label="Note / Template Name">
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="input-soft"
-                placeholder="Example: CT Feedback Sheet"
-              />
-            </Field>
-
-            <Field label={type === "evaluation" ? "Course" : "Course (optional)"}>
-              <select value={courseId} onChange={(e) => setCourseId(e.target.value)} className="input-soft">
-                <option value="">Select course</option>
-                {type === "evaluation" && (
-                  <option value="__all__">All Courses (current semester)</option>
-                )}
-                {courses.map((course) => (
-                  <option key={course.id || course._id} value={course.id || course._id}>
-                    {formatCourseLabel(course)}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Date">
-              <input type="date" value={date} onClick={openNativePicker} onFocus={openNativePicker} onChange={(e) => setDate(e.target.value)} className="input-soft" />
-            </Field>
-
-            <Field label="Time">
-              <input type="time" value={time} onClick={openNativePicker} onFocus={openNativePicker} onChange={(e) => setTime(e.target.value)} className="input-soft" />
-            </Field>
+            <Field label="Note / Template Name"><input value={title} onChange={(e) => setTitle(e.target.value)} className="input-soft" /></Field>
+            <Field label={type === "evaluation" ? "Course" : "Course (optional)"}><select value={courseId} onChange={(e) => setCourseId(e.target.value)} className="input-soft"><option value="">Select course</option>{type === "evaluation" && !normalized.groupWise && <option value="__all__">All Courses (current semester)</option>}{courses.map((course) => <option key={getCourseId(course)} value={getCourseId(course)}>{formatCourseLabel(course)}</option>)}</select></Field>
+            <Field label="Date"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="input-soft" /></Field>
+            <Field label="Time"><input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="input-soft" /></Field>
           </div>
 
           {type === "evaluation" && (
-            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
-              <button
-                type="button"
-                onClick={() => setCreateSettingsOpen((value) => !value)}
-                className="flex w-full items-center justify-between gap-3 text-left"
-              >
-                <div>
-                  <h3 className="text-sm font-black text-slate-950 dark:text-white">Evaluation Sheet Fields</h3>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 sm:hidden">
-                    Tap to {createSettingsOpen ? "hide" : "show"} roll, category, feedback and MCQ column options.
-                  </p>
-                </div>
-                <span className="rounded-2xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 dark:border-slate-700 dark:text-slate-300">
-                  {createSettingsOpen ? "Hide" : "Show"}
-                </span>
-              </button>
-
-              <div className={`${createSettingsOpen ? "mt-4 block" : "hidden"} sm:mt-4 sm:block`}>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <CheckboxField
-                    checked={normalizedSettings.includeRoll}
-                    label="Roll Number"
-                    onChange={(value) => updateSetting("includeRoll", value)}
-                  />
-                  <CheckboxField
-                    checked={normalizedSettings.includeName}
-                    label="Student Name"
-                    onChange={(value) => updateSetting("includeName", value)}
-                  />
-                  <CheckboxField
-                    checked={normalizedSettings.includeFeedback}
-                    label="Feedback / Comments"
-                    onChange={(value) => updateSetting("includeFeedback", value)}
-                  />
-                  <CheckboxField
-                    checked={normalizedSettings.includeTotal}
-                    label="Total"
-                    onChange={(value) => updateSetting("includeTotal", value)}
-                  />
-                  <CheckboxField
-                    checked={normalizedSettings.includeBlankFields}
-                    label="Blank Fields / Marks/Text"
-                    onChange={(value) => updateSetting("includeBlankFields", value)}
-                  />
-                  <CheckboxField
-                    checked={normalizedSettings.includeMcq}
-                    label="MCQ / Category Dropdown"
-                    onChange={(value) => updateSetting("includeMcq", value)}
-                  />
-                  <CheckboxField
-                    checked={normalizedSettings.includeCheckbox}
-                    label="Checkbox Columns"
-                    onChange={(value) => updateSetting("includeCheckbox", value)}
-                  />
-                </div>
-
-                {normalizedSettings.includeBlankFields && (
-                  <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <h4 className="text-sm font-black text-slate-950 dark:text-white">Blank Fields / Marks/Text Columns</h4>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                          Add columns where the teacher can type marks, digits, short notes, or any value.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={addBlankField}
-                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-violet-200 px-3 py-2 text-xs font-black text-violet-700 hover:bg-violet-50 dark:border-violet-500/30 dark:text-violet-300 dark:hover:bg-violet-500/10"
-                      >
-                        <PlusIcon /> Add Blank Field
-                      </button>
-                    </div>
-
-                    {normalizedSettings.blankFields.map((field, fieldIndex) => (
-                      <div key={field.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/70">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="flex-1">
-                            <Field label={`Blank Field ${fieldIndex + 1} Column Name`}>
-                              <input
-                                value={field.label}
-                                onChange={(e) => updateBlankField(field.id, { label: e.target.value })}
-                                className="input-soft"
-                                placeholder={`Blank Field ${fieldIndex + 1}`}
-                              />
-                            </Field>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeBlankField(field.id)}
-                            disabled={normalizedSettings.blankFields.length <= 1}
-                            className="rounded-2xl border border-red-200 px-3 py-2 text-xs font-black text-red-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-500/30 dark:text-red-300 sm:mt-6"
-                          >
-                            Remove Field
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {normalizedSettings.includeMcq && (
-                  <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <h4 className="text-sm font-black text-slate-950 dark:text-white">MCQ / Category Columns</h4>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                          Add multiple dropdown columns. Each column can have different options.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={addMcqField}
-                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-violet-200 px-3 py-2 text-xs font-black text-violet-700 hover:bg-violet-50 dark:border-violet-500/30 dark:text-violet-300 dark:hover:bg-violet-500/10"
-                      >
-                        <PlusIcon /> Add MCQ Column
-                      </button>
-                    </div>
-
-                    {normalizedSettings.mcqFields.map((field, fieldIndex) => (
-                      <div key={field.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/70">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="flex-1">
-                            <Field label={`Column ${fieldIndex + 1} Name`}>
-                              <input
-                                value={field.label}
-                                onChange={(e) => updateMcqField(field.id, { label: e.target.value })}
-                                className="input-soft"
-                                placeholder={`Category ${fieldIndex + 1}`}
-                              />
-                            </Field>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeMcqField(field.id)}
-                            disabled={normalizedSettings.mcqFields.length <= 1}
-                            className="rounded-2xl border border-red-200 px-3 py-2 text-xs font-black text-red-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-500/30 dark:text-red-300 sm:mt-6"
-                          >
-                            Remove Column
-                          </button>
-                        </div>
-
-                        <div className="mt-3 space-y-2">
-                          <div className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                            Options
-                          </div>
-                          {field.options.map((option, optionIndex) => (
-                            <div key={`${field.id}-option-${optionIndex}`} className="flex gap-2">
-                              <input
-                                value={option}
-                                onChange={(e) => updateOption(field.id, optionIndex, e.target.value)}
-                                className="input-soft"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => removeOption(field.id, optionIndex)}
-                                disabled={field.options.length <= 1}
-                                className="rounded-2xl border border-red-200 px-3 text-xs font-black text-red-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-500/30 dark:text-red-300"
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          ))}
-                          <button
-                            type="button"
-                            onClick={() => addOption(field.id)}
-                            className="inline-flex items-center gap-2 rounded-2xl border border-violet-200 px-3 py-2 text-xs font-black text-violet-700 hover:bg-violet-50 dark:border-violet-500/30 dark:text-violet-300 dark:hover:bg-violet-500/10"
-                          >
-                            <PlusIcon /> Add Option
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {normalizedSettings.includeCheckbox && (
-                  <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Checkbox Columns</h4>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                          Add one or more yes/no checkbox columns for each student.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={addCheckboxField}
-                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-violet-200 px-3 py-2 text-xs font-bold text-violet-700 hover:bg-violet-50 dark:border-violet-500/30 dark:text-violet-300 dark:hover:bg-violet-500/10"
-                      >
-                        <PlusIcon /> Add Checkbox Column
-                      </button>
-                    </div>
-
-                    {normalizedSettings.checkboxFields.map((field, fieldIndex) => (
-                      <div key={field.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/70">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="flex-1">
-                            <Field label={`Checkbox ${fieldIndex + 1} Column Name`}>
-                              <input
-                                value={field.label}
-                                onChange={(e) => updateCheckboxField(field.id, { label: e.target.value })}
-                                className="input-soft"
-                                placeholder={`Checkbox ${fieldIndex + 1}`}
-                              />
-                            </Field>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeCheckboxField(field.id)}
-                            disabled={normalizedSettings.checkboxFields.length <= 1}
-                            className="rounded-2xl border border-red-200 px-3 py-2 text-xs font-bold text-red-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-500/30 dark:text-red-300 sm:mt-6"
-                          >
-                            Remove Column
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+            <EvaluationFieldSettings settings={normalized} onUpdateSetting={updateSetting} onUpdateField={updateField} onAddField={addField} onRemoveField={removeField} />
           )}
-
-          {createError && (
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
-              {createError}
-            </div>
-          )}
-
-          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-black text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-900"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={creating}
-              className="rounded-2xl bg-violet-600 px-5 py-3 text-sm font-black text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {creating ? "Creating..." : "Create & Open"}
-            </button>
-          </div>
+          {createError && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">{createError}</div>}
+          <div className="flex justify-end gap-3"><button type="button" onClick={onClose} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-black dark:border-slate-800">Cancel</button><button type="submit" disabled={creating} className="rounded-2xl bg-violet-600 px-5 py-3 text-sm font-black text-white disabled:opacity-60">{creating ? "Creating..." : "Create & Open"}</button></div>
         </form>
       </div>
     </div>
   );
 }
 
+function EvaluationFieldSettings({ settings, onUpdateSetting, onUpdateField, onAddField, onRemoveField }) {
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+      <h3 className="text-sm font-black text-slate-950 dark:text-white">{settings.groupWise ? "Group Presentation Fields" : "Evaluation Sheet Fields"}</h3>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {!settings.groupWise && <><Check checked={settings.includeRoll} label="Roll Number" onChange={(v) => onUpdateSetting("includeRoll", v)} /><Check checked={settings.includeName} label="Student Name" onChange={(v) => onUpdateSetting("includeName", v)} /></>}
+        <Check checked={settings.includeFeedback} label="Feedback / Comments" onChange={(v) => onUpdateSetting("includeFeedback", v)} />
+        <Check checked={settings.includeTotal} label="Total" onChange={(v) => onUpdateSetting("includeTotal", v)} />
+        <Check checked={settings.includeBlankFields} label="Blank Fields / Marks" onChange={(v) => onUpdateSetting("includeBlankFields", v)} />
+        <Check checked={settings.includeMcq} label="MCQ / Category" onChange={(v) => onUpdateSetting("includeMcq", v)} />
+        <Check checked={settings.includeCheckbox} label="Checkbox Columns" onChange={(v) => onUpdateSetting("includeCheckbox", v)} />
+      </div>
+
+      {settings.includeBlankFields && <FieldCollection title="Blank Fields / Marks Columns" fields={settings.blankFields} kind="blank" onUpdateField={onUpdateField} onAddField={onAddField} onRemoveField={onRemoveField} />}
+      {settings.includeMcq && <McqCollection fields={settings.mcqFields} onUpdateField={onUpdateField} onAddField={onAddField} onRemoveField={onRemoveField} />}
+      {settings.includeCheckbox && <FieldCollection title="Checkbox Columns" fields={settings.checkboxFields} kind="checkbox" onUpdateField={onUpdateField} onAddField={onAddField} onRemoveField={onRemoveField} />}
+    </div>
+  );
+}
+
+function FieldCollection({ title, fields, kind, onUpdateField, onAddField, onRemoveField }) {
+  return <div className="mt-4 space-y-2 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950"><div className="flex items-center justify-between"><div className="text-xs font-black uppercase tracking-wide text-slate-500">{title}</div><button type="button" onClick={() => onAddField(kind)} className="rounded-xl border border-violet-200 px-3 py-1.5 text-xs font-black text-violet-700 dark:border-violet-500/30 dark:text-violet-300">+ Add</button></div>{fields.map((field, index) => <div key={field.id} className="flex gap-2"><input value={field.label} onChange={(e) => onUpdateField(kind, field.id, { label: e.target.value })} className="input-soft" placeholder={`${title} ${index + 1}`} /><button type="button" onClick={() => onRemoveField(kind, field.id)} disabled={fields.length <= 1} className="rounded-xl border border-red-200 px-3 text-xs font-black text-red-600 disabled:opacity-30 dark:border-red-500/30 dark:text-red-300">Remove</button></div>)}</div>;
+}
+
+function McqCollection({ fields, onUpdateField, onAddField, onRemoveField }) {
+  const updateOption = (field, optionIndex, value) => onUpdateField("mcq", field.id, { options: field.options.map((option, i) => i === optionIndex ? value : option) });
+  return <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950"><div className="flex items-center justify-between"><div className="text-xs font-black uppercase tracking-wide text-slate-500">MCQ / Category Columns</div><button type="button" onClick={() => onAddField("mcq")} className="rounded-xl border border-violet-200 px-3 py-1.5 text-xs font-black text-violet-700 dark:border-violet-500/30 dark:text-violet-300">+ Add Column</button></div>{fields.map((field, index) => <div key={field.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900"><div className="flex gap-2"><input value={field.label} onChange={(e) => onUpdateField("mcq", field.id, { label: e.target.value })} className="input-soft" /><button type="button" onClick={() => onRemoveField("mcq", field.id)} disabled={fields.length <= 1} className="rounded-xl border border-red-200 px-3 text-xs font-black text-red-600 disabled:opacity-30">Remove</button></div><div className="mt-2 flex flex-wrap gap-2">{field.options.map((option, optionIndex) => <input key={optionIndex} value={option} onChange={(e) => updateOption(field, optionIndex, e.target.value)} className="w-32 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none dark:border-slate-700 dark:bg-slate-950" />)}<button type="button" onClick={() => onUpdateField("mcq", field.id, { options: [...field.options, `Option ${field.options.length + 1}`] })} className="rounded-xl border border-violet-200 px-2 py-1 text-xs font-bold text-violet-700">+ Option</button></div></div>)}</div>;
+}
+
 function NotebookEditor({ note, courses, saveStatus, onBack, onChange, onDelete, onRefreshStudents, refreshingStudents }) {
   const type = note.type || "simple";
-  const selectedCourse = note.course || courses.find((c) => (c.id || c._id) === (note.courseId || note.course));
-
+  const settings = normalizeSettings(note.settings || {});
+  const groupWise = type === "evaluation" && settings.groupWise;
+  const selectedCourse = note.course || courses.find((c) => getCourseId(c) === getCourseId(note.courseId || note.course));
   return (
     <section className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
       <div className="border-b border-slate-200 p-4 dark:border-slate-800 sm:p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="min-w-0 flex-1">
-            <button
-              type="button"
-              onClick={onBack}
-              className="mb-3 inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900"
-            >
-              ← Back to list
-            </button>
-            <div className="flex flex-wrap items-center gap-2">
-              <TypeBadge type={type} />
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600 dark:bg-slate-900 dark:text-slate-300">
-                {saveStatus}
-              </span>
-            </div>
-
-            <input
-              value={note.title || ""}
-              onChange={(e) => onChange({ title: e.target.value })}
-              className="mt-3 w-full rounded-2xl border border-transparent bg-transparent px-0 text-2xl font-semibold tracking-tight text-slate-950 outline-none focus:border-violet-300 focus:bg-slate-50 focus:px-3 dark:text-white dark:focus:border-violet-500/50 dark:focus:bg-slate-900 sm:text-3xl"
-              placeholder="Untitled note"
-            />
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              {note.courseScope === "all" ? formatNoteCourseLabel(note) : formatCourseLabel(selectedCourse)}
-            </p>
-          </div>
-
-          <div className="w-full min-w-0 space-y-2 xl:w-auto">
-            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
-              <input
-                type="date"
-                value={note.date || todayInput()}
-                onClick={openNativePicker}
-                onFocus={openNativePicker}
-                onChange={(e) => onChange({ date: e.target.value })}
-                className="input-soft min-w-0 sm:w-40"
-              />
-              <input
-                type="time"
-                value={note.time || timeInput()}
-                onClick={openNativePicker}
-                onFocus={openNativePicker}
-                onChange={(e) => onChange({ time: e.target.value })}
-                className="input-soft min-w-0 sm:w-32"
-              />
-            </div>
-
-            <div className="flex min-w-0 flex-wrap gap-2 sm:justify-end">
-              {type === "evaluation" ? (
-                <>
-                  <EditorActionButton
-                    label={refreshingStudents ? "Refreshing" : "Refresh Students"}
-                    title="Refresh students"
-                    icon={<RefreshIcon spinning={refreshingStudents} />}
-                    onClick={onRefreshStudents}
-                    disabled={refreshingStudents}
-                    tone="sky"
-                  />
-                  <EditorActionButton
-                    label="Excel"
-                    title="Export Excel"
-                    icon={<SpreadsheetIcon />}
-                    onClick={() => exportEvaluationExcel(note)}
-                    tone="emerald"
-                  />
-                  <EditorActionButton
-                    label="PDF"
-                    title="Export PDF"
-                    icon={<PdfIcon />}
-                    onClick={() => exportEvaluationPdf(note)}
-                    tone="rose"
-                  />
-                  <EditorActionButton
-                    label="Print"
-                    title="Print"
-                    icon={<PrintIcon />}
-                    onClick={() => printEvaluationPdf(note)}
-                    tone="violet"
-                  />
-                </>
-              ) : (
-                <EditorActionButton
-                  label="Export PDF"
-                  title="Export PDF"
-                  icon={<PdfIcon />}
-                  onClick={() => exportSimplePdf(note)}
-                  tone="rose"
-                />
-              )}
-              <EditorActionButton
-                label="Delete"
-                title="Delete note"
-                icon={<TrashIcon />}
-                onClick={onDelete}
-                tone="red"
-              />
-            </div>
-          </div>
+          <div className="min-w-0 flex-1"><button type="button" onClick={onBack} className="mb-3 rounded-2xl border border-slate-200 px-3 py-2 text-xs font-black dark:border-slate-800">← Back to list</button><div className="flex flex-wrap gap-2"><TypeBadge type={type} groupWise={groupWise} /><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600 dark:bg-slate-900 dark:text-slate-300">{saveStatus}</span></div><input value={note.title || ""} onChange={(e) => onChange({ title: e.target.value })} className="mt-3 w-full rounded-2xl border border-transparent bg-transparent text-2xl font-semibold tracking-tight text-slate-950 outline-none focus:border-violet-300 focus:px-3 dark:text-white sm:text-3xl" /><p className="mt-1 text-sm text-slate-500">{note.courseScope === "all" ? formatNoteCourseLabel(note) : formatCourseLabel(selectedCourse)}</p></div>
+          <div className="space-y-2"><div className="flex gap-2"><input type="date" value={note.date || todayInput()} onChange={(e) => onChange({ date: e.target.value })} className="input-soft w-40" /><input type="time" value={note.time || timeInput()} onChange={(e) => onChange({ time: e.target.value })} className="input-soft w-32" /></div><div className="flex flex-wrap justify-end gap-2">{type === "evaluation" && <button type="button" onClick={onRefreshStudents} disabled={refreshingStudents} className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-black text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">{refreshingStudents ? "Refreshing..." : groupWise ? "Refresh Member List" : "Refresh Students"}</button>}{type === "evaluation" && !groupWise && <><button type="button" onClick={() => exportEvaluationExcel(note)} className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">Excel</button><button type="button" onClick={() => exportEvaluationPdf(note)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-black text-rose-700 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">PDF</button><button type="button" onClick={() => printEvaluationPdf(note)} className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-black text-violet-700 hover:bg-violet-100 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300">Print</button></>}{type === "simple" && <button type="button" onClick={() => exportSimplePdf(note)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-black text-rose-700 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">Export PDF</button>}<button type="button" onClick={onDelete} className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-black text-red-700 hover:bg-red-100 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">Delete</button></div></div>
         </div>
       </div>
-
       {type === "evaluation" ? (
-        <EvaluationEditor note={note} onChange={onChange} />
+        groupWise ? (
+          <GroupPresentationEditor
+            note={note}
+            onChange={onChange}
+            marksSyncPanel={<NotebookMarksSyncPanel note={note} embedded />}
+          />
+        ) : (
+          <EvaluationEditor note={note} onChange={onChange} />
+        )
       ) : (
         <SimpleNoteEditor note={note} onChange={onChange} />
       )}
@@ -1690,589 +591,118 @@ function NotebookEditor({ note, courses, saveStatus, onBack, onChange, onDelete,
 function EvaluationEditor({ note, onChange }) {
   const settings = normalizeSettings(note.settings || {});
   const rows = Array.isArray(note.evaluationRows) ? note.evaluationRows : [];
-  const mcqFields = settings.mcqFields || [];
-  const checkboxFields = settings.checkboxFields || [];
-  const blankFields = settings.blankFields || [];
-  const visibleColumns = buildVisibleColumns(settings, {
-    includeCourse: note.courseScope === "all",
-  });
+  const [search, setSearch] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [rowSearch, setRowSearch] = useState("");
+  const blankFields = settings.includeBlankFields ? settings.blankFields : [];
+  const mcqFields = settings.includeMcq ? settings.mcqFields : [];
+  const checkboxFields = settings.includeCheckbox ? settings.checkboxFields : [];
+  const visibleColumns = buildVisibleColumns(settings, { includeCourse: note.courseScope === "all" });
 
-  const updateRow = (index, patch) => {
-    const nextRows = rows.map((row, i) => (i === index ? { ...row, ...patch } : row));
-    onChange({ evaluationRows: nextRows });
-  };
-
-  const updateRowMcq = (rowIndex, field, fieldIndex, value) => {
-    const row = rows[rowIndex] || {};
-    const selectedOptions = { ...(row.selectedOptions || {}) };
-    selectedOptions[field.id] = value;
-
-    updateRow(rowIndex, {
-      selectedOptions,
-      selectedOption: fieldIndex === 0 ? value : row.selectedOption || "",
+  const updateRow = (index, patch) =>
+    onChange({ evaluationRows: rows.map((row, i) => (i === index ? { ...row, ...patch } : row)) });
+  const updateBlank = (index, field, value) =>
+    updateRow(index, { blankValues: { ...(rows[index]?.blankValues || {}), [field.id]: value } });
+  const updateMcq = (index, field, fieldIndex, value) =>
+    updateRow(index, {
+      selectedOptions: { ...(rows[index]?.selectedOptions || {}), [field.id]: value },
+      selectedOption: fieldIndex === 0 ? value : rows[index]?.selectedOption || "",
     });
-  };
+  const updateCheckbox = (index, field, value) =>
+    updateRow(index, { checkboxValues: { ...(rows[index]?.checkboxValues || {}), [field.id]: Boolean(value) } });
 
-  const updateRowBlank = (rowIndex, field, value) => {
-    const row = rows[rowIndex] || {};
-    const blankValues = { ...(row.blankValues || {}) };
-    blankValues[field.id] = value;
-    updateRow(rowIndex, { blankValues });
-  };
-
-  const updateRowCheckbox = (rowIndex, field, value) => {
-    const row = rows[rowIndex] || {};
-    const checkboxValues = { ...(row.checkboxValues || {}) };
-    checkboxValues[field.id] = Boolean(value);
-    updateRow(rowIndex, { checkboxValues });
-  };
-
-  const updateSetting = (key, value) => {
-    onChange({ settings: normalizeSettings({ ...settings, [key]: value }) });
-  };
-
-  const updateMcqField = (fieldId, patch) => {
-    const nextFields = mcqFields.map((field) => (field.id === fieldId ? { ...field, ...patch } : field));
-    onChange({ settings: normalizeSettings({ ...settings, mcqFields: nextFields }) });
-  };
-
-  const updateOption = (fieldId, index, value) => {
-    const nextFields = mcqFields.map((field) => {
-      if (field.id !== fieldId) return field;
-      return {
-        ...field,
-        options: field.options.map((option, i) => (i === index ? value : option)),
-      };
-    });
-    onChange({ settings: normalizeSettings({ ...settings, mcqFields: nextFields }) });
-  };
-
-  const addOption = (fieldId) => {
-    const nextFields = mcqFields.map((field) => {
-      if (field.id !== fieldId) return field;
-      return {
-        ...field,
-        options: [...field.options, `Option ${field.options.length + 1}`],
-      };
-    });
-    onChange({ settings: normalizeSettings({ ...settings, mcqFields: nextFields }) });
-  };
-
-  const removeOption = (fieldId, optionIndex) => {
-    const targetField = mcqFields.find((field) => field.id === fieldId);
-    const optionToRemove = targetField?.options?.[optionIndex];
-    const nextFields = mcqFields.map((field) => {
-      if (field.id !== fieldId) return field;
-      return {
-        ...field,
-        options: field.options.filter((_, i) => i !== optionIndex),
-      };
-    });
-    const nextRows = rows.map((row) => {
-      const selectedOptions = { ...(row.selectedOptions || {}) };
-      if (selectedOptions[fieldId] === optionToRemove) selectedOptions[fieldId] = "";
-      const firstField = nextFields[0];
-      const firstValue = firstField ? selectedOptions[firstField.id] || "" : "";
-      return {
-        ...row,
-        selectedOptions,
-        selectedOption: firstValue,
-      };
-    });
-    onChange({ settings: normalizeSettings({ ...settings, mcqFields: nextFields }), evaluationRows: nextRows });
-  };
-
-  const addMcqField = () => {
-    const nextField = makeMcqField(mcqFields.length + 1);
-    onChange({ settings: normalizeSettings({ ...settings, mcqFields: [...mcqFields, nextField] }) });
-  };
-
-  const removeMcqField = (fieldId) => {
-    const nextFields = mcqFields.filter((field) => field.id !== fieldId);
-    const nextRows = rows.map((row) => {
-      const selectedOptions = { ...(row.selectedOptions || {}) };
-      delete selectedOptions[fieldId];
-      const firstField = nextFields[0];
-      return {
-        ...row,
-        selectedOptions,
-        selectedOption: firstField ? selectedOptions[firstField.id] || "" : "",
-      };
-    });
-    onChange({ settings: normalizeSettings({ ...settings, mcqFields: nextFields }), evaluationRows: nextRows });
-  };
-
-  const updateBlankField = (fieldId, patch) => {
-    const nextFields = blankFields.map((field) => (field.id === fieldId ? { ...field, ...patch } : field));
-    onChange({ settings: normalizeSettings({ ...settings, blankFields: nextFields }) });
-  };
-
-  const addBlankField = () => {
-    const nextField = makeBlankField(blankFields.length + 1);
-    onChange({ settings: normalizeSettings({ ...settings, blankFields: [...blankFields, nextField] }) });
-  };
-
-  const removeBlankField = (fieldId) => {
-    const nextFields = blankFields.filter((field) => field.id !== fieldId);
-    const nextRows = rows.map((row) => {
-      const blankValues = { ...(row.blankValues || {}) };
-      delete blankValues[fieldId];
-      return { ...row, blankValues };
-    });
-    onChange({ settings: normalizeSettings({ ...settings, blankFields: nextFields }), evaluationRows: nextRows });
-  };
-
-  const updateCheckboxField = (fieldId, patch) => {
-    const nextFields = checkboxFields.map((field) =>
-      field.id === fieldId ? { ...field, ...patch } : field
-    );
-    onChange({ settings: normalizeSettings({ ...settings, checkboxFields: nextFields }) });
-  };
-
-  const addCheckboxField = () => {
-    const nextField = makeCheckboxField(checkboxFields.length + 1);
-    onChange({
-      settings: normalizeSettings({
-        ...settings,
-        checkboxFields: [...checkboxFields, nextField],
-      }),
-    });
-  };
-
-  const removeCheckboxField = (fieldId) => {
-    const nextFields = checkboxFields.filter((field) => field.id !== fieldId);
-    const nextRows = rows.map((row) => {
-      const checkboxValues = { ...(row.checkboxValues || {}) };
-      delete checkboxValues[fieldId];
-      return { ...row, checkboxValues };
-    });
-    onChange({
-      settings: normalizeSettings({ ...settings, checkboxFields: nextFields }),
-      evaluationRows: nextRows,
-    });
-  };
-
-  const reorderColumns = (activeId, overId) => {
-    if (!activeId || !overId || activeId === overId || activeId === COLUMN_IDS.total || overId === COLUMN_IDS.total) return;
-    const currentOrder = normalizeColumnOrder(settings.columnOrder, settings);
-    const activeIndex = currentOrder.indexOf(activeId);
-    const overIndex = currentOrder.indexOf(overId);
-    if (activeIndex < 0 || overIndex < 0) return;
-    const nextOrder = [...currentOrder];
-    const [moved] = nextOrder.splice(activeIndex, 1);
-    nextOrder.splice(overIndex, 0, moved);
-    onChange({ settings: normalizeSettings({ ...settings, columnOrder: nextOrder }) });
-  };
-
-  const moveColumnByStep = (columnId, step) => {
-    const currentOrder = normalizeColumnOrder(settings.columnOrder, settings);
-    const currentIndex = currentOrder.indexOf(columnId);
-    const nextIndex = currentIndex + step;
-    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= currentOrder.length) return;
-    const nextOrder = [...currentOrder];
-    const [moved] = nextOrder.splice(currentIndex, 1);
-    nextOrder.splice(nextIndex, 0, moved);
-    onChange({ settings: normalizeSettings({ ...settings, columnOrder: nextOrder }) });
-  };
-
-  const filteredRows = (() => {
-    const term = rowSearch.trim().toLowerCase();
-    const withIndex = rows.map((row, rowIndex) => ({ row, rowIndex }));
-    if (!term) return withIndex;
-
-    return withIndex.filter(({ row }) => {
-      const selectedValues = mcqFields.map((field, fieldIndex) => getRowMcqValue(row, field, fieldIndex)).join(" ");
-      const blankValues = blankFields.map((field) => getRowBlankValue(row, field)).join(" ");
-      const checkboxValues = checkboxFields
-        .map((field) => (getRowCheckboxValue(row, field) ? field.label : ""))
-        .join(" ");
-      const totalValue = calculateBlankFieldsTotal(row, settings.includeBlankFields ? blankFields : []).value;
-      return [row.roll, row.name, row.courseLabel, row.feedback, selectedValues, checkboxValues, blankValues, totalValue]
-        .join(" ")
+  const filtered = rows
+    .map((row, index) => ({ row, index }))
+    .filter(({ row }) => {
+      const term = search.trim().toLowerCase();
+      if (!term) return true;
+      const extra = [
+        ...blankFields.map((field) => getRowBlankValue(row, field)),
+        ...mcqFields.map((field, fieldIndex) => getRowMcqValue(row, field, fieldIndex)),
+        ...checkboxFields.map((field) => (getRowCheckboxValue(row, field) ? field.label : "")),
+        calculateTotal(row, blankFields).value,
+      ].join(" ");
+      return `${row.roll || ""} ${row.name || ""} ${row.courseLabel || ""} ${row.feedback || ""} ${extra}`
         .toLowerCase()
         .includes(term);
     });
-  })();
 
-  const visibleColumnCount = 1 + visibleColumns.length;
+  const renderHeader = (column) => {
+    const align = column.type === "checkbox" || column.type === "total" ? "text-center" : "text-left";
+    const width =
+      column.type === "name" || column.type === "course"
+        ? "min-w-56"
+        : column.type === "feedback"
+          ? "min-w-[280px]"
+          : column.type === "mcq"
+            ? "min-w-44"
+            : "min-w-32";
+    return <th key={column.id} className={`${width} px-4 py-3 ${align} font-black`}>{column.label}</th>;
+  };
 
   const renderCell = (column, row, rowIndex) => {
-    if (column.type === "roll") {
-      return (
-        <td key={column.id} className="min-w-32 px-4 py-3 font-bold text-slate-700 dark:text-slate-200">
-          {row.roll || "-"}
-        </td>
-      );
-    }
-
-    if (column.type === "name") {
-      return (
-        <td key={column.id} className="min-w-56 px-4 py-3 text-slate-700 dark:text-slate-200">
-          {row.name || "-"}
-        </td>
-      );
-    }
-
-    if (column.type === "course") {
-      return (
-        <td key={column.id} className="min-w-56 px-4 py-3 text-slate-600 dark:text-slate-300">
-          {row.courseLabel || "-"}
-        </td>
-      );
-    }
-
+    if (column.type === "roll") return <td key={column.id} className="px-4 py-3 font-bold text-slate-800 dark:text-slate-100">{row.roll || "-"}</td>;
+    if (column.type === "name") return <td key={column.id} className="px-4 py-3 text-slate-700 dark:text-slate-200">{row.name || "-"}</td>;
+    if (column.type === "course") return <td key={column.id} className="px-4 py-3 text-slate-600 dark:text-slate-300">{row.courseLabel || "-"}</td>;
     if (column.type === "blank") {
-      return (
-        <td key={column.id} className="px-4 py-3">
-          <input
-            value={getRowBlankValue(row, column.field)}
-            onChange={(e) => updateRowBlank(rowIndex, column.field, e.target.value)}
-            placeholder="Write value..."
-            inputMode="decimal"
-            className="input-soft min-w-40"
-          />
-        </td>
-      );
+      return <td key={column.id} className="px-4 py-3"><input value={getRowBlankValue(row, column.field)} onChange={(event) => updateBlank(rowIndex, column.field, event.target.value)} inputMode="decimal" className="input-soft min-w-36" placeholder="Write value..." /></td>;
     }
-
     if (column.type === "mcq") {
-      return (
-        <td key={column.id} className="px-4 py-3">
-          <select
-            value={getRowMcqValue(row, column.field, column.fieldIndex)}
-            onChange={(e) => updateRowMcq(rowIndex, column.field, column.fieldIndex, e.target.value)}
-            className="input-soft min-w-44"
-          >
-            <option value="">Select</option>
-            {column.field.options.map((option, optionIndex) => (
-              <option key={`${column.field.id}-${option}-${optionIndex}`} value={option}>
-                {displayText(option, `Option ${optionIndex + 1}`)}
-              </option>
-            ))}
-          </select>
-        </td>
-      );
+      return <td key={column.id} className="px-4 py-3"><select value={getRowMcqValue(row, column.field, column.fieldIndex)} onChange={(event) => updateMcq(rowIndex, column.field, column.fieldIndex, event.target.value)} className="input-soft min-w-40"><option value="">Select</option>{(column.field.options || []).map((option, optionIndex) => <option key={`${column.field.id}-${optionIndex}`} value={option}>{displayText(option, `Option ${optionIndex + 1}`)}</option>)}</select></td>;
     }
-
     if (column.type === "checkbox") {
-      return (
-        <td key={column.id} className="px-4 py-3 text-center">
-          <label className="inline-flex cursor-pointer items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 dark:border-slate-700 dark:bg-slate-950">
-            <input
-              type="checkbox"
-              checked={getRowCheckboxValue(row, column.field)}
-              onChange={(e) => updateRowCheckbox(rowIndex, column.field, e.target.checked)}
-              className="h-5 w-5 accent-violet-600"
-              aria-label={column.label}
-            />
-          </label>
-        </td>
-      );
+      return <td key={column.id} className="px-4 py-3 text-center"><input type="checkbox" checked={getRowCheckboxValue(row, column.field)} onChange={(event) => updateCheckbox(rowIndex, column.field, event.target.checked)} className="h-5 w-5 accent-violet-600" /></td>;
     }
-
     if (column.type === "feedback") {
-      return (
-        <td key={column.id} className="px-4 py-3">
-          <textarea
-            value={row.feedback || ""}
-            onChange={(e) => updateRow(rowIndex, { feedback: e.target.value })}
-            rows={2}
-            placeholder="Write feedback..."
-            className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-violet-400 dark:border-slate-800 dark:bg-slate-950 dark:text-white dark:focus:border-violet-500"
-          />
-        </td>
-      );
+      return <td key={column.id} className="px-4 py-3"><textarea value={row.feedback || ""} onChange={(event) => updateRow(rowIndex, { feedback: event.target.value })} rows={2} className="input-soft min-w-[260px]" placeholder="Write feedback..." /></td>;
     }
-
     if (column.type === "total") {
-      const total = calculateBlankFieldsTotal(row, settings.includeBlankFields ? blankFields : []);
-      return (
-        <td key={column.id} className="px-4 py-3">
-          <div
-            className={`min-w-36 rounded-2xl border px-3 py-2 text-sm font-black ${
-              total.hasError
-                ? "border-red-200 bg-red-50 text-red-600 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
-                : "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
-            }`}
-          >
-            {total.value || "-"}
-          </div>
-        </td>
-      );
+      const total = calculateTotal(row, blankFields);
+      return <td key={column.id} className={`px-4 py-3 text-center font-black ${total.error ? "text-red-600 dark:text-red-300" : "text-slate-800 dark:text-slate-100"}`}>{total.value || "-"}</td>;
     }
-
     return null;
   };
 
   return (
     <div className="space-y-5 p-4 sm:p-5">
       <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
-        <button
-          type="button"
-          onClick={() => setSettingsOpen((value) => !value)}
-          className="flex w-full items-center justify-between gap-3 text-left"
-        >
-          <div>
+        <button type="button" onClick={() => setSettingsOpen((value) => !value)} className="flex w-full items-center justify-between gap-3">
+          <div className="text-left">
             <h3 className="text-sm font-black text-slate-950 dark:text-white">Sheet Settings</h3>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Add columns, reorder visible columns, and change sheet fields whenever needed.
-            </p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Adjust fields and move visible columns without losing entered data.</p>
           </div>
-          <span className="rounded-2xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 dark:border-slate-700 dark:text-slate-300">
-            {settingsOpen ? "Hide" : "Show"}
-          </span>
+          <span className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-black dark:border-slate-700">{settingsOpen ? "Hide" : "Show"}</span>
         </button>
-
-        <div className={`${settingsOpen ? "mt-4 block" : "hidden"}`}>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-7">
-            <CheckboxField checked={settings.includeRoll} label="Roll" onChange={(v) => updateSetting("includeRoll", v)} />
-            <CheckboxField checked={settings.includeName} label="Name" onChange={(v) => updateSetting("includeName", v)} />
-            <CheckboxField checked={settings.includeBlankFields} label="Blank Fields" onChange={(v) => updateSetting("includeBlankFields", v)} />
-            <CheckboxField checked={settings.includeMcq} label="Category" onChange={(v) => updateSetting("includeMcq", v)} />
-            <CheckboxField checked={settings.includeCheckbox} label="Checkbox" onChange={(v) => updateSetting("includeCheckbox", v)} />
-            <CheckboxField checked={settings.includeFeedback} label="Feedback" onChange={(v) => updateSetting("includeFeedback", v)} />
-            <CheckboxField checked={settings.includeTotal} label="Total" onChange={(v) => updateSetting("includeTotal", v)} />
-          </div>
-
-          <ColumnOrderManager
-            columns={visibleColumns.filter((column) => !column.locked)}
-            onReorder={reorderColumns}
-            onMove={moveColumnByStep}
-          />
-
-          {settings.includeBlankFields && (
-            <div className="mt-4 space-y-3">
-              <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h4 className="text-sm font-black text-slate-950 dark:text-white">Blank Fields / Marks/Text Columns</h4>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Current columns: {blankFields.length}. Numeric values will be added in Total; text will show “Please input number”.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={addBlankField}
-                  className="rounded-2xl border border-violet-200 px-3 py-2 text-xs font-black text-violet-700 hover:bg-violet-50 dark:border-violet-500/30 dark:text-violet-300 dark:hover:bg-violet-500/10"
-                >
-                  + Add Blank Field
-                </button>
-              </div>
-
-              {blankFields.map((field, fieldIndex) => (
-                <div key={field.id} className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
-                  <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
-                    <Field label={`Blank Field ${fieldIndex + 1} Column Name`}>
-                      <input
-                        value={field.label || ""}
-                        onChange={(e) => updateBlankField(field.id, { label: e.target.value })}
-                        className="input-soft"
-                        placeholder={`Blank Field ${fieldIndex + 1}`}
-                      />
-                    </Field>
-
-                    <button
-                      type="button"
-                      onClick={() => removeBlankField(field.id)}
-                      disabled={blankFields.length <= 1}
-                      className="rounded-2xl border border-red-200 px-3 py-2 text-xs font-black text-red-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-500/30 dark:text-red-300"
-                    >
-                      Remove Field
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {settings.includeMcq && (
-            <div className="mt-4 space-y-3">
-              <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h4 className="text-sm font-black text-slate-950 dark:text-white">MCQ / Category Columns</h4>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Current columns: {mcqFields.length}. You can add, remove, rename, and give different options to each one.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={addMcqField}
-                  className="rounded-2xl border border-violet-200 px-3 py-2 text-xs font-black text-violet-700 hover:bg-violet-50 dark:border-violet-500/30 dark:text-violet-300 dark:hover:bg-violet-500/10"
-                >
-                  + Add MCQ Column
-                </button>
-              </div>
-
-              {mcqFields.map((field, fieldIndex) => (
-                <div key={field.id} className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
-                  <div className="grid gap-3 lg:grid-cols-[260px_1fr_auto] lg:items-end">
-                    <Field label={`Column ${fieldIndex + 1} Name`}>
-                      <input
-                        value={field.label || ""}
-                        onChange={(e) => updateMcqField(field.id, { label: e.target.value })}
-                        className="input-soft"
-                        placeholder={`Category ${fieldIndex + 1}`}
-                      />
-                    </Field>
-
-                    <div>
-                      <div className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                        Options
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {field.options.map((option, optionIndex) => (
-                          <div
-                            key={`${field.id}-option-${optionIndex}`}
-                            className="flex items-center gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-800 dark:bg-slate-900/70"
-                          >
-                            <input
-                              value={option}
-                              onChange={(e) => updateOption(field.id, optionIndex, e.target.value)}
-                              className="w-32 rounded-xl bg-transparent px-2 py-1 text-xs font-bold text-slate-700 outline-none dark:text-slate-200"
-                              placeholder={`Option ${optionIndex + 1}`}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => removeOption(field.id, optionIndex)}
-                              disabled={field.options.length <= 1}
-                              className="rounded-xl px-2 py-1 text-xs font-black text-red-500 disabled:cursor-not-allowed disabled:opacity-30"
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => addOption(field.id)}
-                          className="rounded-2xl border border-violet-200 px-3 py-2 text-xs font-black text-violet-700 hover:bg-violet-50 dark:border-violet-500/30 dark:text-violet-300 dark:hover:bg-violet-500/10"
-                        >
-                          + Option
-                        </button>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => removeMcqField(field.id)}
-                      disabled={mcqFields.length <= 1}
-                      className="rounded-2xl border border-red-200 px-3 py-2 text-xs font-black text-red-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-500/30 dark:text-red-300"
-                    >
-                      Remove Column
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {settings.includeCheckbox && (
-            <div className="mt-4 space-y-3">
-              <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Checkbox Columns</h4>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Current columns: {checkboxFields.length}. Each column stores a checked or unchecked value per student.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={addCheckboxField}
-                  className="rounded-2xl border border-violet-200 px-3 py-2 text-xs font-bold text-violet-700 hover:bg-violet-50 dark:border-violet-500/30 dark:text-violet-300 dark:hover:bg-violet-500/10"
-                >
-                  + Add Checkbox Column
-                </button>
-              </div>
-
-              {checkboxFields.map((field, fieldIndex) => (
-                <div key={field.id} className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
-                  <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
-                    <Field label={`Checkbox ${fieldIndex + 1} Column Name`}>
-                      <input
-                        value={field.label || ""}
-                        onChange={(e) => updateCheckboxField(field.id, { label: e.target.value })}
-                        className="input-soft"
-                        placeholder={`Checkbox ${fieldIndex + 1}`}
-                      />
-                    </Field>
-                    <button
-                      type="button"
-                      onClick={() => removeCheckboxField(field.id)}
-                      disabled={checkboxFields.length <= 1}
-                      className="rounded-2xl border border-red-200 px-3 py-2 text-xs font-bold text-red-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-500/30 dark:text-red-300"
-                    >
-                      Remove Column
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {settingsOpen && <div className="mt-4"><EvaluationSettingsEditor settings={settings} rows={rows} onChange={onChange} /></div>}
       </div>
 
       {note.courseScope === "all" ? (
-        <div className="rounded-3xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-700 dark:border-sky-500/25 dark:bg-sky-500/10 dark:text-sky-300">
-          Marks Sync is available for course-specific evaluation sheets. This sheet includes all courses.
-        </div>
+        <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300">Marks Sync is available for course-specific evaluation sheets.</div>
       ) : (
         <NotebookMarksSyncPanel note={note} />
       )}
 
       <div className="overflow-hidden rounded-3xl border border-slate-200 dark:border-slate-800">
-        <div className="max-h-[70vh] touch-pan-x touch-pan-y overflow-auto overscroll-y-auto [-webkit-overflow-scrolling:touch]">
-          <div className="sticky left-0 top-0 z-40 border-b border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="flex items-center gap-2 sm:gap-3">
-              <div className="relative min-w-0 flex-1">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                  <SearchIcon />
-                </span>
-                <input
-                  value={rowSearch}
-                  onChange={(e) => setRowSearch(e.target.value)}
-                  placeholder="Search roll, name, course, fields, feedback or category..."
-                  className="input-soft h-11 pl-10 text-sm"
-                />
-              </div>
-              <div className="shrink-0 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-black text-slate-500 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
-                {filteredRows.length}/{rows.length}
-              </div>
-            </div>
+        <div className="border-b border-slate-200 p-3 dark:border-slate-800">
+          <div className="flex items-center gap-3">
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search roll, name, course, fields or feedback..." className="input-soft flex-1" />
+            <span className="shrink-0 rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-500 dark:bg-slate-900 dark:text-slate-400">{filtered.length}/{rows.length}</span>
           </div>
-
-          <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
-            <thead className="sticky top-[69px] z-30 bg-slate-50 dark:bg-slate-900/95">
-              <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                <th className="hidden w-14 px-4 py-3 font-black sm:table-cell">#</th>
-                {visibleColumns.map((column) => (
-                  <th key={column.id} className={`${column.minWidth || "min-w-44"} px-4 py-3 font-black`}>
-                    {column.label}
-                    {column.locked && <span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-[9px] dark:bg-slate-800">Auto</span>}
-                  </th>
-                ))}
+        </div>
+        <div className="max-h-[70vh] overflow-auto">
+          <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-800">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-slate-700 dark:bg-slate-900 dark:text-slate-200">
+              <tr>
+                <th className="px-4 py-3 text-left font-black">#</th>
+                {visibleColumns.map(renderHeader)}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-              {rows.length === 0 ? (
-                <tr>
-                  <td colSpan={visibleColumnCount} className="px-4 py-10 text-center text-sm text-slate-500 dark:text-slate-400">
-                    No student found for this course.
-                  </td>
+              {filtered.map(({ row, index }, viewIndex) => (
+                <tr key={`${row.course || ""}-${row.roll || "row"}-${index}`} className="hover:bg-slate-50/70 dark:hover:bg-slate-900/50">
+                  <td className="px-4 py-3 text-slate-400">{viewIndex + 1}</td>
+                  {visibleColumns.map((column) => renderCell(column, row, index))}
                 </tr>
-              ) : filteredRows.length === 0 ? (
-                <tr>
-                  <td colSpan={visibleColumnCount} className="px-4 py-10 text-center text-sm text-slate-500 dark:text-slate-400">
-                    No matching student found.
-                  </td>
-                </tr>
-              ) : (
-                filteredRows.map(({ row, rowIndex }, visibleIndex) => (
-                  <tr key={`${row.course || "course"}-${row.student || row.roll || rowIndex}`} className="text-sm">
-                    <td className="hidden px-4 py-3 text-xs font-black text-slate-400 sm:table-cell">{visibleIndex + 1}</td>
-                    {visibleColumns.map((column) => renderCell(column, row, rowIndex))}
-                  </tr>
-                ))
-              )}
+              ))}
             </tbody>
           </table>
         </div>
@@ -2281,597 +711,58 @@ function EvaluationEditor({ note, onChange }) {
   );
 }
 
-
-function NotebookMarksSyncPanel({ note }) {
-  const noteId = getNoteId(note);
-  const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [config, setConfig] = useState({
-    sourceOptions: [],
-    targetAssessments: [],
-    mappings: [],
-    locks: [],
-  });
-  const [mappings, setMappings] = useState([]);
-
-  const loadSyncConfig = async () => {
-    if (!noteId) return;
-    try {
-      setLoading(true);
-      const data = await fetchNotebookMarkSync(noteId);
-      const normalized = {
-        sourceOptions: Array.isArray(data?.sourceOptions) ? data.sourceOptions : [],
-        targetAssessments: Array.isArray(data?.targetAssessments)
-          ? data.targetAssessments
-          : [],
-        mappings: Array.isArray(data?.mappings) ? data.mappings : [],
-        locks: Array.isArray(data?.locks) ? data.locks : [],
-      };
-      setConfig(normalized);
-      setMappings(normalized.mappings);
-    } catch (error) {
-      console.error(error);
-      Swal.fire({
-        icon: "error",
-        title: "Could not load Marks Sync",
-        text:
-          error?.response?.data?.message ||
-          "Please save the evaluation sheet and try again.",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!open || !noteId) return;
-    loadSyncConfig();
-    // Reload only when a different sheet is opened. Local mapping edits must remain intact.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, noteId]);
-
-  const getTarget = (targetId) =>
-    config.targetAssessments.find(
-      (assessment) => String(assessment.id || assessment._id) === String(targetId)
-    );
-
-  const targetKey = (targetId, componentKey = "") =>
-    `${String(targetId || "")}:${String(componentKey || "")}`;
-
-  const lockForTarget = (targetId, componentKey = "") =>
-    config.locks.find(
-      (lock) =>
-        targetKey(lock.targetAssessment, lock.targetComponentKey) ===
-        targetKey(targetId, componentKey)
-    );
-
-  const sourceKey = (mapping) =>
-    mapping?.sourceType === "total"
-      ? "total"
-      : `blank:${String(mapping?.sourceFieldId || "")}`;
-
-  const addMapping = () => {
-    const firstSource = config.sourceOptions.find(
-      (source) => !mappings.some((mapping) => sourceKey(mapping) === source.key)
-    );
-
-    setMappings((current) => [
-      ...current,
-      {
-        id: `draft_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        sourceType: firstSource?.sourceType || "blank",
-        sourceFieldId: firstSource?.sourceFieldId || "",
-        sourceLabel: firstSource?.label || "",
-        targetAssessment: "",
-        targetComponentKey: "",
-      },
-    ]);
-  };
-
-  const updateMapping = (mappingId, patch) => {
-    setMappings((current) =>
-      current.map((mapping) =>
-        mapping.id === mappingId ? { ...mapping, ...patch } : mapping
-      )
-    );
-  };
-
-  const removeMapping = (mappingId) => {
-    setMappings((current) =>
-      current.filter((mapping) => mapping.id !== mappingId)
-    );
-  };
-
-  const prepareMappings = () =>
-    mappings.map((mapping) => {
-      const source = config.sourceOptions.find(
-        (option) => option.key === sourceKey(mapping)
-      );
-      const target = getTarget(mapping.targetAssessment);
-      return {
-        ...mapping,
-        sourceType: source?.sourceType || mapping.sourceType || "blank",
-        sourceFieldId: source?.sourceFieldId || mapping.sourceFieldId || "",
-        sourceLabel: source?.label || mapping.sourceLabel || "",
-        targetComponentKey:
-          target?.structureType === "lab_final"
-            ? mapping.targetComponentKey || ""
-            : "",
-      };
+function EvaluationSettingsEditor({ settings, rows, onChange }) {
+  const updateSetting = (key, value) => onChange({ settings: normalizeSettings({ ...settings, [key]: value }) });
+  const updateFields = (key, fields) => onChange({ settings: normalizeSettings({ ...settings, [key]: fields }) });
+  const removeField = (kind, fieldId) => {
+    const key = kind === "blank" ? "blankFields" : kind === "mcq" ? "mcqFields" : "checkboxFields";
+    const nextFields = settings[key].filter((field) => field.id !== fieldId);
+    const nextRows = rows.map((row) => {
+      const copy = { ...row };
+      if (kind === "blank") { const values = { ...(row.blankValues || {}) }; delete values[fieldId]; copy.blankValues = values; }
+      if (kind === "mcq") { const values = { ...(row.selectedOptions || {}) }; delete values[fieldId]; copy.selectedOptions = values; }
+      if (kind === "checkbox") { const values = { ...(row.checkboxValues || {}) }; delete values[fieldId]; copy.checkboxValues = values; }
+      return copy;
     });
-
-  const validateLocalMappings = (prepared) => {
-    for (const mapping of prepared) {
-      if (
-        mapping.sourceType !== "total" &&
-        !String(mapping.sourceFieldId || "").trim()
-      ) {
-        return "Please select a source field.";
-      }
-      if (!mapping.targetAssessment) return "Please select a target assessment.";
-
-      const target = getTarget(mapping.targetAssessment);
-      if (!target) return "One selected target assessment could not be found.";
-      if (
-        target.structureType === "lab_final" &&
-        !mapping.targetComponentKey
-      ) {
-        return `Please select a component under ${target.name}.`;
-      }
-
-      const lock = lockForTarget(
-        mapping.targetAssessment,
-        mapping.targetComponentKey
-      );
-      if (lock) {
-        return `The selected destination is already connected to ${
-          lock.label || "another mark source"
-        }.`;
-      }
-    }
-
-    const sourceKeys = prepared.map(sourceKey);
-    if (new Set(sourceKeys).size !== sourceKeys.length) {
-      return "The same source field cannot be mapped more than once.";
-    }
-
-    const destinationKeys = prepared.map((mapping) =>
-      targetKey(mapping.targetAssessment, mapping.targetComponentKey)
-    );
-    if (new Set(destinationKeys).size !== destinationKeys.length) {
-      return "The same assessment destination cannot be mapped more than once.";
-    }
-
-    return "";
+    onChange({ settings: normalizeSettings({ ...settings, [key]: nextFields }), evaluationRows: nextRows });
   };
-
-  const saveLatestSheet = async () => {
-    if (!noteId) return;
-    await updateNotebookNote(noteId, buildSavePayload(note));
-  };
-
-  const handleSaveMapping = async () => {
-    const prepared = prepareMappings();
-    const localError = validateLocalMappings(prepared);
-    if (localError) {
-      Swal.fire({ icon: "warning", title: "Mapping incomplete", text: localError });
-      return;
-    }
-
-    try {
-      setSaving(true);
-      await saveLatestSheet();
-      const result = await saveNotebookMarkSync(noteId, prepared);
-      const nextConfig = {
-        sourceOptions: Array.isArray(result?.sourceOptions)
-          ? result.sourceOptions
-          : config.sourceOptions,
-        targetAssessments: Array.isArray(result?.targetAssessments)
-          ? result.targetAssessments
-          : config.targetAssessments,
-        mappings: Array.isArray(result?.mappings) ? result.mappings : prepared,
-        locks: Array.isArray(result?.locks) ? result.locks : config.locks,
-      };
-      setConfig(nextConfig);
-      setMappings(nextConfig.mappings);
-
-      const updated = Number(result?.summary?.updatedRecords || 0);
-      const skipped = Number(result?.summary?.skippedRows || 0);
-      Swal.fire({
-        icon: "success",
-        title: "Mapping saved",
-        text: `${updated} student mark record${updated === 1 ? "" : "s"} synchronized${
-          skipped ? `; ${skipped} invalid or unmatched value${skipped === 1 ? "" : "s"} skipped` : ""
-        }.`,
-        timer: 2400,
-        showConfirmButton: false,
-      });
-    } catch (error) {
-      console.error(error);
-      Swal.fire({
-        icon: "error",
-        title: "Could not save mapping",
-        text: error?.response?.data?.message || "Please try again.",
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSyncNow = async () => {
-    try {
-      setSyncing(true);
-      await saveLatestSheet();
-      const result = await syncNotebookMarks(noteId);
-      const updated = Number(result?.summary?.updatedRecords || 0);
-      const skipped = Number(result?.summary?.skippedRows || 0);
-
-      Swal.fire({
-        icon: updated > 0 ? "success" : "info",
-        title: updated > 0 ? "Marks synchronized" : "Nothing to synchronize",
-        text: `${result?.message || "Sync completed."}${
-          skipped ? ` ${skipped} invalid or unmatched value${skipped === 1 ? " was" : "s were"} skipped.` : ""
-        }`,
-      });
-    } catch (error) {
-      console.error(error);
-      Swal.fire({
-        icon: "error",
-        title: "Sync failed",
-        text: error?.response?.data?.message || "Please try again.",
-      });
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  return (
-    <div className="rounded-3xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-500/20 dark:bg-emerald-500/5">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center justify-between gap-3 text-left"
-      >
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-black text-slate-950 dark:text-white">
-              Marks Sync
-            </h3>
-            <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
-              Roll matched
-            </span>
-          </div>
-          <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-300">
-            Map any numeric blank field or the automatic Total to a regular assessment or a Structured Lab Mid/Final component.
-          </p>
-        </div>
-        <span className="rounded-2xl border border-emerald-200 bg-white px-3 py-2 text-xs font-black text-emerald-700 dark:border-emerald-500/30 dark:bg-slate-950 dark:text-emerald-300">
-          {open ? "Hide" : "Show"}
-        </span>
-      </button>
-
-      {open && (
-        <div className="mt-4 space-y-4">
-          {loading ? (
-            <div className="rounded-2xl border border-emerald-200 bg-white p-5 text-center text-sm font-bold text-slate-500 dark:border-emerald-500/20 dark:bg-slate-950 dark:text-slate-400">
-              Loading assessment destinations...
-            </div>
-          ) : (
-            <>
-              <div className="flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-white p-3 dark:border-emerald-500/20 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between">
-                <div className="text-xs leading-5 text-slate-600 dark:text-slate-300">
-                  Filled numeric values overwrite the selected destination. Empty cells are ignored. Marks update automatically after the sheet autosaves.
-                </div>
-                <button
-                  type="button"
-                  onClick={addMapping}
-                  className="shrink-0 rounded-2xl border border-emerald-200 px-3 py-2 text-xs font-black text-emerald-700 hover:bg-emerald-50 dark:border-emerald-500/30 dark:text-emerald-300 dark:hover:bg-emerald-500/10"
-                >
-                  + Add Mapping
-                </button>
-              </div>
-
-              {mappings.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-emerald-300 bg-white/70 p-6 text-center dark:border-emerald-500/30 dark:bg-slate-950/70">
-                  <div className="text-sm font-black text-slate-800 dark:text-slate-100">
-                    No mark mapping configured
-                  </div>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Add a mapping to send one sheet field or Total into the course marksheet.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {mappings.map((mapping, index) => {
-                    const target = getTarget(mapping.targetAssessment);
-                    const components = Array.isArray(target?.components)
-                      ? [...target.components].sort(
-                          (a, b) => Number(a.order || 0) - Number(b.order || 0)
-                        )
-                      : [];
-
-                    return (
-                      <div
-                        key={mapping.id}
-                        className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950"
-                      >
-                        <div className="mb-3 flex items-center justify-between gap-3">
-                          <span className="text-xs font-black uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
-                            Mapping {index + 1}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => removeMapping(mapping.id)}
-                            className="rounded-xl border border-red-200 px-3 py-1.5 text-xs font-black text-red-600 hover:bg-red-50 dark:border-red-500/30 dark:text-red-300 dark:hover:bg-red-500/10"
-                          >
-                            Remove
-                          </button>
-                        </div>
-
-                        <div className="grid gap-3 lg:grid-cols-3">
-                          <div>
-                            <div className="mb-2 text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                              Source from Sheet
-                            </div>
-                            <select
-                              value={sourceKey(mapping)}
-                              onChange={(event) => {
-                                const selected = config.sourceOptions.find(
-                                  (option) => option.key === event.target.value
-                                );
-                                updateMapping(mapping.id, {
-                                  sourceType: selected?.sourceType || "blank",
-                                  sourceFieldId: selected?.sourceFieldId || "",
-                                  sourceLabel: selected?.label || "",
-                                });
-                              }}
-                              className="input-soft"
-                            >
-                              <option value="">Select source</option>
-                              {config.sourceOptions.map((source) => (
-                                <option key={source.key} value={source.key}>
-                                  {source.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-
-                          <div>
-                            <div className="mb-2 text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                              Target Assessment
-                            </div>
-                            <select
-                              value={mapping.targetAssessment || ""}
-                              onChange={(event) =>
-                                updateMapping(mapping.id, {
-                                  targetAssessment: event.target.value,
-                                  targetComponentKey: "",
-                                })
-                              }
-                              className="input-soft"
-                            >
-                              <option value="">Select assessment</option>
-                              {config.targetAssessments.map((assessment) => {
-                                const assessmentId = assessment.id || assessment._id;
-                                const directLock =
-                                  assessment.structureType === "regular"
-                                    ? lockForTarget(assessmentId, "")
-                                    : null;
-                                const period =
-                                  assessment.structureType === "lab_final"
-                                    ? `Structured Lab ${
-                                        assessment.period === "mid" ? "Mid" : "Final"
-                                      }`
-                                    : "Regular Assessment";
-
-                                return (
-                                  <option
-                                    key={assessmentId}
-                                    value={assessmentId}
-                                    disabled={Boolean(directLock)}
-                                  >
-                                    {assessment.name} — {period} /{assessment.fullMarks}
-                                    {directLock ? ` — Used by ${directLock.label}` : ""}
-                                  </option>
-                                );
-                              })}
-                            </select>
-                          </div>
-
-                          <div>
-                            <div className="mb-2 text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                              Target Component
-                            </div>
-                            {target?.structureType === "lab_final" ? (
-                              <select
-                                value={mapping.targetComponentKey || ""}
-                                onChange={(event) =>
-                                  updateMapping(mapping.id, {
-                                    targetComponentKey: event.target.value,
-                                  })
-                                }
-                                className="input-soft"
-                              >
-                                <option value="">Select component</option>
-                                {components.map((component) => {
-                                  const lock = lockForTarget(
-                                    mapping.targetAssessment,
-                                    component.key
-                                  );
-                                  const reservedBy =
-                                    component.sourceType === "project"
-                                      ? "Project Sync"
-                                      : component.sourceType === "submission"
-                                        ? "Submission Sync"
-                                        : "";
-                                  return (
-                                    <option
-                                      key={component.key}
-                                      value={component.key}
-                                      disabled={Boolean(lock || reservedBy)}
-                                    >
-                                      {component.name} /{component.marks}
-                                      {reservedBy
-                                        ? ` — Reserved for ${reservedBy}`
-                                        : lock
-                                          ? ` — Used by ${lock.label}`
-                                          : ""}
-                                    </option>
-                                  );
-                                })}
-                              </select>
-                            ) : (
-                              <div className="flex h-[46px] items-center rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-                                {target ? "Direct assessment marks" : "Choose assessment first"}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              <div className="flex flex-col gap-3 border-t border-emerald-200 pt-4 dark:border-emerald-500/20 sm:flex-row sm:justify-end">
-                <button
-                  type="button"
-                  onClick={handleSyncNow}
-                  disabled={syncing || saving || mappings.length === 0}
-                  className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-black text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900"
-                >
-                  {syncing ? "Syncing..." : "Sync Now"}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveMapping}
-                  disabled={saving || syncing}
-                  className="rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-black text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {saving ? "Saving..." : "Save Mapping & Sync"}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
+  return <><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-7"><Check checked={settings.includeRoll} label="Roll" onChange={(v) => updateSetting("includeRoll", v)} /><Check checked={settings.includeName} label="Name" onChange={(v) => updateSetting("includeName", v)} /><Check checked={settings.includeBlankFields} label="Blank Fields" onChange={(v) => updateSetting("includeBlankFields", v)} /><Check checked={settings.includeMcq} label="Category" onChange={(v) => updateSetting("includeMcq", v)} /><Check checked={settings.includeCheckbox} label="Checkbox" onChange={(v) => updateSetting("includeCheckbox", v)} /><Check checked={settings.includeFeedback} label="Feedback" onChange={(v) => updateSetting("includeFeedback", v)} /><Check checked={settings.includeTotal} label="Total" onChange={(v) => updateSetting("includeTotal", v)} /></div>
+  <ColumnOrderEditor settings={settings} onChange={onChange} />
+  {settings.includeBlankFields && <EditableFields title="Blank Fields" fields={settings.blankFields} onChange={(fields) => updateFields("blankFields", fields)} onAdd={() => updateFields("blankFields", [...settings.blankFields, makeBlankField(settings.blankFields.length + 1)])} onRemove={(id) => removeField("blank", id)} />}
+  {settings.includeMcq && <EditableMcqFields fields={settings.mcqFields} onChange={(fields) => updateFields("mcqFields", fields)} onAdd={() => updateFields("mcqFields", [...settings.mcqFields, makeMcqField(settings.mcqFields.length + 1)])} onRemove={(id) => removeField("mcq", id)} />}
+  {settings.includeCheckbox && <EditableFields title="Checkbox Columns" fields={settings.checkboxFields} onChange={(fields) => updateFields("checkboxFields", fields)} onAdd={() => updateFields("checkboxFields", [...settings.checkboxFields, makeCheckboxField(settings.checkboxFields.length + 1)])} onRemove={(id) => removeField("checkbox", id)} />}</>;
 }
 
-function ColumnOrderManager({ columns, onReorder, onMove }) {
-  const [draggingId, setDraggingId] = useState(null);
-  const activeIdRef = useRef(null);
+function ColumnOrderEditor({ settings, onChange }) {
+  const columns = buildVisibleColumns(settings).filter((column) => !column.locked && column.type !== "total");
+  if (columns.length < 2) return null;
 
-  const finishDrag = () => {
-    activeIdRef.current = null;
-    setDraggingId(null);
+  const move = (columnId, direction) => {
+    const visibleIds = columns.map((column) => column.id);
+    const currentVisibleIndex = visibleIds.indexOf(columnId);
+    const targetVisibleIndex = currentVisibleIndex + direction;
+    if (currentVisibleIndex < 0 || targetVisibleIndex < 0 || targetVisibleIndex >= visibleIds.length) return;
+
+    const fullOrder = normalizeColumnOrder(settings.columnOrder, settings);
+    const targetId = visibleIds[targetVisibleIndex];
+    const currentFullIndex = fullOrder.indexOf(columnId);
+    const targetFullIndex = fullOrder.indexOf(targetId);
+    if (currentFullIndex < 0 || targetFullIndex < 0) return;
+    const nextOrder = [...fullOrder];
+    [nextOrder[currentFullIndex], nextOrder[targetFullIndex]] = [nextOrder[targetFullIndex], nextOrder[currentFullIndex]];
+    onChange({ settings: normalizeSettings({ ...settings, columnOrder: nextOrder }) });
   };
-
-  const handlePointerMove = (event) => {
-    const activeId = activeIdRef.current;
-    if (!activeId) return;
-    const target = document
-      .elementFromPoint(event.clientX, event.clientY)
-      ?.closest?.("[data-column-drop-id]");
-    const overId = target?.getAttribute("data-column-drop-id");
-    if (overId && overId !== activeId) {
-      onReorder(activeId, overId);
-    }
-  };
-
-  const handlePointerDown = (event, columnId) => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    activeIdRef.current = columnId;
-    setDraggingId(columnId);
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  };
-
-  const handleDragStart = (event, columnId) => {
-    activeIdRef.current = columnId;
-    setDraggingId(columnId);
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", columnId);
-  };
-
-  const handleDrop = (event, overId) => {
-    event.preventDefault();
-    const activeId = event.dataTransfer.getData("text/plain") || activeIdRef.current;
-    onReorder(activeId, overId);
-    finishDrag();
-  };
-
-  if (!columns.length) return null;
 
   return (
     <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h4 className="text-sm font-black text-slate-950 dark:text-white">Column Order</h4>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            Drag the chips to rearrange sheet columns. On mobile, hold a chip and move it over another chip.
-          </p>
-        </div>
-        <span className="rounded-full bg-violet-50 px-3 py-1 text-[11px] font-black text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">
-          Total stays last
-        </span>
-      </div>
-
-      <div
-        className="mt-3 flex flex-wrap gap-2"
-        onPointerMove={handlePointerMove}
-        onPointerUp={finishDrag}
-        onPointerCancel={finishDrag}
-        onDragOver={(event) => event.preventDefault()}
-      >
+      <div className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Column Order</div>
+      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Use the arrows to move fields left or right. Total stays at the end.</p>
+      <div className="mt-3 flex flex-wrap gap-2">
         {columns.map((column, index) => (
-          <div
-            key={column.id}
-            data-column-drop-id={column.id}
-            draggable
-            onDragStart={(event) => handleDragStart(event, column.id)}
-            onDragEnd={finishDrag}
-            onDrop={(event) => handleDrop(event, column.id)}
-            onPointerDown={(event) => handlePointerDown(event, column.id)}
-            className={`flex touch-none select-none items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-black transition ${
-              draggingId === column.id
-                ? "scale-[1.03] border-violet-400 bg-violet-50 text-violet-800 shadow-lg dark:border-violet-500/50 dark:bg-violet-500/10 dark:text-violet-200"
-                : "border-slate-200 bg-slate-50 text-slate-700 hover:border-violet-300 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
-            }`}
-            title="Drag to move column"
-          >
-            <span className="text-slate-400">☰</span>
-            <span>{column.label}</span>
-            <div className="ml-1 flex gap-1">
-              <button
-                type="button"
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onMove(column.id, -1);
-                }}
-                disabled={index === 0}
-                className="rounded-lg px-1.5 py-0.5 text-[10px] text-slate-500 hover:bg-white disabled:opacity-30 dark:hover:bg-slate-800"
-                aria-label={`Move ${column.label} left`}
-              >
-                ←
-              </button>
-              <button
-                type="button"
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onMove(column.id, 1);
-                }}
-                disabled={index === columns.length - 1}
-                className="rounded-lg px-1.5 py-0.5 text-[10px] text-slate-500 hover:bg-white disabled:opacity-30 dark:hover:bg-slate-800"
-                aria-label={`Move ${column.label} right`}
-              >
-                →
-              </button>
-            </div>
+          <div key={column.id} className="flex items-center gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-900">
+            <span className="max-w-44 truncate px-2 text-xs font-bold text-slate-700 dark:text-slate-200">{column.label}</span>
+            <button type="button" onClick={() => move(column.id, -1)} disabled={index === 0} className="rounded-xl px-2 py-1 text-xs font-black text-slate-600 hover:bg-white disabled:opacity-25 dark:text-slate-300 dark:hover:bg-slate-800" title="Move left">←</button>
+            <button type="button" onClick={() => move(column.id, 1)} disabled={index === columns.length - 1} className="rounded-xl px-2 py-1 text-xs font-black text-slate-600 hover:bg-white disabled:opacity-25 dark:text-slate-300 dark:hover:bg-slate-800" title="Move right">→</button>
           </div>
         ))}
       </div>
@@ -2879,572 +770,217 @@ function ColumnOrderManager({ columns, onReorder, onMove }) {
   );
 }
 
-function SimpleNoteEditor({ note, onChange }) {
-  const editorRef = useRef(null);
-  const lastLoadedNoteIdRef = useRef(null);
-  const savedRangeRef = useRef(null);
+function EditableFields({ title, fields, onChange, onAdd, onRemove }) {
+  return <div className="mt-4 space-y-2 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950"><div className="flex items-center justify-between"><span className="text-xs font-black uppercase tracking-wide text-slate-500">{title}</span><button type="button" onClick={onAdd} className="rounded-xl border border-violet-200 px-3 py-1.5 text-xs font-black text-violet-700">+ Add</button></div>{fields.map((field, index) => <div key={field.id} className="flex gap-2"><input value={field.label} onChange={(e) => onChange(fields.map((item) => item.id === field.id ? { ...item, label: e.target.value } : item))} className="input-soft" /><button type="button" onClick={() => onRemove(field.id)} disabled={fields.length <= 1} className="rounded-xl border border-red-200 px-3 text-xs font-black text-red-600 disabled:opacity-30">Remove</button></div>)}</div>;
+}
 
-  useEffect(() => {
-    const noteId = getNoteId(note);
-    if (!editorRef.current || lastLoadedNoteIdRef.current === noteId) return;
-    editorRef.current.innerHTML = note.content || "";
-    lastLoadedNoteIdRef.current = noteId;
-  }, [note]);
+function EditableMcqFields({ fields, onChange, onAdd, onRemove }) {
+  return <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950"><div className="flex items-center justify-between"><span className="text-xs font-black uppercase tracking-wide text-slate-500">MCQ / Category Columns</span><button type="button" onClick={onAdd} className="rounded-xl border border-violet-200 px-3 py-1.5 text-xs font-black text-violet-700">+ Add</button></div>{fields.map((field) => <div key={field.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900"><div className="flex gap-2"><input value={field.label} onChange={(e) => onChange(fields.map((item) => item.id === field.id ? { ...item, label: e.target.value } : item))} className="input-soft" /><button type="button" onClick={() => onRemove(field.id)} disabled={fields.length <= 1} className="rounded-xl border border-red-200 px-3 text-xs font-black text-red-600 disabled:opacity-30">Remove</button></div><div className="mt-2 flex flex-wrap gap-2">{field.options.map((option, index) => <input key={index} value={option} onChange={(e) => onChange(fields.map((item) => item.id === field.id ? { ...item, options: item.options.map((value, i) => i === index ? e.target.value : value) } : item))} className="w-32 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-950" />)}<button type="button" onClick={() => onChange(fields.map((item) => item.id === field.id ? { ...item, options: [...item.options, `Option ${item.options.length + 1}`] } : item))} className="rounded-xl border border-violet-200 px-2 py-1 text-xs font-black text-violet-700">+ Option</button></div></div>)}</div>;
+}
 
-  const saveSelection = () => {
-    const selection = window.getSelection?.();
-    if (!selection || selection.rangeCount === 0) return;
+function NotebookMarksSyncPanel({ note, embedded = false }) {
+  const noteId = getNoteId(note);
+  const syncSettings = normalizeSettings(note?.settings || {});
+  const isGroupSheet = Boolean(syncSettings.groupWise);
+  const syncDescription = isGroupSheet
+    ? "Map any numeric field or Total to the course marksheet. Group-shared fields copy the same value to every member; individual fields keep each student's own value."
+    : "Map numeric fields or Total to course assessments.";
+  const [open, setOpen] = useState(Boolean(embedded));
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [config, setConfig] = useState({ sourceOptions: [], targetAssessments: [], mappings: [], locks: [] });
+  const [mappings, setMappings] = useState([]);
 
-    const range = selection.getRangeAt(0);
-    if (editorRef.current?.contains(range.commonAncestorContainer)) {
-      savedRangeRef.current = range.cloneRange();
+  const load = async () => {
+    try {
+      setLoading(true);
+      const data = await fetchNotebookMarkSync(noteId);
+      const next = {
+        sourceOptions: data?.sourceOptions || [],
+        targetAssessments: data?.targetAssessments || [],
+        mappings: data?.mappings || [],
+        locks: data?.locks || [],
+      };
+      setConfig(next);
+      setMappings(next.mappings);
+    } catch (error) {
+      Swal.fire({ icon: "error", title: "Could not load Marks Sync", text: error?.response?.data?.message || "Please try again." });
+    } finally {
+      setLoading(false);
     }
   };
 
-  const restoreSelection = () => {
-    const selection = window.getSelection?.();
-    if (!selection || !savedRangeRef.current) return;
+  useEffect(() => {
+    if (open && noteId) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, noteId]);
 
-    selection.removeAllRanges();
-    selection.addRange(savedRangeRef.current);
+  const sourceKey = (mapping) => mapping?.sourceType === "total" ? "total" : `blank:${mapping?.sourceFieldId || ""}`;
+  const addMapping = () => setMappings((current) => [
+    ...current,
+    { id: makeId("mapping"), sourceType: "blank", sourceFieldId: "", sourceLabel: "", targetAssessment: "", targetComponentKey: "" },
+  ]);
+  const updateMapping = (id, patch) => setMappings((current) => current.map((mapping) => mapping.id === id ? { ...mapping, ...patch } : mapping));
+
+  const save = async () => {
+    try {
+      setSaving(true);
+      await updateNotebookNote(noteId, buildSavePayload(note));
+      const result = await saveNotebookMarkSync(noteId, mappings);
+      setMappings(result?.mappings || mappings);
+      Swal.fire({ icon: "success", title: "Mapping saved", timer: 1800, showConfirmButton: false });
+    } catch (error) {
+      Swal.fire({ icon: "error", title: "Could not save mapping", text: error?.response?.data?.message || "Please check the mapping." });
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const syncContent = () => {
-    onChange({ content: editorRef.current?.innerHTML || "" });
+  const syncNow = async () => {
+    try {
+      await updateNotebookNote(noteId, buildSavePayload(note));
+      const result = await syncNotebookMarks(noteId);
+      Swal.fire({ icon: "success", title: "Sync completed", text: result?.message || "Marks synchronized." });
+    } catch (error) {
+      Swal.fire({ icon: "error", title: "Sync failed", text: error?.response?.data?.message || "Please try again." });
+    }
   };
 
-  const runCommand = (command, value = null) => {
-    editorRef.current?.focus();
-    restoreSelection();
-    document.execCommand(command, false, value);
-    saveSelection();
-    syncContent();
-  };
-
-  const setFontSize = (size) => {
-    const className = size === "large" ? "text-lg" : size === "small" ? "text-sm" : "text-base";
-    editorRef.current?.focus();
-    restoreSelection();
-    document.execCommand("fontSize", false, "3");
-    const fonts = editorRef.current?.querySelectorAll("font[size='3']") || [];
-    fonts.forEach((font) => {
-      const span = document.createElement("span");
-      span.className = className;
-      span.innerHTML = font.innerHTML;
-      font.replaceWith(span);
-    });
-    saveSelection();
-    syncContent();
-  };
-
-  const insertLink = async () => {
-    saveSelection();
-    const result = await Swal.fire({
-      title: "Insert link",
-      input: "url",
-      inputLabel: "Web address",
-      inputPlaceholder: "https://example.com",
-      showCancelButton: true,
-      confirmButtonText: "Add Link",
-      confirmButtonColor: "#7c3aed",
-      inputValidator: (value) => (!String(value || "").trim() ? "Enter a web address." : undefined),
-    });
-
-    if (!result.isConfirmed) return;
-
-    const rawUrl = String(result.value || "").trim();
-    const url = /^(https?:|mailto:|tel:)/i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
-    editorRef.current?.focus();
-    restoreSelection();
-    document.execCommand("createLink", false, url);
-    editorRef.current?.querySelectorAll("a").forEach((link) => {
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-    });
-    saveSelection();
-    syncContent();
-  };
-
-  return (
-    <div className="min-w-0 max-w-full space-y-4 p-4 sm:p-5">
-      <div className="max-w-full overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-900/60">
-        <div className="flex min-w-max items-center gap-1.5">
-          <ToolbarButton title="Undo" onClick={() => runCommand("undo")}>↶</ToolbarButton>
-          <ToolbarButton title="Redo" onClick={() => runCommand("redo")}>↷</ToolbarButton>
-          <ToolbarDivider />
-          <ToolbarButton title="Normal paragraph" onClick={() => runCommand("formatBlock", "P")}>P</ToolbarButton>
-          <ToolbarButton title="Heading 1" onClick={() => runCommand("formatBlock", "H1")}>H1</ToolbarButton>
-          <ToolbarButton title="Heading 2" onClick={() => runCommand("formatBlock", "H2")}>H2</ToolbarButton>
-          <ToolbarDivider />
-          <ToolbarButton title="Bold" onClick={() => runCommand("bold")}><strong>B</strong></ToolbarButton>
-          <ToolbarButton title="Italic" onClick={() => runCommand("italic")}><em>I</em></ToolbarButton>
-          <ToolbarButton title="Underline" onClick={() => runCommand("underline")}><span className="underline">U</span></ToolbarButton>
-          <ToolbarButton title="Strikethrough" onClick={() => runCommand("strikeThrough")}><span className="line-through">S</span></ToolbarButton>
-          <ToolbarDivider />
-          <ToolbarButton title="Bulleted list" onClick={() => runCommand("insertUnorderedList")}>• List</ToolbarButton>
-          <ToolbarButton title="Numbered list" onClick={() => runCommand("insertOrderedList")}>1. List</ToolbarButton>
-          <ToolbarDivider />
-          <ToolbarButton title="Align left" onClick={() => runCommand("justifyLeft")}>≡</ToolbarButton>
-          <ToolbarButton title="Align center" onClick={() => runCommand("justifyCenter")}>≣</ToolbarButton>
-          <ToolbarButton title="Align right" onClick={() => runCommand("justifyRight")}>≡</ToolbarButton>
-          <ToolbarDivider />
-          <ToolbarButton title="Small text" onClick={() => setFontSize("small")}>A−</ToolbarButton>
-          <ToolbarButton title="Normal text" onClick={() => setFontSize("medium")}>A</ToolbarButton>
-          <ToolbarButton title="Large text" onClick={() => setFontSize("large")}>A+</ToolbarButton>
-          <ToolbarDivider />
-          <ToolbarButton title="Insert link" onClick={insertLink}>Link</ToolbarButton>
-          <ToolbarButton title="Remove link" onClick={() => runCommand("unlink")}>Unlink</ToolbarButton>
-          <ToolbarButton title="Clear formatting" onClick={() => runCommand("removeFormat")}>Clear</ToolbarButton>
-        </div>
-      </div>
-
-      <div
-        ref={editorRef}
-        key={getNoteId(note)}
-        contentEditable
-        suppressContentEditableWarning
-        onInput={(e) => {
-          saveSelection();
-          onChange({ content: e.currentTarget.innerHTML });
-        }}
-        onMouseUp={saveSelection}
-        onKeyUp={saveSelection}
-        onBlur={saveSelection}
-        className="notebook-rich-editor min-h-[420px] w-full min-w-0 max-w-full overflow-x-auto rounded-3xl border border-slate-200 bg-white p-4 text-base leading-7 text-slate-800 outline-none transition focus:border-violet-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-violet-500 sm:p-5"
-        data-placeholder="Start writing your note here..."
-      />
+  const content = (
+    <div className="mt-4 space-y-3">
+      {loading ? (
+        <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400">Loading assessment destinations...</div>
+      ) : (
+        <>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-xs leading-5 text-slate-600 dark:text-slate-300">Source labels show whether each field is Group-shared or Individual.</div>
+            <button type="button" onClick={addMapping} className="rounded-xl border border-emerald-200 px-3 py-2 text-xs font-black text-emerald-700 dark:border-emerald-500/30 dark:text-emerald-300">+ Add Mapping</button>
+          </div>
+          {mappings.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-emerald-300 bg-white/70 p-5 text-center text-xs text-slate-500 dark:border-emerald-500/30 dark:bg-slate-950/70 dark:text-slate-400">No Marks Sync mapping configured.</div>
+          ) : (
+            <div className="space-y-2">
+              {mappings.map((mapping) => {
+                const target = config.targetAssessments.find((assessment) => String(assessment.id || assessment._id) === String(mapping.targetAssessment));
+                return (
+                  <div key={mapping.id} className="grid gap-2 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950 lg:grid-cols-3">
+                    <select
+                      value={sourceKey(mapping)}
+                      onChange={(event) => {
+                        const source = config.sourceOptions.find((option) => option.key === event.target.value);
+                        updateMapping(mapping.id, {
+                          sourceType: source?.sourceType || "blank",
+                          sourceFieldId: source?.sourceFieldId || "",
+                          sourceLabel: source?.label || "",
+                        });
+                      }}
+                      className="input-soft"
+                    >
+                      <option value="">Source field</option>
+                      {config.sourceOptions.map((source) => <option key={source.key} value={source.key}>{source.label}</option>)}
+                    </select>
+                    <select value={mapping.targetAssessment || ""} onChange={(event) => updateMapping(mapping.id, { targetAssessment: event.target.value, targetComponentKey: "" })} className="input-soft">
+                      <option value="">Target assessment</option>
+                      {config.targetAssessments.map((assessment) => <option key={assessment.id || assessment._id} value={assessment.id || assessment._id}>{assessment.name}</option>)}
+                    </select>
+                    {target?.structureType === "lab_final" ? (
+                      <select value={mapping.targetComponentKey || ""} onChange={(event) => updateMapping(mapping.id, { targetComponentKey: event.target.value })} className="input-soft">
+                        <option value="">Component</option>
+                        {(target.components || []).map((component) => <option key={component.key} value={component.key}>{component.label || component.name || component.key}</option>)}
+                      </select>
+                    ) : (
+                      <button type="button" onClick={() => setMappings((current) => current.filter((item) => item.id !== mapping.id))} className="rounded-xl border border-red-200 px-3 py-2 text-xs font-black text-red-600 dark:border-red-500/30 dark:text-red-300">Remove</button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button type="button" onClick={save} disabled={saving} className="rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-black text-white disabled:opacity-50">{saving ? "Saving..." : "Save Mapping"}</button>
+            <button type="button" onClick={syncNow} className="rounded-xl border border-emerald-200 px-4 py-2.5 text-xs font-black text-emerald-700 dark:border-emerald-500/30 dark:text-emerald-300">Sync Now</button>
+          </div>
+        </>
+      )}
     </div>
   );
+
+  if (embedded) {
+    return (
+      <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-3 dark:border-emerald-500/20 dark:bg-emerald-500/5">
+        <h3 className="text-sm font-black text-slate-950 dark:text-white">Marks Sync</h3>
+        <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-300">{syncDescription}</p>
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-3xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-500/20 dark:bg-emerald-500/5">
+      <button type="button" onClick={() => setOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 text-left">
+        <div>
+          <h3 className="text-sm font-black text-slate-950 dark:text-white">Marks Sync</h3>
+          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{syncDescription}</p>
+        </div>
+        <span className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-xs font-black text-emerald-700 dark:border-emerald-500/30 dark:bg-slate-950 dark:text-emerald-300">{open ? "Hide" : "Show"}</span>
+      </button>
+      {open && content}
+    </div>
+  );
+}
+
+function SimpleNoteEditor({ note, onChange }) {
+  const editorRef = useRef(null);
+  useEffect(() => { if (editorRef.current && editorRef.current.innerHTML !== (note.content || "")) editorRef.current.innerHTML = note.content || ""; }, [getNoteId(note)]);
+  const command = (cmd, value) => { editorRef.current?.focus(); document.execCommand(cmd, false, value); onChange({ content: editorRef.current?.innerHTML || "" }); };
+  return <div className="space-y-3 p-4 sm:p-5"><div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-900"><button type="button" onClick={() => command("bold")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 hover:border-violet-300 hover:bg-violet-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"><b>B</b></button><button type="button" onClick={() => command("italic")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 hover:border-violet-300 hover:bg-violet-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"><i>I</i></button><button type="button" onClick={() => command("underline")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 hover:border-violet-300 hover:bg-violet-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"><u>U</u></button><button type="button" onClick={() => command("insertUnorderedList")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 hover:border-violet-300 hover:bg-violet-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">• List</button><button type="button" onClick={() => command("insertOrderedList")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 hover:border-violet-300 hover:bg-violet-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">1. List</button></div><div ref={editorRef} contentEditable suppressContentEditableWarning onInput={(e) => onChange({ content: e.currentTarget.innerHTML })} className="min-h-[420px] rounded-3xl border border-slate-200 bg-white p-5 text-base leading-7 outline-none focus:border-violet-400 dark:border-slate-800 dark:bg-slate-900 dark:text-white" data-placeholder="Start writing your note here..." /></div>;
 }
 
 function buildEvaluationExport(note) {
   const settings = normalizeSettings(note.settings || {});
   const rows = Array.isArray(note.evaluationRows) ? note.evaluationRows : [];
-  const columns = buildVisibleColumns(settings, {
-    includeCourse: note.courseScope === "all",
-  });
-  const headers = columns.map((column) => column.label);
-  const body = rows.map((row) => columns.map((column) => getColumnExportValue(column, row, settings)));
-  return { settings, columns, headers, body, rows };
+  const blankFields = settings.includeBlankFields ? settings.blankFields : [];
+  const visibleColumns = buildVisibleColumns(settings, { includeCourse: note.courseScope === "all" });
+  const columns = visibleColumns.map((column) => ({
+    label: column.label,
+    value: (row) => {
+      if (column.type === "roll") return row.roll || "";
+      if (column.type === "name") return row.name || "";
+      if (column.type === "course") return row.courseLabel || "";
+      if (column.type === "blank") return getRowBlankValue(row, column.field);
+      if (column.type === "mcq") return getRowMcqValue(row, column.field, column.fieldIndex);
+      if (column.type === "checkbox") return getRowCheckboxValue(row, column.field) ? "Yes" : "No";
+      if (column.type === "feedback") return row.feedback || "";
+      if (column.type === "total") return calculateTotal(row, blankFields).value;
+      return "";
+    },
+  }));
+  return {
+    settings,
+    rows,
+    columns,
+    head: columns.map((column) => column.label),
+    body: rows.map((row) => columns.map((column) => column.value(row))),
+  };
 }
 
 function exportEvaluationExcel(note) {
-  const { columns, headers, body, rows } = buildEvaluationExport(note);
-  const course = formatNoteCourseLabel(note);
-  const totalColumns = Math.max(headers.length, 1);
-  const lastCol = totalColumns - 1;
-
-  const data = [
-    [note.title || "Evaluation Sheet"],
-    ["Course", course, "Date", note.date || "-", "Time", note.time || "-"],
-    ["Generated", new Date().toLocaleString(), "Total Students", String(rows.length)],
-    [],
-    headers,
-    ...body,
-  ];
-
-  const ws = XLSX.utils.aoa_to_sheet(data);
-  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } }];
-  ws["!cols"] = columns.map((column) => {
-    if (column.type === "feedback") return { wch: 44 };
-    if (column.type === "name") return { wch: 28 };
-    if (column.type === "roll") return { wch: 18 };
-    if (column.type === "total") return { wch: 18 };
-    return { wch: 22 };
-  });
-  ws["!rows"] = [{ hpt: 28 }, { hpt: 22 }, { hpt: 22 }, { hpt: 8 }, { hpt: 24 }];
-  if (headers.length) {
-    ws["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 4, c: 0 }, e: { r: 4 + body.length, c: lastCol } }) };
-  }
-
-  const range = XLSX.utils.decode_range(ws["!ref"]);
-  const border = {
-    top: { style: "thin", color: { rgb: "CBD5E1" } },
-    bottom: { style: "thin", color: { rgb: "CBD5E1" } },
-    left: { style: "thin", color: { rgb: "CBD5E1" } },
-    right: { style: "thin", color: { rgb: "CBD5E1" } },
-  };
-
-  for (let r = range.s.r; r <= range.e.r; r += 1) {
-    for (let c = range.s.c; c <= range.e.c; c += 1) {
-      const ref = XLSX.utils.encode_cell({ r, c });
-      if (!ws[ref]) ws[ref] = { t: "s", v: "" };
-      ws[ref].s = {
-        font: { name: "Calibri", sz: 11, color: { rgb: "0F172A" } },
-        alignment: { vertical: "center", wrapText: true },
-      };
-    }
-  }
-
-  for (let c = 0; c <= lastCol; c += 1) {
-    const titleRef = XLSX.utils.encode_cell({ r: 0, c });
-    if (!ws[titleRef]) ws[titleRef] = { t: "s", v: "" };
-    ws[titleRef].s = {
-      font: { name: "Calibri", sz: 18, bold: true, color: { rgb: "FFFFFF" } },
-      fill: { fgColor: { rgb: "312E81" } },
-      alignment: { horizontal: c === 0 ? "left" : "center", vertical: "center" },
-    };
-  }
-
-  [1, 2].forEach((r) => {
-    for (let c = 0; c <= lastCol; c += 1) {
-      const ref = XLSX.utils.encode_cell({ r, c });
-      ws[ref].s = {
-        font: { name: "Calibri", sz: c % 2 === 0 ? 10 : 11, bold: c % 2 === 0, color: { rgb: c % 2 === 0 ? "475569" : "0F172A" } },
-        fill: { fgColor: { rgb: "EEF2FF" } },
-        alignment: { vertical: "center", wrapText: true },
-        border,
-      };
-    }
-  });
-
-  headers.forEach((_, c) => {
-    const ref = XLSX.utils.encode_cell({ r: 4, c });
-    ws[ref].s = {
-      font: { name: "Calibri", sz: 10, bold: true, color: { rgb: "FFFFFF" } },
-      fill: { fgColor: { rgb: "4338CA" } },
-      alignment: { horizontal: "center", vertical: "center", wrapText: true },
-      border,
-    };
-  });
-
-  for (let r = 5; r <= range.e.r; r += 1) {
-    for (let c = 0; c <= lastCol; c += 1) {
-      const ref = XLSX.utils.encode_cell({ r, c });
-      ws[ref].s = {
-        font: { name: "Calibri", sz: 10, color: { rgb: "0F172A" } },
-        fill: { fgColor: { rgb: r % 2 === 0 ? "F8FAFC" : "FFFFFF" } },
-        alignment: { vertical: "center", wrapText: true },
-        border,
-      };
-    }
-  }
-
-  const wb = XLSX.utils.book_new();
-  wb.Props = {
-    Title: note.title || "Evaluation Sheet",
-    Subject: course,
-    Author: "BUBT Marks Portal",
-    CreatedDate: new Date(),
-  };
-  XLSX.utils.book_append_sheet(wb, ws, "Evaluation Sheet");
-  XLSX.writeFile(wb, `${safeFileName(note.title)}.xlsx`);
+  const { head, body } = buildEvaluationExport(note);
+  const ws = XLSX.utils.aoa_to_sheet([[note.title || "Evaluation Sheet"], [formatNoteCourseLabel(note)], [], head, ...body]);
+  head.forEach((_, col) => { const cell = ws[XLSX.utils.encode_cell({ r: 3, c: col })]; if (cell) cell.s = { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "334155" } }, alignment: { horizontal: "center" } }; });
+  ws["!cols"] = head.map((label) => ({ wch: Math.max(14, Math.min(32, label.length + 4)) }));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Evaluation"); XLSX.writeFile(wb, `${safeFileName(note.title)}.xlsx`);
 }
-
-function createEvaluationPdfDocument(note) {
-  const { columns, headers, body, rows } = buildEvaluationExport(note);
-  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 32;
-  const course = formatNoteCourseLabel(note);
-
-  const drawHeader = () => {
-    doc.setFillColor(30, 41, 59);
-    doc.rect(0, 0, pageWidth, 78, "F");
-    doc.setFillColor(79, 70, 229);
-    doc.roundedRect(margin, 18, 96, 22, 11, 11, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.text("EVALUATION SHEET", margin + 13, 33);
-    doc.setFontSize(18);
-    doc.text(String(note.title || "Evaluation Sheet"), margin, 60, { maxWidth: pageWidth - margin * 2 });
-
-    doc.setTextColor(71, 85, 105);
-    doc.setFillColor(248, 250, 252);
-    doc.roundedRect(margin, 92, pageWidth - margin * 2, 44, 10, 10, "F");
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "bold");
-    doc.text("Course", margin + 14, 108);
-    doc.text("Date", pageWidth - 210, 108);
-    doc.text("Time", pageWidth - 118, 108);
-    doc.text("Students", pageWidth - 58, 108, { align: "right" });
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(15, 23, 42);
-    doc.text(course, margin + 14, 126, { maxWidth: pageWidth - 330 });
-    doc.text(note.date || "-", pageWidth - 210, 126);
-    doc.text(note.time || "-", pageWidth - 118, 126);
-    doc.text(String(rows.length), pageWidth - 58, 126, { align: "right" });
-  };
-
-  drawHeader();
-
-  const columnStyles = columns.reduce((acc, column, index) => {
-    if (column.type === "roll") acc[index] = { cellWidth: 72, fontStyle: "bold" };
-    if (column.type === "name") acc[index] = { cellWidth: 120 };
-    if (column.type === "feedback") acc[index] = { cellWidth: 170 };
-    if (column.type === "total") acc[index] = { cellWidth: 70, halign: "center", fontStyle: "bold" };
-    return acc;
-  }, {});
-
-  autoTable(doc, {
-    startY: 152,
-    head: [headers],
-    body,
-    margin: { top: 152, left: margin, right: margin, bottom: 42 },
-    theme: "grid",
-    styles: {
-      font: "helvetica",
-      fontSize: 7.4,
-      cellPadding: { top: 6, right: 5, bottom: 6, left: 5 },
-      overflow: "linebreak",
-      lineColor: [226, 232, 240],
-      lineWidth: 0.6,
-      textColor: [15, 23, 42],
-      valign: "middle",
-    },
-    headStyles: {
-      fillColor: [67, 56, 202],
-      textColor: [255, 255, 255],
-      fontStyle: "bold",
-      halign: "center",
-      lineColor: [67, 56, 202],
-    },
-    alternateRowStyles: { fillColor: [248, 250, 252] },
-    columnStyles,
-    willDrawPage: (data) => {
-      if (data.pageNumber > 1) drawHeader();
-    },
-    didDrawPage: (data) => {
-      doc.setFontSize(8);
-      doc.setTextColor(100, 116, 139);
-      doc.text(`Generated from BUBT Marks Portal • ${new Date().toLocaleString()}`, margin, pageHeight - 20);
-      doc.text(`Page ${data.pageNumber}`, pageWidth - margin, pageHeight - 20, { align: "right" });
-    },
-  });
-
-  return doc;
+function createEvaluationPdf(note) {
+  const { head, body } = buildEvaluationExport(note);
+  const doc = new jsPDF({ orientation: head.length > 6 ? "landscape" : "portrait", unit: "pt", format: "a4" });
+  const width = doc.internal.pageSize.getWidth(); doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.text("Bangladesh University of Business and Technology (BUBT)", width / 2, 28, { align: "center" }); doc.setFontSize(13); doc.text(note.title || "Evaluation Sheet", width / 2, 48, { align: "center" }); doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.text(formatNoteCourseLabel(note), width / 2, 64, { align: "center" }); autoTable(doc, { startY: 80, head: [head], body, theme: "grid", styles: { fontSize: head.length > 8 ? 6.5 : 8, cellPadding: 4 }, headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255] } }); return doc;
 }
+function exportEvaluationPdf(note) { createEvaluationPdf(note).save(`${safeFileName(note.title)}.pdf`); }
+function printEvaluationPdf(note) { const doc = createEvaluationPdf(note); const url = URL.createObjectURL(doc.output("blob")); const frame = document.createElement("iframe"); frame.style.display = "none"; frame.src = url; frame.onload = () => { frame.contentWindow?.print(); setTimeout(() => { URL.revokeObjectURL(url); frame.remove(); }, 1500); }; document.body.appendChild(frame); }
+function exportSimplePdf(note) { const doc = new jsPDF({ unit: "pt", format: "a4" }); const width = doc.internal.pageSize.getWidth(); doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.text(note.title || "Simple Note", 40, 45); doc.setFont("helvetica", "normal"); doc.setFontSize(10); const lines = doc.splitTextToSize(stripHtml(note.content || ""), width - 80); doc.text(lines, 40, 75); doc.save(`${safeFileName(note.title)}.pdf`); }
 
-function exportEvaluationPdf(note) {
-  createEvaluationPdfDocument(note).save(`${safeFileName(note.title)}.pdf`);
-}
-
-function printEvaluationPdf(note) {
-  const doc = createEvaluationPdfDocument(note);
-  doc.autoPrint({ variant: "non-conform" });
-  const blobUrl = doc.output("bloburl");
-  const printWindow = window.open(blobUrl, "_blank", "noopener,noreferrer");
-  if (!printWindow) {
-    doc.save(`${safeFileName(note.title)}_print.pdf`);
-  }
-}
-
-function exportSimplePdf(note) {
-  const doc = new jsPDF();
-  const text = stripHtml(note.content || "");
-  const lines = doc.splitTextToSize(text || "No content written.", 180);
-
-  doc.setFillColor(30, 41, 59);
-  doc.rect(0, 0, doc.internal.pageSize.getWidth(), 32, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(16);
-  doc.setFont("helvetica", "bold");
-  doc.text(note.title || "Simple Note", 14, 20);
-  doc.setTextColor(71, 85, 105);
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-  doc.text(`Course: ${formatNoteCourseLabel(note)}`, 14, 42);
-  doc.text(`Date: ${note.date || "-"}    Time: ${note.time || "-"}`, 14, 49);
-  doc.setTextColor(15, 23, 42);
-  doc.setFontSize(11);
-  doc.text(lines, 14, 62);
-  doc.save(`${safeFileName(note.title)}.pdf`);
-}
-
-function TemplateButton({ active, title, subtitle, onClick }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={[
-        "rounded-3xl border p-4 text-left transition",
-        active
-          ? "border-violet-300 bg-violet-50 text-violet-900 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-100"
-          : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-900/70",
-      ].join(" ")}
-    >
-      <div className="font-black">{title}</div>
-      <div className="mt-1 text-xs opacity-80">{subtitle}</div>
-    </button>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="block">
-      <span className="mb-1.5 block text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-        {label}
-      </span>
-      {children}
-    </label>
-  );
-}
-
-function CheckboxField({ checked, label, onChange }) {
-  return (
-    <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 accent-violet-600"
-      />
-      {label}
-    </label>
-  );
-}
-
-function TypeBadge({ type }) {
-  const isEvaluation = type === "evaluation";
-  return (
-    <span
-      className={[
-        "inline-flex max-w-full items-center justify-center rounded-full px-3 py-1 text-center text-[11px] font-semibold leading-4",
-        isEvaluation
-          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
-          : "bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300",
-      ].join(" ")}
-    >
-      {TYPE_LABELS[type] || "Simple Note"}
-    </span>
-  );
-}
-
-function EditorActionButton({
-  label,
-  title,
-  icon,
-  onClick,
-  disabled = false,
-  tone = "slate",
-}) {
-  const toneMap = {
-    slate:
-      "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700",
-    sky:
-      "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300 dark:hover:bg-sky-500/20",
-    emerald:
-      "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300 dark:hover:bg-emerald-500/20",
-    rose:
-      "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/20",
-    violet:
-      "border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300 dark:hover:bg-violet-500/20",
-    red:
-      "border-red-200 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-500/20",
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={title || label}
-      aria-label={title || label}
-      className={`inline-flex h-11 min-w-11 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${toneMap[tone] || toneMap.slate}`}
-    >
-      {icon}
-      <span className="hidden sm:inline">{label}</span>
-    </button>
-  );
-}
-
-function ToolbarButton({ children, onClick, title }) {
-  return (
-    <button
-      type="button"
-      title={title}
-      aria-label={title}
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={onClick}
-      className="inline-flex h-9 min-w-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-black text-slate-700 transition hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-violet-500/40 dark:hover:bg-violet-500/10 dark:hover:text-violet-300"
-    >
-      {children}
-    </button>
-  );
-}
-
-function ToolbarDivider() {
-  return <span className="mx-0.5 h-6 w-px shrink-0 bg-slate-200 dark:bg-slate-700" aria-hidden="true" />;
-}
-
-function RefreshIcon({ spinning = false }) {
-  return (
-    <svg className={`h-4 w-4 ${spinning ? "animate-spin" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M20 11a8 8 0 1 0 2 5" />
-      <path d="M20 4v7h-7" />
-    </svg>
-  );
-}
-
-function SpreadsheetIcon() {
-  return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M5 3h11l3 3v15H5z" />
-      <path d="M8 10h8M8 14h8M11 8v10" />
-    </svg>
-  );
-}
-
-function PdfIcon() {
-  return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M6 2h9l5 5v15H6z" />
-      <path d="M14 2v6h6" />
-      <path d="M9 16h6M9 12h4" />
-    </svg>
-  );
-}
-
-function PrintIcon() {
-  return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M6 9V3h12v6" />
-      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-      <path d="M6 14h12v7H6z" />
-    </svg>
-  );
-}
-
-function TrashIcon() {
-  return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M3 6h18M8 6V3h8v3M6 6l1 15h10l1-15" />
-      <path d="M10 11v6M14 11v6" />
-    </svg>
-  );
-}
-
-function formatDateTime(value) {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "-";
-  return d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
-}
-
-function NotebookSmallIcon() {
-  return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M6 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
-      <path d="M8 7h8M8 11h8M8 15h5" />
-    </svg>
-  );
-}
-
-function SearchIcon() {
-  return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <circle cx="11" cy="11" r="7" />
-      <path d="M20 20l-3.5-3.5" />
-    </svg>
-  );
-}
-
-function PlusIcon() {
-  return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
-}
+function TemplateButton({ active, title, subtitle, onClick }) { return <button type="button" onClick={onClick} className={`rounded-3xl border p-4 text-left transition ${active ? "border-violet-400 bg-violet-50 text-violet-950 dark:border-violet-500 dark:bg-violet-500/10 dark:text-violet-100" : "border-slate-200 bg-white hover:border-violet-200 dark:border-slate-800 dark:bg-slate-900"}`}><div className="font-black">{title}</div><div className="mt-1 text-xs opacity-70">{subtitle}</div></button>; }
+function Field({ label, children }) { return <label className="block"><span className="mb-2 block text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</span>{children}</label>; }
+function Check({ checked, label, onChange }) { return <label className="flex cursor-pointer items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold dark:border-slate-800 dark:bg-slate-950"><input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="h-4 w-4 accent-violet-600" />{label}</label>; }
+function TypeBadge({ type, groupWise = false }) { const label = groupWise ? "Group Presentation" : TYPE_LABELS[type] || "Simple Note"; const cls = type === "evaluation" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" : "bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300"; return <span className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold ${cls}`}>{label}</span>; }
