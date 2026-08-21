@@ -2046,6 +2046,7 @@ export default function TabMarks({ courseId, course }) {
   const [sortMode, setSortMode] = useState("entered");
   const [studentSearch, setStudentSearch] = useState("");
   const [selectedGradeFilter, setSelectedGradeFilter] = useState("");
+  const [gradeFilterSnapshotIds, setGradeFilterSnapshotIds] = useState(null);
 
   const [advancedModal, setAdvancedModal] = useState({
     open: false,
@@ -2419,6 +2420,48 @@ export default function TabMarks({ courseId, course }) {
     return [...originalStudentsRef.current];
   }, [students, sortMode]);
 
+  const buildCurrentGradeFilterSnapshot = () => {
+    if (!selectedGradeFilter) return null;
+
+    const q = studentSearch.trim().toLowerCase();
+
+    return sortedStudents
+      .filter((student) => {
+        const roll = String(student.roll || "").toLowerCase();
+        const name = String(student.name || "").toLowerCase();
+        const email = String(student.email || "").toLowerCase();
+        const matchesSearch =
+          !q || roll.includes(q) || name.includes(q) || email.includes(q);
+
+        if (!matchesSearch) return false;
+
+        const row = marksMap[student.id] || {};
+        const total = computeTotal100(
+          course,
+          assessments,
+          row,
+          Number(attMarksMap[student.id] || 0)
+        );
+        const grade = gradeForStudent(course, assessments, row, total);
+
+        return grade === selectedGradeFilter;
+      })
+      .map((student) => String(student.id));
+  };
+
+  const lockGradeFilterForEditing = () => {
+    if (!selectedGradeFilter || gradeFilterSnapshotIds !== null) return;
+    setGradeFilterSnapshotIds(buildCurrentGradeFilterSnapshot());
+  };
+
+  const releaseGradeFilterEditLock = () => {
+    setGradeFilterSnapshotIds(null);
+  };
+
+  const scheduleGradeFilterEditUnlock = () => {
+    window.setTimeout(releaseGradeFilterEditLock, 0);
+  };
+
   const visibleStudents = useMemo(() => {
     const q = studentSearch.trim().toLowerCase();
     return sortedStudents.filter((student) => {
@@ -2430,6 +2473,13 @@ export default function TabMarks({ courseId, course }) {
 
       if (!matchesSearch) return false;
       if (!selectedGradeFilter) return true;
+
+      // Keep the current grade-filter result stable while a mark is actively
+      // being edited. This prevents a student from disappearing midway through
+      // typing when a temporary value changes the calculated grade.
+      if (gradeFilterSnapshotIds !== null) {
+        return gradeFilterSnapshotIds.includes(String(student.id));
+      }
 
       const row = marksMap[student.id] || {};
       const total = computeTotal100(
@@ -2446,6 +2496,7 @@ export default function TabMarks({ courseId, course }) {
     sortedStudents,
     studentSearch,
     selectedGradeFilter,
+    gradeFilterSnapshotIds,
     marksMap,
     attMarksMap,
     course,
@@ -2771,6 +2822,11 @@ export default function TabMarks({ courseId, course }) {
   };
 
   const openAdvancedModal = (student, assessment) => {
+    // Freeze the current grade-filter membership for the whole structured
+    // marks editing session. The student list is recalculated when the modal
+    // is closed, so students then move to their correct grade group.
+    lockGradeFilterForEditing();
+
     const index = visibleStudents.findIndex((s) => String(s.id) === String(student.id));
     setAdvancedModal({
       open: true,
@@ -2785,6 +2841,7 @@ export default function TabMarks({ courseId, course }) {
       assessmentId: null,
       studentIndex: 0,
     });
+    releaseGradeFilterEditLock();
   };
 
   const goPrevAdvancedStudent = () => {
@@ -4658,8 +4715,14 @@ export default function TabMarks({ courseId, course }) {
                   <button
                     type="button"
                     key={grade}
-                    onClick={() => setSelectedGradeFilter(grade)}
-                    onDoubleClick={() => setSelectedGradeFilter("")}
+                    onClick={() => {
+                      releaseGradeFilterEditLock();
+                      setSelectedGradeFilter(grade);
+                    }}
+                    onDoubleClick={() => {
+                      releaseGradeFilterEditLock();
+                      setSelectedGradeFilter("");
+                    }}
                     title="Click to show this grade only. Double-click to remove the grade filter."
                     className={[
                       "rounded-xl border px-3 py-2 text-center transition focus:outline-none focus:ring-2 focus:ring-indigo-500/30",
@@ -5030,10 +5093,14 @@ export default function TabMarks({ courseId, course }) {
                                         : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
                                     ].join(" ")}
                                     value={cell == null ? "" : getMarkDisplayValue(cell)}
+                                    onFocus={lockGradeFilterForEditing}
                                     onChange={(e) =>
                                       handleMarkChange(s.id, a._id, e.target.value)
                                     }
-                                    onBlur={() => handleMarkBlur(s.id, a._id)}
+                                    onBlur={() => {
+                                      handleMarkBlur(s.id, a._id);
+                                      scheduleGradeFilterEditUnlock();
+                                    }}
                                     onKeyDown={handleKeyDown}
                                     data-row={rowIndex}
                                     data-col={colIndex}
@@ -5151,10 +5218,14 @@ export default function TabMarks({ courseId, course }) {
                                       : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500",
                                   ].join(" ")}
                                   value={cell == null ? "" : getMarkDisplayValue(cell)}
+                                  onFocus={lockGradeFilterForEditing}
                                   onChange={(e) =>
                                     handleMarkChange(s.id, a._id, e.target.value)
                                   }
-                                  onBlur={() => handleMarkBlur(s.id, a._id)}
+                                  onBlur={() => {
+                                    handleMarkBlur(s.id, a._id);
+                                    scheduleGradeFilterEditUnlock();
+                                  }}
                                   onKeyDown={handleKeyDown}
                                   data-row={rowIndex}
                                   data-col={actualColIndex}
