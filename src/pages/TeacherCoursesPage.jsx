@@ -94,7 +94,7 @@ export default function TeacherCoursesPage() {
           <br/>• Students
           <br/>• Assessments
           <br/>• Marks
-          <br/>• Complaints
+          <br/>• Issues
         </p>
       `,
       icon: "warning",

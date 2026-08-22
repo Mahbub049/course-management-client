@@ -411,7 +411,7 @@ export default function StudentCoursePage() {
 
   const complaintClosedMessage =
     course?.complaintSettings?.closedMessage ||
-    "Complaint submission is currently closed by the course teacher.";
+    "Issue submission is currently closed by the course teacher.";
 
   const duplicateAttendanceComplaint =
     complaintCategory === "attendance" &&
@@ -661,7 +661,7 @@ export default function StudentCoursePage() {
           )
         ) {
           setComplaintError(
-            "You have already submitted an attendance complaint for this date and period."
+            "You have already submitted an attendance issue for this date and period."
           );
           setComplaintLoading(false);
           return;
@@ -684,7 +684,7 @@ export default function StudentCoursePage() {
         });
       }
 
-      setComplaintSuccess("Your complaint has been submitted.");
+      setComplaintSuccess("Your issue has been submitted.");
       setMessage("");
       setRelatedTo("overall");
       setComplaintAttDate("");
@@ -710,7 +710,7 @@ export default function StudentCoursePage() {
         });
       }
 
-      const msg = err?.response?.data?.message || "Failed to submit complaint.";
+      const msg = err?.response?.data?.message || "Failed to submit issue.";
       setComplaintError(msg);
     } finally {
       setComplaintLoading(false);
@@ -845,7 +845,7 @@ export default function StudentCoursePage() {
     { key: "attendance", label: "Attendance" },
     { key: "submissions", label: "Submissions" },
     ...(showProjectTab ? [{ key: "project", label: "Project" }] : []),
-    { key: "complaint", label: "Raise Complaint", mobileLabel: "Complaint" },
+    { key: "complaint", label: "Raise Issue", mobileLabel: "Issue" },
   ];
 
   if (loading) {
@@ -951,10 +951,10 @@ export default function StudentCoursePage() {
 
                 <button
                   type="button"
-                  onClick={() => navigate("/student/complaints")}
+                  onClick={() => navigate("/student/issues")}
                   className="hidden items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 sm:inline-flex"
                 >
-                  My Complaints
+                  My Issues
                   <ChevronIcon />
                 </button>
               </div>
@@ -1041,7 +1041,7 @@ export default function StudentCoursePage() {
                 openComplaintTab();
               }}
             >
-              Raise Overall Complaint
+              Raise Overall Issue
               <ChatIcon />
             </button>
           </div>
@@ -1121,7 +1121,7 @@ export default function StudentCoursePage() {
                                   openComplaintTab();
                                 }}
                               >
-                                Raise Complaint
+                                Raise Issue
                                 <ChevronIcon />
                               </button>
                             </td>
@@ -1282,7 +1282,7 @@ export default function StudentCoursePage() {
                                               openComplaintTab();
                                             }}
                                           >
-                                            Raise Complaint
+                                            Raise Issue
                                             <ChevronIcon />
                                           </button>
                                         </td>
@@ -1347,7 +1347,7 @@ export default function StudentCoursePage() {
                                   openComplaintTab();
                                 }}
                               >
-                                Raise Complaint
+                                Raise Issue
                                 <ChevronIcon />
                               </button>
                             </td>
@@ -1657,7 +1657,7 @@ export default function StudentCoursePage() {
           <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-5 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <div>
               <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
-                Raise a Complaint
+                Raise an Issue
               </h2>
               <p className="mt-1 hidden text-sm text-slate-500 dark:text-slate-400 sm:block">
                 Send a clear issue report to the teacher for marks, attendance, or
@@ -1681,13 +1681,13 @@ export default function StudentCoursePage() {
 
             {duplicateAttendanceComplaint && (
               <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
-                An attendance complaint has already been submitted for this date and period.
+                An attendance issue has already been submitted for this date and period.
               </div>
             )}
 
             {!complaintsOpen ? (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-5 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-                <div className="font-semibold">Complaint submission is closed</div>
+                <div className="font-semibold">Issue submission is closed</div>
                 <p className="mt-1 leading-6">{complaintClosedMessage}</p>
               </div>
             ) : (
@@ -1700,7 +1700,7 @@ export default function StudentCoursePage() {
                       : "md:grid-cols-2",
                   ].join(" ")}
                 >
-                  <TopControlCard label="Category" hint="Choose complaint type.">
+                  <TopControlCard label="Category" hint="Choose issue type.">
                     <div className="relative">
                       <select
                         className="form-control h-12 w-full rounded-xl border border-slate-200 bg-white px-4 pr-10 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-violet-500"
@@ -1804,7 +1804,7 @@ export default function StudentCoursePage() {
 
                 <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900/80 sm:flex-row sm:items-center sm:justify-between">
                   <div className="hidden text-xs leading-5 text-slate-500 dark:text-slate-400 sm:block">
-                    Your teacher will review this complaint from the complaints panel
+                    Your teacher will review this issue from the issues panel
                     and may respond there.
                   </div>
 
@@ -1822,7 +1822,7 @@ export default function StudentCoursePage() {
                     ) : (
                       <>
                         <SendIcon />
-                        Submit Complaint
+                        Submit Issue
                       </>
                     )}
                   </button>
@@ -2065,7 +2065,7 @@ function AssessmentCard({ assessment, courseType, advancedRows = [], onComplaint
           className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-xs font-semibold text-violet-700 transition hover:bg-violet-100 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300 dark:hover:bg-violet-500/15"
           onClick={onComplaint}
         >
-          Raise Complaint
+          Raise Issue
           <ChevronIcon />
         </button>
       </div>

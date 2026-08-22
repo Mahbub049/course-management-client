@@ -33,9 +33,9 @@ const actionItems = [
     icon: <CounsellingIcon />,
   },
   {
-    title: "Complaints",
-    description: "Submit academic complaints and monitor replies from your teacher.",
-    route: "/student/complaints",
+    title: "Issues",
+    description: "Submit academic issues and monitor replies from your teacher.",
+    route: "/student/issues",
     accent: "indigo",
     icon: <ComplaintsIcon />,
   },

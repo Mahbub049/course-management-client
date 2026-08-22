@@ -152,7 +152,7 @@ function TeacherCreateCoursePage() {
 
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
               Add the basic academic information first. After creation, you can
-              manage students, assessments, marks, attendance, and complaints.
+              manage students, assessments, marks, attendance, and issues.
             </p>
           </div>
 

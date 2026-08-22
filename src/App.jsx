@@ -62,9 +62,10 @@ function App() {
         />
         <Route path="/student/courses" element={<StudentCoursesPage />} />
         <Route path="/student/courses/:courseId" element={<StudentCoursePage />} />
+        <Route path="/student/issues" element={<StudentComplaintsPage />} />
         <Route
           path="/student/complaints"
-          element={<StudentComplaintsPage />}
+          element={<Navigate to="/student/issues" replace />}
         />
         <Route path="/student/attendance" element={<StudentAttendanceSheetPage />} />
         <Route path="/student/counselling" element={<StudentCounsellingPage />} />
@@ -73,7 +74,11 @@ function App() {
         <Route path="/teacher/dashboard" element={<TeacherDashboard />} />
         <Route path="/teacher/create-course" element={<Navigate to="/teacher/courses" replace />} />
         <Route path="/teacher/courses/:courseId" element={<TeacherCoursePage />} />
-        <Route path="/teacher/complaints" element={<TeacherComplaintsPage />} />
+        <Route path="/teacher/issues" element={<TeacherComplaintsPage />} />
+        <Route
+          path="/teacher/complaints"
+          element={<Navigate to="/teacher/issues" replace />}
+        />
         <Route path="/teacher/attendance" element={<TeacherAttendancePage />} />
         <Route path="/teacher/register" element={<TeacherRegisterPage />} />
         <Route path="/teacher/courses" element={<TeacherCoursesPage />} />

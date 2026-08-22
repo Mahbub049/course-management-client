@@ -94,7 +94,7 @@ export default function StudentComplaintsPage() {
       });
     } catch (err) {
       console.error(err);
-      setError(err?.response?.data?.message || "Failed to load your complaints");
+      setError(err?.response?.data?.message || "Failed to load your issues");
     } finally {
       setLoading(false);
     }
@@ -184,7 +184,7 @@ export default function StudentComplaintsPage() {
   const openCourseCount = courses.filter(isComplaintsOpenForCourse).length;
   const selectedClosedMessage =
     selectedCourse?.complaintSettings?.closedMessage ||
-    "Complaint submission is currently closed by the course teacher.";
+    "Issue submission is currently closed by the course teacher.";
 
   const handleSubmitGeneralComplaint = async (e) => {
     e.preventDefault();
@@ -215,13 +215,13 @@ export default function StudentComplaintsPage() {
         message: message.trim(),
       });
 
-      setSubmitSuccess("Your general complaint has been submitted.");
+      setSubmitSuccess("Your general issue has been submitted.");
       setMessage("");
       await loadComplaints();
       setSelected(null);
     } catch (err) {
       console.error(err);
-      setSubmitError(err?.response?.data?.message || "Failed to submit complaint.");
+      setSubmitError(err?.response?.data?.message || "Failed to submit issue.");
     } finally {
       setSubmitLoading(false);
     }
@@ -237,11 +237,11 @@ export default function StudentComplaintsPage() {
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs font-semibold text-slate-700 backdrop-blur dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200">
               <ChatIcon />
-              Complaints
+              Issues
             </div>
 
             <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 dark:text-white md:text-3xl">
-              My Complaints
+              My Issues
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-400">
               Submit general course issues and track teacher replies from one place.
@@ -263,7 +263,7 @@ export default function StudentComplaintsPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-                Raise a General Complaint
+                Raise a General Issue
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 Use this for course-related issues except direct marks or attendance changes.
@@ -303,16 +303,16 @@ export default function StudentComplaintsPage() {
 
           {!coursesLoading && courses.length > 0 && openCourseCount === 0 && (
             <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-              <div className="font-semibold">Complaint submission is closed</div>
+              <div className="font-semibold">Issue submission is closed</div>
               <div className="opacity-90">
-                Complaint submission is currently closed for all of your courses.
+                Issue submission is currently closed for all of your courses.
               </div>
             </div>
           )}
 
           {!coursesLoading && selectedCourse && !selectedCourseComplaintsOpen && (
             <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-              <div className="font-semibold">Selected course is closed for complaints</div>
+              <div className="font-semibold">Selected course is closed for issues</div>
               <div className="opacity-90">{selectedClosedMessage}</div>
             </div>
           )}
@@ -400,7 +400,7 @@ export default function StudentComplaintsPage() {
                 ) : (
                   <>
                     <SendIcon />
-                    Submit General Complaint
+                    Submit General Issue
                   </>
                 )}
               </button>
@@ -419,7 +419,7 @@ export default function StudentComplaintsPage() {
 
       {error && (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
-          <div className="font-semibold">Could not load complaints</div>
+          <div className="font-semibold">Could not load issues</div>
           <div className="opacity-90">{error}</div>
         </div>
       )}
@@ -489,9 +489,9 @@ export default function StudentComplaintsPage() {
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.7fr),minmax(340px,1fr)]">
         <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800 sm:px-6">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white">Complaints</h2>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">Issues</h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Select a complaint to view full details and teacher reply.
+              Select an issue to view full details and teacher reply.
             </p>
           </div>
 
@@ -507,7 +507,7 @@ export default function StudentComplaintsPage() {
                 <EmptyIcon />
               </div>
               <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                No complaints found
+                No issues found
               </div>
               <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                 Try changing the filter or search text.
@@ -650,7 +650,7 @@ export default function StudentComplaintsPage() {
 
         <div className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800 sm:px-6">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white">Complaint Details</h2>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">Issue Details</h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Full message, reply, and current status.
             </p>
@@ -659,7 +659,7 @@ export default function StudentComplaintsPage() {
           <div className="p-5 sm:p-6">
             {!selected ? (
               <div className="flex min-h-[320px] items-center justify-center text-center text-sm text-slate-400 dark:text-slate-500">
-                Select a complaint from the list to view full details.
+                Select an issue from the list to view full details.
               </div>
             ) : (
               <div className="space-y-5">

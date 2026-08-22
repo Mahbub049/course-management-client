@@ -113,7 +113,7 @@ export default function TeacherComplaintsPage() {
         setCourses(Array.isArray(courseData) ? courseData : []);
       } catch (err) {
         console.error(err);
-        setError(err?.response?.data?.message || "Failed to load complaints");
+        setError(err?.response?.data?.message || "Failed to load issues");
       } finally {
         setLoading(false);
         setCourseSettingsLoading(false);
@@ -138,7 +138,7 @@ export default function TeacherComplaintsPage() {
       Swal.fire({
         icon: "success",
         title: "Done",
-        text: "Attendance updated and complaint resolved.",
+        text: "Attendance updated and issue resolved.",
         timer: 1800,
         showConfirmButton: false,
       });
@@ -147,7 +147,7 @@ export default function TeacherComplaintsPage() {
       Swal.fire({
         icon: "error",
         title: "Failed",
-        text: err?.response?.data?.message || "Failed to resolve attendance complaint.",
+        text: err?.response?.data?.message || "Failed to resolve attendance issue.",
       });
     } finally {
       setSaving(false);
@@ -186,7 +186,7 @@ export default function TeacherComplaintsPage() {
           allowStudentComplaints: nextValue,
           closedMessage:
             course?.complaintSettings?.closedMessage ||
-            "Complaint submission is currently closed by the course teacher.",
+            "Issue submission is currently closed by the course teacher.",
         },
       });
 
@@ -194,7 +194,7 @@ export default function TeacherComplaintsPage() {
         allowStudentComplaints: nextValue,
         closedMessage:
           course?.complaintSettings?.closedMessage ||
-          "Complaint submission is currently closed by the course teacher.",
+          "Issue submission is currently closed by the course teacher.",
       };
 
       setCourses((prev) =>
@@ -208,10 +208,10 @@ export default function TeacherComplaintsPage() {
 
       Swal.fire({
         icon: "success",
-        title: nextValue ? "Complaints opened" : "Complaints closed",
+        title: nextValue ? "Issues opened" : "Issues closed",
         text: nextValue
-          ? "Students can submit complaints for this course now."
-          : "Students cannot submit new complaints for this course now.",
+          ? "Students can submit issues for this course now."
+          : "Students cannot submit new issues for this course now.",
         timer: 1600,
         showConfirmButton: false,
       });
@@ -222,7 +222,7 @@ export default function TeacherComplaintsPage() {
         title: "Failed",
         text:
           err?.response?.data?.message ||
-          "Failed to update complaint submission setting.",
+          "Failed to update issue submission setting.",
       });
     } finally {
       setTogglingCourseId("");
@@ -337,7 +337,7 @@ export default function TeacherComplaintsPage() {
       Swal.fire({
         icon: "success",
         title: "Updated",
-        text: `Complaint marked as ${STATUS_LABEL[newStatus] || newStatus}.`,
+        text: `Issue marked as ${STATUS_LABEL[newStatus] || newStatus}.`,
         timer: 1500,
         showConfirmButton: false,
       });
@@ -346,7 +346,7 @@ export default function TeacherComplaintsPage() {
       Swal.fire({
         icon: "error",
         title: "Failed",
-        text: err?.response?.data?.message || "Failed to update complaint. Please try again.",
+        text: err?.response?.data?.message || "Failed to update issue. Please try again.",
       });
     } finally {
       setSaving(false);
@@ -357,8 +357,8 @@ export default function TeacherComplaintsPage() {
     if (!selected) return;
 
     const result = await Swal.fire({
-      title: "Reject complaint?",
-      text: "This will mark the complaint as rejected.",
+      title: "Reject issue?",
+      text: "This will mark the issue as rejected.",
       icon: "warning",
       showCancelButton: true,
       confirmButtonText: "Yes, reject it",
@@ -376,7 +376,7 @@ export default function TeacherComplaintsPage() {
 
     const result = await Swal.fire({
       title: "Mark resolved?",
-      text: "This will mark the complaint as resolved.",
+      text: "This will mark the issue as resolved.",
       icon: "question",
       showCancelButton: true,
       confirmButtonText: "Yes, mark resolved",
@@ -404,7 +404,7 @@ export default function TeacherComplaintsPage() {
         <div className="min-w-0">
           <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
             <ChatIcon />
-            Complaints Center
+            Issues Center
           </div>
 
           <h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
@@ -412,7 +412,7 @@ export default function TeacherComplaintsPage() {
           </h1>
 
           <p className="mt-2 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
-            Review student complaints, reply clearly, and update complaint status from one place.
+            Review student issues, reply clearly, and update issue status from one place.
           </p>
         </div>
 
@@ -440,7 +440,7 @@ export default function TeacherComplaintsPage() {
         >
           <div>
             <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-              Student Complaint Submission
+              Student Issue Submission
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
               <span>Course-wise access is hidden until needed.</span>
@@ -465,7 +465,7 @@ export default function TeacherComplaintsPage() {
             aria-expanded={showCourseControls}
           >
             <ControlsIcon />
-            {showCourseControls ? "Hide Access Controls" : "Manage Complaint Access"}
+            {showCourseControls ? "Hide Access Controls" : "Manage Issue Access"}
             <span className={`transition-transform ${showCourseControls ? "rotate-180" : ""}`}>
               <ChevronDownIcon />
             </span>
@@ -476,7 +476,7 @@ export default function TeacherComplaintsPage() {
           <div className="p-5">
             {courseSettingsLoading ? (
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
-                Loading course complaint settings...
+                Loading course issue settings...
               </div>
             ) : courses.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-slate-200 px-5 py-6 text-center text-sm text-slate-400 dark:border-slate-700 dark:text-slate-500">
@@ -508,7 +508,7 @@ export default function TeacherComplaintsPage() {
                               : "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300"
                           }`}
                         >
-                          {isOpen ? "Complaints Open" : "Complaints Closed"}
+                          {isOpen ? "Issues Open" : "Issues Closed"}
                         </div>
                       </div>
 
@@ -641,13 +641,13 @@ export default function TeacherComplaintsPage() {
 
       {loading && (
         <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-          Loading complaints...
+          Loading issues...
         </div>
       )}
 
       {error && (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
-          <div className="font-semibold">Could not load complaints</div>
+          <div className="font-semibold">Could not load issues</div>
           <div>{error}</div>
         </div>
       )}
@@ -657,7 +657,7 @@ export default function TeacherComplaintsPage() {
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
             <div>
               <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                Complaints
+                Issues
               </div>
               <div className="text-xs text-slate-500 dark:text-slate-400">
                 Showing {filteredComplaints.length} result
@@ -669,7 +669,7 @@ export default function TeacherComplaintsPage() {
           <div className="max-h-[70vh] overflow-y-auto p-3">
             {filteredComplaints.length === 0 && !loading ? (
               <div className="rounded-2xl border border-dashed border-slate-200 px-6 py-12 text-center text-sm text-slate-400 dark:border-slate-700 dark:text-slate-500">
-                No complaints found for the current filters.
+                No issues found for the current filters.
               </div>
             ) : (
               <div className="space-y-3">
@@ -787,7 +787,7 @@ export default function TeacherComplaintsPage() {
                 {STATUS_LABEL[selected.status] || selected.status || "Open"}
               </span>
             ) : (
-              <span className="text-xs text-slate-400 dark:text-slate-500">Select a complaint</span>
+              <span className="text-xs text-slate-400 dark:text-slate-500">Select an issue</span>
             )}
           </div>
 
@@ -798,10 +798,10 @@ export default function TeacherComplaintsPage() {
                   <ChatIcon />
                 </div>
                 <h3 className="mt-4 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                  No complaint selected
+                  No issue selected
                 </h3>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  Choose a complaint from the left panel to view its details.
+                  Choose an issue from the left panel to view its details.
                 </p>
               </div>
             ) : (
@@ -939,7 +939,7 @@ export default function TeacherComplaintsPage() {
                     data-pending-label="Rejecting…"
                     className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                   >
-                    ✕ Reject Complaint
+                    ✕ Reject Issue
                   </button>
                 </div>
               </div>

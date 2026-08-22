@@ -74,7 +74,7 @@ export default function StudentAttendanceSheetPage() {
         setSubmittedAttendanceKeys(keys);
       } catch (error) {
         // The server still enforces duplicate prevention if this optional lookup fails.
-        console.error("Failed to load existing attendance complaints", error);
+        console.error("Failed to load existing attendance issues", error);
       }
     })();
 
@@ -122,7 +122,7 @@ export default function StudentAttendanceSheetPage() {
 
   const complaintClosedMessage =
     selectedCourse?.complaintSettings?.closedMessage ||
-    "Complaint submission is currently closed by the course teacher.";
+    "Issue submission is currently closed by the course teacher.";
 
   const hasAttendanceComplaint = (row) => {
     if (!row || !courseId) return false;
@@ -145,7 +145,7 @@ export default function StudentAttendanceSheetPage() {
 
     if (hasAttendanceComplaint(row)) {
       setErr(
-        "You have already submitted an attendance complaint for this date and period."
+        "You have already submitted an attendance issue for this date and period."
       );
       return;
     }
@@ -171,7 +171,7 @@ export default function StudentAttendanceSheetPage() {
     if (!complaintsOpen) return setErr(complaintClosedMessage);
     if (hasAttendanceComplaint(issueRow)) {
       return setErr(
-        "You have already submitted an attendance complaint for this date and period."
+        "You have already submitted an attendance issue for this date and period."
       );
     }
 
@@ -203,7 +203,7 @@ export default function StudentAttendanceSheetPage() {
       });
 
       setIssueSuccess(
-        "Attendance issue submitted successfully. Another complaint cannot be submitted for this same class."
+        "Attendance issue submitted successfully. Another issue cannot be submitted for this same class."
       );
     } catch (e) {
       if (e?.response?.data?.code === "DUPLICATE_ATTENDANCE_COMPLAINT") {
@@ -289,7 +289,7 @@ export default function StudentAttendanceSheetPage() {
 
         {selectedCourse && !complaintsOpen && (
           <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-            <div className="font-semibold">Complaint submission is closed</div>
+            <div className="font-semibold">Issue submission is closed</div>
             <div className="opacity-90">{complaintClosedMessage}</div>
           </div>
         )}
@@ -393,7 +393,7 @@ export default function StudentAttendanceSheetPage() {
                               className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                               title={
                                 hasAttendanceComplaint(r)
-                                  ? "An attendance complaint has already been submitted for this class."
+                                  ? "An attendance issue has already been submitted for this class."
                                   : undefined
                               }
                             >
@@ -466,7 +466,7 @@ export default function StudentAttendanceSheetPage() {
                   Report Attendance Issue
                 </h3>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  This will be sent to the teacher in the complaints center.
+                  This will be sent to the teacher in the issues center.
                 </p>
               </div>
 

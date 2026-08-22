@@ -116,7 +116,7 @@ if (role !== "teacher") return;
 
         <div className="grid grid-cols-2 gap-3">
           <MobileCountCard
-            title="Pending Complaints"
+            title="Pending Issues"
             value={statsLoading ? "..." : String(pendingComplaintsCount)}
             icon={<AlertIcon />}
             accent="amber"
@@ -182,7 +182,7 @@ if (role !== "teacher") return;
             </h1>
 
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-              Manage courses, attendance, marks and complaints from one clean
+              Manage courses, attendance, marks and issues from one clean
               workspace designed for both desktop and mobile use.
             </p>
           </div>
@@ -265,9 +265,9 @@ if (role !== "teacher") return;
         />
 
         <StatCard
-          title="Pending Complaints"
+          title="Pending Issues"
           value={statsLoading ? "..." : String(pendingComplaintsCount)}
-          hint="Open + In-review complaints"
+          hint="Open + In-review issues"
           icon={<AlertIcon />}
           accent="amber"
         />
@@ -308,9 +308,9 @@ if (role !== "teacher") return;
         />
 
         <ActionCard
-          title="Complaints"
-          desc="Review attendance and marks complaints, reply quickly and keep issue tracking clean."
-          onClick={() => navigate("/teacher/complaints")}
+          title="Issues"
+          desc="Review attendance and marks issues, reply quickly and keep issue tracking clean."
+          onClick={() => navigate("/teacher/issues")}
           icon={<AlertIcon />}
           accent="from-amber-500/10 via-orange-500/10 to-rose-500/10 dark:from-amber-500/10 dark:via-orange-500/5 dark:to-rose-500/10"
         />

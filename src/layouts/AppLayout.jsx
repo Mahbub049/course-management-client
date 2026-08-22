@@ -85,7 +85,7 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
       label: "Attendance Sheet",
       icon: <TableIcon />,
     },
-    { to: "/teacher/complaints", label: "Complaints", icon: <AlertIcon /> },
+    { to: "/teacher/issues", label: "Issues", icon: <AlertIcon /> },
     { to: "/teacher/routine", label: "Routine", icon: <RoutineIcon /> },
     { to: "/teacher/counselling", label: "Counselling", icon: <CounsellingIcon /> },
     {
@@ -101,7 +101,7 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
   const studentLinks = [
     { to: "/student/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
     { to: "/student/courses", label: "My Courses", icon: <BookIcon /> },
-    { to: "/student/complaints", label: "Complaints", icon: <AlertIcon /> },
+    { to: "/student/issues", label: "Issues", icon: <AlertIcon /> },
     { to: "/student/attendance", label: "Attendance", icon: <CalendarIcon /> },
     { to: "/student/counselling", label: "Counselling", icon: <CounsellingIcon /> },
     {

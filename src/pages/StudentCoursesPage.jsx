@@ -102,7 +102,7 @@ function StudentCoursesPage() {
 
             <p className="mt-2 hidden max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400 sm:block">
               Open any course to view your marks, current total, grade, and submit
-              complaints when needed.
+              issues when needed.
             </p>
           </div>
 
