@@ -181,6 +181,7 @@ function getAssessmentDefaults(type, courseType) {
     theory_final: { name: 'Theory Final', fullMarks: '30' },
     lab_final: { name: 'Lab Final', fullMarks: '10' },
     assignment: { name: 'Assignment', fullMarks: '10' },
+    presentation: { name: 'Presentation', fullMarks: '10' },
     attendance: { name: 'Attendance', fullMarks: '5' },
   };
 
@@ -662,6 +663,7 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
           { value: "theory_final", label: "Theory Final only" },
           { value: "lab_final", label: "Lab Final only" },
           { value: "assignment", label: "Assignment" },
+          { value: "presentation", label: "Presentation" },
           { value: "attendance", label: "Attendance" },
         ]
         : [
@@ -677,7 +679,7 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
     courseType === "lab"
       ? "Lab Assessments (average → 25), Attendance (5), and reusable Structured Lab Mid (30) / Lab Final (40) breakdowns."
       : courseType === "hybrid"
-        ? `${getCtPolicyLabel(policyForm)}, Theory Mid (20), Lab Mid (10), Theory Final (30), Lab Final (10), Assignment (remaining theory practice marks), Attendance (5).`
+        ? `${getCtPolicyLabel(policyForm)}, Theory Mid (20), Lab Mid (10), Theory Final (30), Lab Final (10), Assignment/Presentation (one combined Assignment category), Attendance (5).`
         : `${getCtPolicyLabel(policyForm)}, Mid (30), Final (40), Assignment/Presentation (10), Attendance (5).`;
 
   const genericComponentTotal = useMemo(
@@ -2248,6 +2250,7 @@ export default function TabAssessments({ courseId, course, onCourseUpdated }) {
                         <QuickPill label="Lab Mid only (10)" onClick={() => quickAdd("Lab Mid", 10, "lab_mid")} />
                         <QuickPill label="Theory Final only (30)" onClick={() => quickAdd("Theory Final", 30, "theory_final")} />
                         <QuickPill label="Lab Final only (10)" onClick={() => quickAdd("Lab Final", 10, "lab_final")} />
+                        <QuickPill label="Presentation (10)" onClick={() => quickAdd("Presentation", 10, "presentation")} />
                         <QuickPill label="Assignment (10)" onClick={() => quickAdd("Assignment", 10, "assignment")} />
                         <QuickPill label="Assignment (15)" onClick={() => quickAdd("Assignment", 15, "assignment")} />
                         <QuickPill label="Attendance (5)" onClick={() => quickAdd("Attendance", 5, "attendance")} />

@@ -223,6 +223,72 @@ function getHybridAssignmentWeight(course) {
   return Math.max(0, 25 - getCtMainWeight(course));
 }
 
+function findAssignmentAssessment(assessments = []) {
+  return (assessments || []).find((assessment) =>
+    String(assessment?.name || "").toLowerCase().includes("assign")
+  );
+}
+
+function findPresentationAssessment(assessments = []) {
+  return (assessments || []).find((assessment) =>
+    String(assessment?.name || "").toLowerCase().includes("present")
+  );
+}
+
+function getAssignmentMainWeight(course) {
+  return getCourseType(course) === "hybrid"
+    ? getHybridAssignmentWeight(course)
+    : 10;
+}
+
+function computeAssignmentMain(course, assessments = [], rowMarks = {}) {
+  const assignment = findAssignmentAssessment(assessments);
+  const presentation = findPresentationAssessment(assessments);
+  const targetWeight = getAssignmentMainWeight(course);
+
+  if (targetWeight <= 0 || (!assignment && !presentation)) return 0;
+
+  // Assignment + Presentation are two parts of one Assignment category.
+  // When both exist, each contributes exactly half of the category weight,
+  // regardless of whether its own full mark is 5, 10, or another value.
+  if (assignment && presentation) {
+    const eachWeight = targetWeight / 2;
+    return roundPolicyTotal(
+      pct(
+        getMainMarkValue(rowMarks?.[assignment._id]),
+        assignment.fullMarks
+      ) *
+        eachWeight +
+        pct(
+          getMainMarkValue(rowMarks?.[presentation._id]),
+          presentation.fullMarks
+        ) *
+          eachWeight
+    );
+  }
+
+  const single = assignment || presentation;
+  return roundPolicyTotal(
+    pct(getMainMarkValue(rowMarks?.[single._id]), single.fullMarks) *
+      targetWeight
+  );
+}
+
+function shouldRenderAssignmentMainAfter(assessment, assessments = []) {
+  const assignment = findAssignmentAssessment(assessments);
+  const presentation = findPresentationAssessment(assessments);
+
+  if (!assignment || !presentation) return false;
+
+  const relevant = (assessments || []).filter(
+    (item) =>
+      String(item?._id) === String(assignment._id) ||
+      String(item?._id) === String(presentation._id)
+  );
+
+  return String(relevant[relevant.length - 1]?._id) === String(assessment?._id);
+}
+
 function findAssessmentByName(assessments = [], matcher) {
   return (assessments || []).find((assessment) =>
     matcher(String(assessment?.name || "").toLowerCase())
@@ -478,7 +544,12 @@ function getAssessmentPlanSummary(course, assessments = []) {
     }
   } else if (courseType === "hybrid") {
     if (list.some((a) => isCtAssessment(a?.name))) regularTotal += getCtMainWeight(course);
-    if (list.some((a) => String(a?.name || "").toLowerCase().includes("assign"))) {
+    if (
+      list.some((a) => {
+        const n = String(a?.name || "").toLowerCase();
+        return n.includes("assign") || n.includes("present");
+      })
+    ) {
       regularTotal += getHybridAssignmentWeight(course);
     }
     if (hasAttendance) regularTotal += 5;
@@ -1056,10 +1127,7 @@ function computeTotal100(course, assessments, rowMarks, attendanceMarks5 = 0) {
     const labMid = findHybridLabMid(list);
     const theoryFinal = findHybridTheoryFinal(list);
     const labFinal = findHybridLabFinal(list);
-    const assignment = list.find((a) => name(a).includes("assign"));
-
     const ctScore = computeCtScore(course, list, rowMarks);
-    const assignmentWeight = getHybridAssignmentWeight(course);
 
     const theoryMidScore20 = theoryMid
       ? pct(getMainMarkValue(rowMarks?.[theoryMid._id]), theoryMid.fullMarks) * 20
@@ -1077,9 +1145,7 @@ function computeTotal100(course, assessments, rowMarks, attendanceMarks5 = 0) {
       ? pct(getMainMarkValue(rowMarks?.[labFinal._id]), labFinal.fullMarks) * 10
       : 0;
 
-    const assignmentScore = assignment
-      ? pct(getMainMarkValue(rowMarks?.[assignment._id]), assignment.fullMarks) * assignmentWeight
-      : 0;
+    const assignmentScore = computeAssignmentMain(course, list, rowMarks);
 
     return roundPolicyTotal(
       ctScore +
@@ -2380,10 +2446,22 @@ export default function TabMarks({ courseId, course }) {
           fullMarks: 40,
         });
       }
+
+      if (
+        courseType === "hybrid" &&
+        shouldRenderAssignmentMainAfter(assessment, sortedAssessments)
+      ) {
+        columns.push({
+          type: "assignment_main",
+          key: "assignment_main",
+          label: "Assignment (Main)",
+          fullMarks: getHybridAssignmentWeight(course),
+        });
+      }
     });
 
     return columns;
-  }, [nonCtAssessments, courseType, sortedAssessments]);
+  }, [nonCtAssessments, courseType, sortedAssessments, course]);
 
   const markInputAssessments = useMemo(() => {
     return getMarkInputAssessments(courseType, sortedAssessments);
@@ -4109,47 +4187,7 @@ export default function TabMarks({ courseId, course }) {
     };
 
     const getAssignmentValue = (row) => {
-      const assignment = assessmentList.find((assessment) =>
-        assessmentName(assessment).includes("assign")
-      );
-      const presentation = assessmentList.find((assessment) =>
-        assessmentName(assessment).includes("present")
-      );
-
-      if (courseType === "hybrid") {
-        if (!assignment) return 0;
-        return roundPolicyTotal(
-          pct(
-            getMainMarkValue(row?.[assignment._id]),
-            Number(assignment.fullMarks || 0)
-          ) * getHybridAssignmentWeight(course)
-        );
-      }
-
-      if (assignment && presentation) {
-        const assignmentScore =
-          pct(
-            getMainMarkValue(row?.[assignment._id]),
-            Number(assignment.fullMarks || 0)
-          ) * 5;
-        const presentationScore =
-          pct(
-            getMainMarkValue(row?.[presentation._id]),
-            Number(presentation.fullMarks || 0)
-          ) * 5;
-
-        return roundPolicyTotal(assignmentScore + presentationScore);
-      }
-
-      const single = assignment || presentation;
-      if (!single) return 0;
-
-      return roundPolicyTotal(
-        pct(
-          getMainMarkValue(row?.[single._id]),
-          Number(single.fullMarks || 0)
-        ) * 10
-      );
+      return computeAssignmentMain(course, assessmentList, row);
     };
 
     const isLabCourse = courseType === "lab";
@@ -4331,12 +4369,10 @@ export default function TabMarks({ courseId, course }) {
           a?.structureType === "lab_final" && getStructuredLabPeriod(a) === "final"
       ) || getAssessmentByName(["final"]);
 
-    const assignmentAssessment = getAssessmentByName(["assign", "present"]);
     const hybridTheoryMid = findHybridTheoryMid(sortedAssessments);
     const hybridLabMid = findHybridLabMid(sortedAssessments);
     const hybridTheoryFinal = findHybridTheoryFinal(sortedAssessments);
     const hybridLabFinal = findHybridLabFinal(sortedAssessments);
-    const hybridAssignment = getAssessmentByName(["assign"]);
     const ctWeight = getCtMainWeight(course);
     const hybridAssignmentWeight = getHybridAssignmentWeight(course);
 
@@ -4378,7 +4414,7 @@ export default function TabMarks({ courseId, course }) {
             "Student Name",
             "Intake",
             "Class Test\n15",
-            "Assignment /\nPresentation\n10",
+            "Assignment\n10",
             "Mid Term\n30",
             "Final\n40",
             "Attendance\n5",
@@ -4424,7 +4460,7 @@ export default function TabMarks({ courseId, course }) {
           s.name || "",
           intakeValue,
           roundPolicyTotal(computeCtScore(course, assessments, row)).toFixed(2),
-          scaled(hybridAssignment, hybridAssignmentWeight),
+          Number(computeAssignmentMain(course, assessments, row)).toFixed(2),
           scaled(hybridTheoryMid, 20),
           scaled(hybridLabMid, 10),
           Number(computeHybridMidTotal(assessments, row)).toFixed(2),
@@ -4443,9 +4479,7 @@ export default function TabMarks({ courseId, course }) {
         s.name || "",
         intakeValue,
         roundPolicyTotal(computeCtScore(course, assessments, row)).toFixed(2),
-        assignmentAssessment
-          ? Number(getMainMarkValue(row[assignmentAssessment._id]) || 0).toFixed(2)
-          : "0.00",
+        Number(computeAssignmentMain(course, assessments, row)).toFixed(2),
         midAssessment
           ? Number(getMainMarkValue(row[midAssessment._id]) || 0).toFixed(2)
           : "0.00",
@@ -4908,11 +4942,11 @@ export default function TabMarks({ courseId, course }) {
                   </colgroup>
                   <thead className="bg-slate-50 dark:bg-slate-800 relative z-30">
                     <tr className="border-b border-slate-200 dark:border-slate-700">
-                      <th className="sticky top-0 left-0 z-30 w-[110px] min-w-[110px] bg-slate-50 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      <th className="sticky top-0 z-20 w-[110px] min-w-[110px] bg-slate-50 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 md:left-0 md:z-30 dark:bg-slate-800 dark:text-slate-300">
                         Roll
                       </th>
 
-                      <th className="sticky top-0 left-[110px] z-30 w-[220px] min-w-[220px] bg-slate-50 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      <th className="sticky top-0 z-20 w-[220px] min-w-[220px] bg-slate-50 px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 md:left-[110px] md:z-30 dark:bg-slate-800 dark:text-slate-300">
                         Student
                       </th>
 
@@ -4963,7 +4997,11 @@ export default function TabMarks({ courseId, course }) {
                       </th>
 
                       {nonCtDisplayColumns.map((col) => {
-                        if (col.type === "hybrid_mid_total" || col.type === "hybrid_final_total") {
+                        if (
+                          col.type === "hybrid_mid_total" ||
+                          col.type === "hybrid_final_total" ||
+                          col.type === "assignment_main"
+                        ) {
                           return (
                             <th
                               key={col.key}
@@ -5061,11 +5099,11 @@ export default function TabMarks({ courseId, course }) {
                           key={s.id}
                           className="border-b border-slate-100 last:border-0 dark:border-slate-800"
                         >
-                          <td className="sticky left-0 z-10 w-[110px] min-w-[110px] whitespace-nowrap bg-white px-4 py-3 font-semibold text-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                          <td className="w-[110px] min-w-[110px] whitespace-nowrap bg-white px-4 py-3 font-semibold text-slate-700 md:sticky md:left-0 md:z-10 dark:bg-slate-900 dark:text-slate-200">
                             {s.roll}
                           </td>
 
-                          <td className="sticky left-[110px] z-10 w-[220px] min-w-[220px] whitespace-nowrap bg-white px-4 py-3 dark:bg-slate-900">
+                          <td className="w-[220px] min-w-[220px] whitespace-nowrap bg-white px-4 py-3 md:sticky md:left-[110px] md:z-10 dark:bg-slate-900">
                             <div className="font-semibold text-slate-900 dark:text-slate-100">
                               {s.name}
                             </div>
@@ -5147,6 +5185,18 @@ export default function TabMarks({ courseId, course }) {
                                 <td key={col.key} className="w-[150px] min-w-[150px] px-4 py-3 text-center">
                                   <span className="inline-flex min-w-[78px] items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
                                     {Number(computeHybridFinalTotal(assessments, row)).toFixed(1)}
+                                  </span>
+                                </td>
+                              );
+                            }
+
+                            if (col.type === "assignment_main") {
+                              return (
+                                <td key={col.key} className="w-[150px] min-w-[150px] px-4 py-3 text-center">
+                                  <span className="inline-flex min-w-[78px] items-center justify-center rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-bold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
+                                    {Number(
+                                      computeAssignmentMain(course, assessments, row)
+                                    ).toFixed(1)}
                                   </span>
                                 </td>
                               );
