@@ -927,30 +927,64 @@ const saveSetup = async () => {
     }
   };
 
-  const handleDraftChange = (studentId, blueprintId, itemKey, rawValue, maxMarks) => {
-    if (rawValue === "") {
-      setMarkDraft((prev) => ({
-        ...prev,
-        [`${studentId}__${blueprintId}`]: {
-          ...(prev[`${studentId}__${blueprintId}`] || {}),
-          [itemKey]: "",
-        },
-      }));
-      return;
-    }
-
-    const numeric = Number(rawValue);
-    if (!Number.isFinite(numeric)) return;
-
-    const clamped = Math.max(0, Math.min(numeric, Number(maxMarks || 0)));
-
+  const setDraftValue = (studentId, blueprintId, itemKey, value) => {
     setMarkDraft((prev) => ({
       ...prev,
       [`${studentId}__${blueprintId}`]: {
         ...(prev[`${studentId}__${blueprintId}`] || {}),
-        [itemKey]: clamped,
+        [itemKey]: value,
       },
     }));
+  };
+
+  const handleDraftChange = (studentId, blueprintId, itemKey, rawValue, maxMarks) => {
+    let nextValue = String(rawValue ?? "").replace(",", ".");
+
+    if (nextValue === "") {
+      setDraftValue(studentId, blueprintId, itemKey, "");
+      return;
+    }
+
+    // Keep incomplete decimal values (for example "4." or "15.") as text while
+    // the user is typing. Converting them to Number immediately removes the dot
+    // and makes values such as 4.5 / 15.5 impossible to enter naturally.
+    if (nextValue === ".") nextValue = "0.";
+    if (!/^\d*(?:\.\d{0,2})?$/.test(nextValue)) return;
+
+    if (nextValue.endsWith(".")) {
+      setDraftValue(studentId, blueprintId, itemKey, nextValue);
+      return;
+    }
+
+    const numeric = Number(nextValue);
+    if (!Number.isFinite(numeric)) return;
+
+    const max = Number(maxMarks || 0);
+    if (numeric > max) {
+      setDraftValue(studentId, blueprintId, itemKey, round2(max));
+      return;
+    }
+
+    setDraftValue(studentId, blueprintId, itemKey, nextValue);
+  };
+
+  const handleDraftBlur = (studentId, blueprintId, itemKey, maxMarks) => {
+    const currentValue = getDraftValue(studentId, blueprintId, itemKey);
+    if (currentValue === "") return;
+
+    const numeric = Number(currentValue);
+    if (!Number.isFinite(numeric)) {
+      setDraftValue(studentId, blueprintId, itemKey, "");
+      return;
+    }
+
+    const max = Number(maxMarks || 0);
+    setDraftValue(
+      studentId,
+      blueprintId,
+      itemKey,
+      round2(Math.max(0, Math.min(numeric, max)))
+    );
   };
 
   const getDraftValue = (studentId, blueprintId, itemKey) => {
@@ -3874,6 +3908,14 @@ const saveSetup = async () => {
                                         blueprint._id,
                                         item.key,
                                         e.target.value,
+                                        item.marks
+                                      )
+                                    }
+                                    onBlur={() =>
+                                      handleDraftBlur(
+                                        student.studentId,
+                                        blueprint._id,
+                                        item.key,
                                         item.marks
                                       )
                                     }

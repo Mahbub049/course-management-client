@@ -236,6 +236,9 @@ export default function TeacherNotebookPage() {
   const [refreshingStudents, setRefreshingStudents] = useState(false);
   const saveTimerRef = useRef(null);
   const lastSavedRef = useRef("");
+  const selectedNoteRef = useRef(null);
+  const saveInFlightRef = useRef(false);
+  const pendingSaveRef = useRef(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -258,27 +261,90 @@ export default function TeacherNotebookPage() {
   useEffect(() => { loadData(); }, []);
 
   useEffect(() => {
+    selectedNoteRef.current = selectedNote;
+  }, [selectedNote]);
+
+  const persistNotebookSnapshot = async (initialSnapshot) => {
+    if (!initialSnapshot) return;
+
+    if (saveInFlightRef.current) {
+      pendingSaveRef.current = initialSnapshot;
+      return;
+    }
+
+    saveInFlightRef.current = true;
+    let snapshot = initialSnapshot;
+
+    try {
+      while (snapshot) {
+        pendingSaveRef.current = null;
+        const noteId = getNoteId(snapshot);
+        if (!noteId) break;
+
+        const serializedSnapshot = serializeNote(snapshot);
+        const activeNote = selectedNoteRef.current;
+        if (getNoteId(activeNote) === noteId) setSaveStatus("Saving...");
+
+        try {
+          const saved = await updateNotebookNote(noteId, buildSavePayload(snapshot));
+          const latestNote = selectedNoteRef.current;
+          const isStillActive = getNoteId(latestNote) === noteId;
+          const hasNewerLocalChanges =
+            isStillActive && serializeNote(latestNote) !== serializedSnapshot;
+
+          // Never let an older autosave response overwrite text/marks that the
+          // teacher entered while that request was in flight.
+          if (isStillActive) {
+            lastSavedRef.current = serializeNote(saved);
+            if (!hasNewerLocalChanges) {
+              setSelectedNote((current) =>
+                current && getNoteId(current) === noteId ? { ...current, ...saved } : current
+              );
+              setSaveStatus("Saved");
+            } else {
+              setSaveStatus("Unsaved changes");
+            }
+          }
+
+          setNotes((prev) =>
+            prev.map((item) => (getNoteId(item) === noteId ? { ...item, ...saved } : item))
+          );
+        } catch (err) {
+          console.error(err);
+          if (getNoteId(selectedNoteRef.current) === noteId) setSaveStatus("Save failed");
+        }
+
+        snapshot = pendingSaveRef.current;
+      }
+    } finally {
+      saveInFlightRef.current = false;
+
+      // A change can arrive in the tiny gap after the loop checked the queue
+      // but before the in-flight flag was cleared. Save that latest snapshot too.
+      if (pendingSaveRef.current) {
+        const queuedSnapshot = pendingSaveRef.current;
+        pendingSaveRef.current = null;
+        void persistNotebookSnapshot(queuedSnapshot);
+      }
+    }
+  };
+
+  useEffect(() => {
     if (!selectedNote) return undefined;
     const serialized = serializeNote(selectedNote);
     if (serialized === lastSavedRef.current) return undefined;
+
     setSaveStatus("Unsaved changes");
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(async () => {
-      const noteId = getNoteId(selectedNote);
-      if (!noteId) return;
-      try {
-        setSaveStatus("Saving...");
-        const saved = await updateNotebookNote(noteId, buildSavePayload(selectedNote));
-        lastSavedRef.current = serializeNote(saved);
-        setSelectedNote((current) => current && getNoteId(current) === noteId ? { ...current, ...saved } : current);
-        setNotes((prev) => prev.map((item) => getNoteId(item) === noteId ? { ...item, ...saved } : item));
-        setSaveStatus("Saved");
-      } catch (err) {
-        console.error(err);
-        setSaveStatus("Save failed");
-      }
-    }, 900);
-    return () => saveTimerRef.current && clearTimeout(saveTimerRef.current);
+
+    const snapshot = selectedNote;
+    saveTimerRef.current = setTimeout(() => {
+      void persistNotebookSnapshot(snapshot);
+    }, 650);
+
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
   }, [selectedNote]);
 
   const semesterOptions = useMemo(() => [...new Set([...courses.map((c) => semesterKey(c.semester, c.year)), ...notes.map(getNoteSemesterKey)].filter(Boolean))].sort().reverse(), [courses, notes]);
