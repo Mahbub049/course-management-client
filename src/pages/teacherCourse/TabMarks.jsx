@@ -138,6 +138,14 @@ function getStructuredLabPeriod(assessment) {
     : "final";
 }
 
+function isMidAssessment(assessment) {
+  const name = String(assessment?.name || "").toLowerCase();
+  if (assessment?.structureType === "lab_final") {
+    return getStructuredLabPeriod(assessment) === "mid";
+  }
+  return name.includes("mid") && !name.includes("final");
+}
+
 function isFinalAssessment(assessment) {
   const name = String(assessment?.name || "").toLowerCase();
   if (assessment?.structureType === "lab_final") {
@@ -153,7 +161,7 @@ function isAttendanceAssessment(assessment) {
 
 function studentHasFinalIncomplete(assessments, rowMarks) {
   return (assessments || []).some((assessment) => {
-    if (!isFinalAssessment(assessment)) return false;
+    if (!isMidAssessment(assessment) && !isFinalAssessment(assessment)) return false;
     return isIncompleteCell(rowMarks?.[assessment._id]);
   });
 }
@@ -456,6 +464,7 @@ function getGradeImprovementAdvice(total) {
 function getFinalCompletionNotice(course, assessments, rowMarks, attendanceMarks5, inputAssessments, planTotal) {
   if (Number(planTotal || 0) < 100) return null;
   if (!isRowCompleteForFinalCheck(inputAssessments, rowMarks)) return null;
+  if (studentHasFinalIncomplete(assessments, rowMarks)) return null;
 
   const total = computeTotal100(course, assessments, rowMarks, attendanceMarks5);
 
@@ -957,9 +966,14 @@ function buildAutoExcelImportMappings(columns = [], targets = []) {
 
 function getImportValueKind(value) {
   const raw = String(value ?? "").trim();
+  const normalized = raw.toLowerCase();
+
   if (!raw) return { kind: "blank", value: null };
-  if (raw.toUpperCase() === "A" || raw.toLowerCase() === "absent") {
+  if (raw.toUpperCase() === "A" || normalized === "absent") {
     return { kind: "absent", value: 0 };
+  }
+  if (raw.toUpperCase() === "I" || normalized === "incomplete") {
+    return { kind: "incomplete", value: 0 };
   }
 
   const numeric = Number(value);
@@ -1019,10 +1033,23 @@ function getExcelImportSourceValue(row, column, columns = []) {
     .filter((value) => String(value ?? "").trim() !== "");
   if (!values.length) return direct;
 
-  const absentOnly = values.every(
-    (value) => ["a", "absent"].includes(String(value).trim().toLowerCase())
-  );
+  const statusValues = values.map((value) => String(value).trim().toLowerCase());
+  const absentOnly = statusValues.every((value) => ["a", "absent"].includes(value));
   if (absentOnly) return "A";
+
+  const incompleteOnly = statusValues.every((value) =>
+    ["i", "incomplete"].includes(value)
+  );
+  if (incompleteOnly) return "I";
+
+  const nonNumericStatusOnly = statusValues.every((value) =>
+    ["a", "absent", "i", "incomplete"].includes(value)
+  );
+  if (nonNumericStatusOnly) {
+    return statusValues.some((value) => ["i", "incomplete"].includes(value))
+      ? "I"
+      : "A";
+  }
 
   const numericValues = values.map(Number).filter(Number.isFinite);
   if (!numericValues.length) return direct;
@@ -2123,6 +2150,7 @@ export default function TabMarks({ courseId, course }) {
   const inputRefs = useRef([]);
   const originalStudentsRef = useRef([]);
   const excelImportInputRef = useRef(null);
+  const gradeFilterUnlockTimerRef = useRef(null);
 
   const [excelImport, setExcelImport] = useState({
     open: false,
@@ -2528,16 +2556,35 @@ export default function TabMarks({ courseId, course }) {
   };
 
   const lockGradeFilterForEditing = () => {
+    if (gradeFilterUnlockTimerRef.current) {
+      window.clearTimeout(gradeFilterUnlockTimerRef.current);
+      gradeFilterUnlockTimerRef.current = null;
+    }
+
     if (!selectedGradeFilter || gradeFilterSnapshotIds !== null) return;
     setGradeFilterSnapshotIds(buildCurrentGradeFilterSnapshot());
   };
 
   const releaseGradeFilterEditLock = () => {
+    if (gradeFilterUnlockTimerRef.current) {
+      window.clearTimeout(gradeFilterUnlockTimerRef.current);
+      gradeFilterUnlockTimerRef.current = null;
+    }
     setGradeFilterSnapshotIds(null);
   };
 
   const scheduleGradeFilterEditUnlock = () => {
-    window.setTimeout(releaseGradeFilterEditLock, 0);
+    if (gradeFilterUnlockTimerRef.current) {
+      window.clearTimeout(gradeFilterUnlockTimerRef.current);
+    }
+
+    // A blur can be immediately followed by focus on another mark cell. Keep
+    // the current grade-filter snapshot in that case so Backspace/Delete or
+    // normal typing cannot make the row disappear midway through editing.
+    gradeFilterUnlockTimerRef.current = window.setTimeout(() => {
+      gradeFilterUnlockTimerRef.current = null;
+      setGradeFilterSnapshotIds(null);
+    }, 0);
   };
 
   const visibleStudents = useMemo(() => {
@@ -2584,6 +2631,14 @@ export default function TabMarks({ courseId, course }) {
   useEffect(() => {
     inputRefs.current = [];
   }, [studentSearch, sortMode, selectedGradeFilter]);
+
+  useEffect(() => {
+    return () => {
+      if (gradeFilterUnlockTimerRef.current) {
+        window.clearTimeout(gradeFilterUnlockTimerRef.current);
+      }
+    };
+  }, []);
 
   const gradeCounts = useMemo(() => {
     const counts = {
@@ -4000,7 +4055,10 @@ export default function TabMarks({ courseId, course }) {
             skippedInvalid += 1;
             return;
           }
-          if (target.type === "submark" && parsedValue.kind === "absent") {
+          if (
+            target.type === "submark" &&
+            ["absent", "incomplete"].includes(parsedValue.kind)
+          ) {
             skippedInvalid += 1;
             return;
           }
@@ -4031,7 +4089,12 @@ export default function TabMarks({ courseId, course }) {
           if (target.type === "submark") {
             record.subMarks.set(target.subKey, Number(parsedValue.value || 0));
           } else {
-            record.regularStatus = parsedValue.kind === "absent" ? "absent" : "present";
+            record.regularStatus =
+              parsedValue.kind === "absent"
+                ? "absent"
+                : parsedValue.kind === "incomplete"
+                  ? "incomplete"
+                  : "present";
             record.regularValue = Number(parsedValue.value || 0);
           }
           importedCells += 1;

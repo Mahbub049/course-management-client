@@ -1001,6 +1001,46 @@ const saveSetup = async () => {
     );
   };
 
+  const getObeRowCompletionNotice = (studentId) => {
+    const totalConfiguredMarks = round2(
+      (markBlueprints || []).reduce(
+        (sum, blueprint) => sum + Number(blueprint.totalMarks || 0),
+        0
+      )
+    );
+
+    if (totalConfiguredMarks < 100) return null;
+
+    const allItems = (markBlueprints || []).flatMap((blueprint) =>
+      (blueprint.items || []).map((item) => ({ blueprint, item }))
+    );
+
+    if (!allItems.length) return null;
+
+    const allFilled = allItems.every(({ blueprint, item }) =>
+      String(getDraftValue(studentId, blueprint._id, item.key) ?? "").trim() !== ""
+    );
+
+    if (!allFilled) return null;
+
+    const totalObtained = round2(
+      (markBlueprints || []).reduce(
+        (sum, blueprint) => sum + getAssessmentDraftTotal(studentId, blueprint),
+        0
+      )
+    );
+
+    if (Math.abs(totalObtained - Math.round(totalObtained)) > 1e-9) {
+      return {
+        type: "error",
+        message: "Fraction not allowed after all assessments are filled.",
+        total: totalObtained,
+      };
+    }
+
+    return null;
+  };
+
     const sortedMarkStudents = useMemo(() => {
     const base = [...markStudents];
 
@@ -1155,6 +1195,20 @@ const saveSetup = async () => {
   const saveMarks = async () => {
     try {
       setMarkSaving(true);
+
+      const fractionalRows = markStudents.filter((student) =>
+        getObeRowCompletionNotice(student.studentId)
+      );
+
+      if (fractionalRows.length) {
+        const firstStudent = fractionalRows[0];
+        await Swal.fire({
+          icon: "warning",
+          title: "Fraction not allowed",
+          text: `${firstStudent.roll || firstStudent.name || "A student"} has a fractional final total after all assessments are filled. Final total must be a whole number.`,
+        });
+        return;
+      }
 
       const records = [];
 
@@ -3885,6 +3939,11 @@ const saveSetup = async () => {
                               <div className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
                                 {student.name}
                               </div>
+                              {getObeRowCompletionNotice(student.studentId) && (
+                                <div className="mt-2 max-w-[180px] rounded-lg bg-rose-50 px-2 py-1 text-[10px] font-semibold leading-tight text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">
+                                  Fraction not allowed after all assessments are filled.
+                                </div>
+                              )}
                             </td>
 
                             {markBlueprints.flatMap((blueprint) => [
