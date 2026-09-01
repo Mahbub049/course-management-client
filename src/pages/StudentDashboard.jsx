@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getAuthItem } from "../utils/authStorage";
+import { clearAuthData, getAuthItem } from "../utils/authStorage";
+import { useTheme } from "../context/ThemeContext";
+import { fetchStudentCourses } from "../services/studentService";
 import {
   fetchStudentSubmissionAssessments,
   getPublicFileUrl,
@@ -12,11 +14,18 @@ import { fetchStudentPendingProjectSubmissions } from "../services/projectSubmis
 
 const actionItems = [
   {
-    title: "Courses",
-    description: "Open your enrolled courses, assessments, marks and learning materials.",
-    route: "/student/courses",
+    title: "Marks",
+    description: "View your published marks, totals, grades and assessment breakdowns.",
+    route: "/student/marks",
     accent: "violet",
     icon: <CoursesIcon />,
+  },
+  {
+    title: "Submissions",
+    description: "Open running submissions and review previous submission tasks by course.",
+    route: "/student/submissions",
+    accent: "amber",
+    icon: <SubmissionIcon />,
   },
   {
     title: "Attendance",
@@ -34,7 +43,7 @@ const actionItems = [
   },
   {
     title: "Issues",
-    description: "Submit academic issues and monitor replies from your teacher.",
+    description: "Create academic issues and monitor replies from your teacher.",
     route: "/student/issues",
     accent: "indigo",
     icon: <ComplaintsIcon />,
@@ -46,17 +55,11 @@ const actionItems = [
     accent: "amber",
     icon: <CalendarIcon />,
   },
-  {
-    title: "Account",
-    description: "Review your account information and update your password securely.",
-    route: "/change-password",
-    accent: "rose",
-    icon: <AccountIcon />,
-  },
 ];
 
 function StudentDashboard() {
   const navigate = useNavigate();
+  const { isDark, toggleTheme } = useTheme();
   const studentName = getAuthItem("marksPortalName") || "Student";
   const studentRoll = getAuthItem("marksPortalUsername") || "—";
   const [pendingSubmissions, setPendingSubmissions] = useState([]);
@@ -67,11 +70,30 @@ function StudentDashboard() {
     return localStorage.getItem("studentDashboardSubmissionsCollapsed") === "true";
   });
 
+  const handleLogout = () => {
+    clearAuthData();
+    localStorage.removeItem("marksPortalRememberMe");
+    sessionStorage.removeItem("studentCoursesCache");
+    navigate("/login", { replace: true });
+  };
+
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
     if (hour < 12) return "Good Morning";
     if (hour < 18) return "Good Afternoon";
     return "Good Evening";
+  }, []);
+
+
+  useEffect(() => {
+    let active = true;
+    fetchStudentCourses()
+      .then((list) => {
+        if (!active) return;
+        sessionStorage.setItem("studentCoursesCache", JSON.stringify(Array.isArray(list) ? list : []));
+      })
+      .catch(() => {});
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -111,7 +133,7 @@ function StudentDashboard() {
               ...item,
               taskType: "lab_submission",
               taskLabel: "Assessment Submission",
-              navigateTo: `/student/courses/${item.course?.id}?tab=submissions`,
+              navigateTo: `/student/submissions?course=${item.course?.id || ""}`,
             }))
           : [];
 
@@ -152,6 +174,37 @@ function StudentDashboard() {
     [pendingSubmissions, nowTick]
   );
 
+  const openDashboardAction = async (item) => {
+    if (item.route !== "/student/marks") {
+      navigate(item.route);
+      return;
+    }
+
+    try {
+      let list = [];
+      try {
+        list = JSON.parse(sessionStorage.getItem("studentCoursesCache") || "[]");
+      } catch {
+        list = [];
+      }
+      if (!Array.isArray(list) || list.length === 0) {
+        const data = await fetchStudentCourses();
+        list = Array.isArray(data) ? data : [];
+        sessionStorage.setItem("studentCoursesCache", JSON.stringify(list));
+      }
+      if (list.length === 1) {
+        const id = list[0]?._id || list[0]?.id;
+        if (id) {
+          navigate(`/student/courses/${id}`);
+          return;
+        }
+      }
+    } catch {
+      // Fall back to the marks selector page.
+    }
+    navigate("/student/marks");
+  };
+
   return (
     <div className="space-y-5 sm:space-y-6">
       {/* Mobile dashboard */}
@@ -169,17 +222,39 @@ function StudentDashboard() {
               <IdCardIcon />
               Roll {studentRoll}
             </div>
+            <div className="mt-4 grid grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] gap-2">
+              <DashboardUtilityButton
+                compact
+                onClick={() => navigate("/change-password")}
+                label="Account"
+                icon={<AccountIcon />}
+              />
+              <DashboardUtilityButton
+                compact
+                iconOnly
+                onClick={toggleTheme}
+                label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+                icon={isDark ? <SunIcon /> : <MoonIcon />}
+              />
+              <DashboardUtilityButton
+                compact
+                onClick={handleLogout}
+                label="Logout"
+                icon={<LogoutIcon />}
+                danger
+              />
+            </div>
           </div>
         </div>
 
-        {(submissionsLoading || activePendingSubmissions.length > 0) && (
+        {!submissionsLoading && activePendingSubmissions.length > 0 && (
           <CompactSubmissionPanel
             items={activePendingSubmissions}
             loading={submissionsLoading}
             collapsed={submissionsCollapsed}
             nowTick={nowTick}
             onToggle={() => setSubmissionsCollapsed((value) => !value)}
-            onOpen={(item) => navigate(item.navigateTo || "/student/courses")}
+            onOpen={(item) => navigate(item.navigateTo || "/student/submissions")}
             onUploaded={() => setSubmissionRefreshKey((value) => value + 1)}
           />
         )}
@@ -191,7 +266,7 @@ function StudentDashboard() {
               title={item.title}
               icon={item.icon}
               accent={item.accent}
-              onClick={() => navigate(item.route)}
+              onClick={() => openDashboardAction(item)}
             />
           ))}
         </div>
@@ -220,17 +295,35 @@ function StudentDashboard() {
               </div>
             </div>
 
+            <div className="flex shrink-0 flex-wrap items-center gap-2 lg:max-w-[420px] lg:justify-end">
+              <DashboardUtilityButton
+                onClick={() => navigate("/change-password")}
+                label="Manage Account"
+                icon={<AccountIcon />}
+              />
+              <DashboardUtilityButton
+                onClick={toggleTheme}
+                label={isDark ? "Light Mode" : "Dark Mode"}
+                icon={isDark ? <SunIcon /> : <MoonIcon />}
+              />
+              <DashboardUtilityButton
+                onClick={handleLogout}
+                label="Logout"
+                icon={<LogoutIcon />}
+                danger
+              />
+            </div>
           </div>
         </div>
 
-        {(submissionsLoading || activePendingSubmissions.length > 0) && (
+        {!submissionsLoading && activePendingSubmissions.length > 0 && (
           <CompactSubmissionPanel
             items={activePendingSubmissions}
             loading={submissionsLoading}
             collapsed={submissionsCollapsed}
             nowTick={nowTick}
             onToggle={() => setSubmissionsCollapsed((value) => !value)}
-            onOpen={(item) => navigate(item.navigateTo || "/student/courses")}
+            onOpen={(item) => navigate(item.navigateTo || "/student/submissions")}
             onUploaded={() => setSubmissionRefreshKey((value) => value + 1)}
           />
         )}
@@ -243,12 +336,49 @@ function StudentDashboard() {
               description={item.description}
               icon={item.icon}
               accent={item.accent}
-              onClick={() => navigate(item.route)}
+              onClick={() => openDashboardAction(item)}
             />
           ))}
         </div>
       </section>
     </div>
+  );
+}
+
+function DashboardUtilityButton({
+  onClick,
+  label,
+  icon,
+  danger = false,
+  compact = false,
+  iconOnly = false,
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={iconOnly ? label : undefined}
+      title={iconOnly ? label : undefined}
+      className={[
+        "inline-flex items-center justify-center rounded-xl border font-bold shadow-sm transition",
+        iconOnly ? "gap-0" : "gap-1.5",
+        compact
+          ? iconOnly
+            ? "h-10 w-11 min-w-0 p-0"
+            : "h-10 w-full min-w-0 whitespace-nowrap px-2 text-[11px]"
+          : "px-3.5 py-2 text-xs",
+        danger
+          ? "border-rose-200 bg-white/90 text-rose-700 hover:bg-rose-50 dark:border-rose-500/30 dark:bg-slate-900/80 dark:text-rose-300 dark:hover:bg-rose-500/10"
+          : "border-slate-200 bg-white/90 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:bg-slate-800",
+      ].join(" ")}
+    >
+      {icon && (
+        <span className={compact ? "inline-flex [&>svg]:h-4 [&>svg]:w-4" : "inline-flex [&>svg]:h-4 [&>svg]:w-4"}>
+          {icon}
+        </span>
+      )}
+      {!iconOnly && <span className="min-w-0 truncate">{label}</span>}
+    </button>
   );
 }
 
@@ -825,6 +955,33 @@ function AccountIcon() {
     <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M20 21a8 8 0 0 0-16 0" />
       <circle cx="12" cy="7" r="4" />
+    </svg>
+  );
+}
+
+
+function SunIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />
+    </svg>
+  );
+}
+
+function LogoutIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="m16 17 5-5-5-5M21 12H9" />
     </svg>
   );
 }

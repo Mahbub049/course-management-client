@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchStudentCourses } from "../services/studentService";
+import StudentPageBack from "../components/StudentPageBack";
 
 import StudentProjectGroups from "./studentCourse/StudentProjectGroups";
 import StudentProjectInfo from "./studentCourse/StudentProjectInfo";
@@ -37,17 +38,40 @@ function getTypeBadgeClass(label) {
 
 function StudentCoursesPage() {
   const navigate = useNavigate();
-  const [courses, setCourses] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const cachedCourses = useMemo(() => {
+    try {
+      const parsed = JSON.parse(sessionStorage.getItem("studentCoursesCache") || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, []);
+  const [courses, setCourses] = useState(cachedCourses);
+  const [loading, setLoading] = useState(cachedCourses.length === 0);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    const cachedOnlyId = cachedCourses.length === 1 ? (cachedCourses[0]?._id || cachedCourses[0]?.id) : "";
+    if (cachedOnlyId) {
+      navigate(`/student/courses/${cachedOnlyId}`, { replace: true });
+      return;
+    }
+
     const loadCourses = async () => {
-      setLoading(true);
+      setLoading(cachedCourses.length === 0);
       setError("");
       try {
         const data = await fetchStudentCourses();
-        setCourses(data || []);
+        const safeCourses = Array.isArray(data) ? data : [];
+        setCourses(safeCourses);
+        sessionStorage.setItem("studentCoursesCache", JSON.stringify(safeCourses));
+
+        if (safeCourses.length === 1) {
+          const onlyCourseId = safeCourses[0]?._id || safeCourses[0]?.id;
+          if (onlyCourseId) {
+            navigate(`/student/courses/${onlyCourseId}`, { replace: true });
+          }
+        }
       } catch (err) {
         console.error(err);
         setError(err?.response?.data?.message || "Failed to load courses");
@@ -57,7 +81,7 @@ function StudentCoursesPage() {
     };
 
     loadCourses();
-  }, []);
+  }, [navigate, cachedCourses]);
 
   const openCourse = (course) => {
     const id = course?._id || course?.id;
@@ -82,8 +106,11 @@ function StudentCoursesPage() {
     return { total, theory, lab, hybrid };
   }, [courses]);
 
+  if (cachedCourses.length === 1) return null;
+
   return (
-    <div className="mx-auto w-full space-y-5 px-4 pb-10 pt-4 sm:space-y-6 sm:px-6 sm:pt-6 lg:px-0">
+    <div className="w-full space-y-5 pb-10 sm:space-y-6">
+      <StudentPageBack />
       {/* Hero Header */}
       <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-indigo-50 p-4 shadow-sm dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/30 sm:p-6 lg:p-7">
         <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-indigo-200/40 blur-3xl dark:bg-indigo-600/20" />
@@ -97,12 +124,11 @@ function StudentCoursesPage() {
             </div>
 
             <h1 className="mt-0 text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:mt-3 sm:text-3xl">
-              My Courses
+              Marks
             </h1>
 
             <p className="mt-2 hidden max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400 sm:block">
-              Open any course to view your marks, current total, grade, and submit
-              issues when needed.
+              Choose a course to view published marks, totals, grades, and assessment breakdowns.
             </p>
           </div>
 
@@ -233,10 +259,10 @@ function StudentCoursesPage() {
 
                 <div className="mt-4 flex items-center justify-between text-xs">
                   <span className="font-medium text-slate-500 dark:text-slate-400">
-                    Tap to open course
+                    Open marks
                   </span>
                   <span className="font-semibold text-indigo-600 group-hover:text-indigo-700 dark:text-indigo-300 dark:group-hover:text-indigo-200">
-                    View Details
+                    View Marks
                   </span>
                 </div>
               </button>

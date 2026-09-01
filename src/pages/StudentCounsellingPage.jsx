@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
+import StudentPageBack from "../components/StudentPageBack";
 import {
   createStudentCounsellingBooking,
   deleteStudentCounsellingBooking,
@@ -279,27 +280,35 @@ function StudentCounsellingPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[50vh] items-center justify-center text-base font-bold text-slate-500 dark:text-slate-400">
-        Loading counselling hours...
+      <div className="space-y-4">
+        <StudentPageBack />
+        <div className="flex min-h-[50vh] items-center justify-center text-base font-bold text-slate-500 dark:text-slate-400">
+          Loading counselling hours...
+        </div>
       </div>
     );
   }
 
   if (!info?.teacher) {
     return (
-      <section className="rounded-[2rem] border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm dark:border-slate-700 dark:bg-slate-950">
-        <h1 className="text-2xl font-black text-slate-900 dark:text-white">
-          No course teacher found
-        </h1>
-        <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-          You need to be enrolled in a course before counselling hours can be shown here.
-        </p>
-      </section>
+      <div className="space-y-4">
+        <StudentPageBack />
+        <section className="rounded-[2rem] border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm dark:border-slate-700 dark:bg-slate-950">
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white">
+            No course teacher found
+          </h1>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">
+            You need to be enrolled in a course before counselling hours can be shown here.
+          </p>
+        </section>
+      </div>
     );
   }
 
   return (
     <div className="space-y-4">
+      <StudentPageBack />
+
       <section className="overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
         <div className="relative px-5 py-4 sm:px-6">
           <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-r from-violet-500/10 via-fuchsia-500/10 to-sky-500/10" />

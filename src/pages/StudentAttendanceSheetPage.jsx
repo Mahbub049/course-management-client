@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchStudentCourses } from "../services/studentCourseService";
 import { fetchStudentAttendanceSheet } from "../services/attendanceService";
+import StudentPageBack from "../components/StudentPageBack";
 import {
   createStudentComplaint,
   fetchStudentComplaints,
@@ -228,6 +229,7 @@ export default function StudentAttendanceSheetPage() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
+      <StudentPageBack />
       {/* Hero */}
       <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-indigo-50 p-5 shadow-sm dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/30 sm:p-6 lg:p-7">
         <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-indigo-200/40 blur-3xl dark:bg-indigo-600/20" />
@@ -374,7 +376,12 @@ export default function StudentAttendanceSheetPage() {
                       {computed.rows.map((r) => (
                         <tr
                           key={`${r.date}-P${r.period}`}
-                          className="transition hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                          className={[
+                            "transition",
+                            isAbsentStatus(r.status)
+                              ? "bg-rose-100/95 hover:bg-rose-100 dark:bg-rose-950/45 dark:hover:bg-rose-950/55"
+                              : "hover:bg-slate-50 dark:hover:bg-slate-800/50",
+                          ].join(" ")}
                         >
                           <td className="px-6 py-4 text-slate-700 dark:text-slate-200">
                             {r.date}
@@ -386,20 +393,20 @@ export default function StudentAttendanceSheetPage() {
                             <AttendanceBadge status={r.status} />
                           </td>
                           <td className="px-6 py-4 text-right">
-                            <button
-                              type="button"
-                              onClick={() => openIssueModal(r)}
-                              disabled={!complaintsOpen || hasAttendanceComplaint(r)}
-                              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                              title={
-                                hasAttendanceComplaint(r)
-                                  ? "An attendance issue has already been submitted for this class."
-                                  : undefined
-                              }
-                            >
-                              {hasAttendanceComplaint(r) ? <CheckSmallIcon /> : <FlagIcon />}
-                              {hasAttendanceComplaint(r) ? "Already Reported" : "Report Issue"}
-                            </button>
+                            {isAbsentStatus(r.status) ? (
+                              <button
+                                type="button"
+                                onClick={() => openIssueModal(r)}
+                                disabled={!complaintsOpen || hasAttendanceComplaint(r)}
+                                className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-500/30 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                                title={hasAttendanceComplaint(r) ? "An attendance issue has already been submitted for this class." : undefined}
+                              >
+                                {hasAttendanceComplaint(r) ? <CheckSmallIcon /> : <FlagIcon />}
+                                {hasAttendanceComplaint(r) ? "Already Reported" : "Report Issue"}
+                              </button>
+                            ) : (
+                              <span className="text-xs font-medium text-slate-400 dark:text-slate-600">—</span>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -407,39 +414,40 @@ export default function StudentAttendanceSheetPage() {
                   </table>
                 </div>
 
-                {/* mobile cards */}
-                <div className="grid gap-4 p-4 lg:hidden">
+                {/* mobile compact list */}
+                <div className="grid gap-2.5 p-3 lg:hidden">
                   {computed.rows.map((r) => (
                     <div
                       key={`${r.date}-P${r.period}`}
-                      className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900"
+                      className={[
+                        "rounded-2xl border px-3.5 py-3",
+                        isAbsentStatus(r.status)
+                          ? "border-rose-300 bg-rose-100/95 dark:border-rose-500/35 dark:bg-rose-950/45"
+                          : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900",
+                      ].join(" ")}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            Date
-                          </div>
-                          <div className="font-semibold text-slate-900 dark:text-white">
-                            {r.date}
+                      <div className="flex items-center gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="truncate text-sm font-bold text-slate-900 dark:text-white">{r.date}</span>
+                            <span className="text-xs text-slate-400">•</span>
+                            <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Period {r.period}</span>
                           </div>
                         </div>
-
                         <AttendanceBadge status={r.status} />
                       </div>
 
-                      <div className="mt-3 text-sm text-slate-600 dark:text-slate-300">
-                        Period: <span className="font-semibold">{r.period}</span>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => openIssueModal(r)}
-                        disabled={!complaintsOpen || hasAttendanceComplaint(r)}
-                        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                      >
-                        {hasAttendanceComplaint(r) ? <CheckSmallIcon /> : <FlagIcon />}
-                        {hasAttendanceComplaint(r) ? "Already Reported" : "Report Issue"}
-                      </button>
+                      {isAbsentStatus(r.status) && (
+                        <button
+                          type="button"
+                          onClick={() => openIssueModal(r)}
+                          disabled={!complaintsOpen || hasAttendanceComplaint(r)}
+                          className="mt-2.5 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-white/90 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-500/30 dark:bg-slate-900/90 dark:text-rose-300"
+                        >
+                          {hasAttendanceComplaint(r) ? <CheckSmallIcon /> : <FlagIcon />}
+                          {hasAttendanceComplaint(r) ? "Already Reported" : "Report Absence Issue"}
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -599,8 +607,20 @@ function SummaryCard({ label, value, sub }) {
   );
 }
 
+function normalizeAttendanceStatus(status) {
+  const value = String(status || "").trim().toLowerCase();
+  if (["a", "absent", "absence"].includes(value)) return "absent";
+  if (["p", "present"].includes(value)) return "present";
+  if (["l", "late"].includes(value)) return "late";
+  return value;
+}
+
+function isAbsentStatus(status) {
+  return normalizeAttendanceStatus(status) === "absent";
+}
+
 function AttendanceBadge({ status }) {
-  const normalized = String(status || "").toLowerCase();
+  const normalized = normalizeAttendanceStatus(status);
 
   const cls =
     normalized === "present"
@@ -613,9 +633,9 @@ function AttendanceBadge({ status }) {
 
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold capitalize ${cls}`}
+      className={`inline-flex min-w-8 items-center justify-center rounded-full border px-2.5 py-1 text-xs font-semibold ${cls}`}
     >
-      {status}
+      {normalized === "present" ? "P" : normalized === "absent" ? "A" : normalized === "late" ? "L" : status}
     </span>
   );
 }

@@ -100,10 +100,11 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
 
   const studentLinks = [
     { to: "/student/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
-    { to: "/student/courses", label: "My Courses", icon: <BookIcon /> },
-    { to: "/student/issues", label: "Issues", icon: <AlertIcon /> },
+    { to: "/student/marks", label: "Marks", icon: <BookIcon /> },
+    { to: "/student/submissions", label: "Submissions", icon: <NotebookIcon /> },
     { to: "/student/attendance", label: "Attendance", icon: <CalendarIcon /> },
     { to: "/student/counselling", label: "Counselling", icon: <CounsellingIcon /> },
+    { to: "/student/issues", label: "Issues", icon: <AlertIcon /> },
     {
       to: "/academic-calendar",
       label: "Academic Calendar",
@@ -112,8 +113,6 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
     ...(isNativeApp
       ? [{ to: "/notifications", label: "Notifications", icon: <NotificationIcon /> }]
       : []),
-    { to: "/change-password", label: "Account", icon: <UserIcon /> },
-
   ];
 
   const links = useMemo(() => {
@@ -123,9 +122,18 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
 
   const pageTitle = useMemo(() => {
     if (location.pathname.startsWith("/change-password")) return "Account";
+    if (role === "student" && location.pathname.startsWith("/student/courses/")) return "Marks";
     const found = links.find((l) => location.pathname.startsWith(l.to));
     return found?.label || portalBrandName;
-  }, [location.pathname, links, portalBrandName]);
+  }, [location.pathname, links, portalBrandName, role]);
+
+  const showStudentBack =
+    role === "student" && location.pathname !== "/student/dashboard";
+
+  const hideStudentSidebar =
+    role === "student" &&
+    (location.pathname.startsWith("/student/counselling") ||
+      location.pathname.startsWith("/academic-calendar"));
 
   const SidebarContent = ({ isMobile = false, collapsed = false }) => (
     <div className="flex h-full flex-col">
@@ -243,6 +251,7 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
         ))}
       </nav>
 
+      {role === "teacher" && (
       <div className="relative border-t border-slate-200/80 p-4 dark:border-slate-800">
         <div
           className={[
@@ -298,60 +307,79 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
           )}
         </div>
       </div>
+      )}
+
     </div>
   );
 
   return (
     <div className="h-screen overflow-hidden bg-slate-100 text-slate-900 transition-colors duration-300 dark:bg-[#020617] dark:text-slate-100">
       <div className="flex h-screen overflow-hidden">
-        <aside
-          className={[
-            "sticky left-0 top-0 hidden h-screen shrink-0 overflow-hidden border-r border-slate-200/80 bg-white/90 backdrop-blur-sm transition-all duration-300 dark:border-slate-800 dark:bg-slate-950/80 md:flex md:flex-col",
-            collapsed ? "md:w-20" : "md:w-72",
-          ].join(" ")}
-        >
-          <SidebarContent collapsed={collapsed} />
-        </aside>
-
-        <div
-          className={[
-            "fixed inset-0 z-50 md:hidden transition",
-            mobileOpen ? "pointer-events-auto" : "pointer-events-none",
-          ].join(" ")}
-          aria-hidden={!mobileOpen}
-        >
-          <button
+        {!hideStudentSidebar && (
+          <aside
             className={[
-              "absolute inset-0 bg-slate-900/50 transition-opacity duration-300",
-              mobileOpen ? "opacity-100" : "opacity-0",
-            ].join(" ")}
-            onClick={() => setMobileOpen(false)}
-            aria-label="Close overlay"
-            type="button"
-          />
-
-          <div
-            className={[
-              "absolute left-0 top-0 h-full w-[86%] max-w-xs border-r border-slate-200 bg-white shadow-xl transition-transform duration-300 ease-out dark:border-slate-800 dark:bg-slate-950",
-              mobileOpen ? "translate-x-0" : "-translate-x-full",
+              "sticky left-0 top-0 hidden h-screen shrink-0 overflow-hidden border-r border-slate-200/80 bg-white/90 backdrop-blur-sm transition-all duration-300 dark:border-slate-800 dark:bg-slate-950/80 md:flex md:flex-col",
+              collapsed ? "md:w-20" : "md:w-72",
             ].join(" ")}
           >
-            <SidebarContent isMobile />
+            <SidebarContent collapsed={collapsed} />
+          </aside>
+        )}
+
+        {role === "teacher" && (
+          <div
+            className={[
+              "fixed inset-0 z-50 md:hidden transition",
+              mobileOpen ? "pointer-events-auto" : "pointer-events-none",
+            ].join(" ")}
+            aria-hidden={!mobileOpen}
+          >
+            <button
+              className={[
+                "absolute inset-0 bg-slate-900/50 transition-opacity duration-300",
+                mobileOpen ? "opacity-100" : "opacity-0",
+              ].join(" ")}
+              onClick={() => setMobileOpen(false)}
+              aria-label="Close overlay"
+              type="button"
+            />
+
+            <div
+              className={[
+                "absolute left-0 top-0 h-full w-[86%] max-w-xs border-r border-slate-200 bg-white shadow-xl transition-transform duration-300 ease-out dark:border-slate-800 dark:bg-slate-950",
+                mobileOpen ? "translate-x-0" : "-translate-x-full",
+              ].join(" ")}
+            >
+              <SidebarContent isMobile />
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
+          {role === "teacher" && (
           <header className="z-30 shrink-0 border-b border-slate-200/80 bg-white/85 px-4 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/75 sm:px-6 md:px-8">
             <div className="flex h-14 items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setMobileOpen(true)}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 md:hidden"
-                  aria-label="Open menu"
-                >
-                  <MenuIcon />
-                </button>
+                {role === "teacher" ? (
+                  <button
+                    type="button"
+                    onClick={() => setMobileOpen(true)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 md:hidden"
+                    aria-label="Open menu"
+                  >
+                    <MenuIcon />
+                  </button>
+                ) : showStudentBack ? (
+                  <button
+                    type="button"
+                    onClick={() => navigate(-1)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 md:hidden"
+                    aria-label="Go back"
+                    title="Back"
+                  >
+                    <BackIcon />
+                  </button>
+                ) : null}
 
                 <div className="flex min-w-0 items-center gap-2 md:hidden">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white shadow-sm dark:bg-violet-600">
@@ -367,12 +395,25 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
                   </div>
                 </div>
 
-                <div className="hidden min-w-0 md:block">
-                  <div className="text-xs text-slate-500 dark:text-slate-400">
-                    Current page
-                  </div>
-                  <div className="truncate text-sm font-semibold text-slate-900 dark:text-white">
-                    {pageTitle}
+                <div className="hidden min-w-0 items-center gap-3 md:flex">
+                  {showStudentBack ? (
+                    <button
+                      type="button"
+                      onClick={() => navigate(-1)}
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                      aria-label="Go back"
+                      title="Back"
+                    >
+                      <BackIcon />
+                    </button>
+                  ) : null}
+                  <div className="min-w-0">
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      Current page
+                    </div>
+                    <div className="truncate text-sm font-semibold text-slate-900 dark:text-white">
+                      {pageTitle}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -422,6 +463,8 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
             </div>
           </header>
 
+          )}
+
           <main className="min-w-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5 md:px-8">
             <Outlet />
           </main>
@@ -445,6 +488,20 @@ function ArrowIcon() {
       strokeWidth="2"
     >
       <path d="M9 18l6-6-6-6" />
+    </svg>
+  );
+}
+
+function BackIcon() {
+  return (
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="m15 18-6-6 6-6" />
     </svg>
   );
 }

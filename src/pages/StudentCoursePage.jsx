@@ -45,6 +45,14 @@ function isCtAssessment(nameRaw) {
   return false;
 }
 
+function isAssignmentAssessment(nameRaw) {
+  return String(nameRaw || "").toLowerCase().includes("assign");
+}
+
+function isPresentationAssessment(nameRaw) {
+  return String(nameRaw || "").toLowerCase().includes("pres");
+}
+
 function getCourseType(course) {
   return (course?.courseType || "theory").toLowerCase();
 }
@@ -251,12 +259,8 @@ export default function StudentCoursePage() {
       course?.projectFeature?.mode === "project" &&
       course?.projectFeature?.visibleToStudents !== false;
 
-    if (activeTab === "materials") {
-      setActiveTab("assessment");
-      return;
-    }
-
-    if (!showProjectTab && activeTab === "project") {
+    const allowedTabs = ["assessment", ...(showProjectTab ? ["project"] : [])];
+    if (!allowedTabs.includes(activeTab)) {
       setActiveTab("assessment");
     }
   }, [course, activeTab]);
@@ -505,18 +509,71 @@ export default function StudentCoursePage() {
     return assessments.filter((a) => !isCtAssessment(a?.name));
   }, [assessments, courseType]);
 
-  // Hybrid Mid/Final component marks are already shown inside their total cards.
-  // Remove those same assessments from the normal list to avoid duplicate rows/cards.
-  const visibleNonCtAssessments = useMemo(() => {
-    if (courseType !== "hybrid") return nonCtAssessments;
+  const assignmentAssessment = useMemo(
+    () => assessments.find((a) => isAssignmentAssessment(a?.name)) || null,
+    [assessments]
+  );
 
-    return nonCtAssessments.filter((assessment) => {
-      const name = String(assessment?.name || "").toLowerCase();
-      const isExam = name.includes("mid") || name.includes("final");
-      const isHybridPart = name.includes("theory") || name.includes("lab");
-      return !(isExam && isHybridPart);
-    });
-  }, [nonCtAssessments, courseType]);
+  const presentationAssessment = useMemo(
+    () => assessments.find((a) => isPresentationAssessment(a?.name)) || null,
+    [assessments]
+  );
+
+  const hasCombinedPractice =
+    courseType !== "lab" && Boolean(assignmentAssessment && presentationAssessment);
+
+  const practiceFullMarks =
+    courseType === "hybrid" ? Math.max(0, 25 - getCtMainWeight(course)) : 10;
+
+  const practiceMain = useMemo(() => {
+    const fromSummary = Number(summary?.assignmentMain);
+    if (Number.isFinite(fromSummary)) return round2(fromSummary);
+    if (!hasCombinedPractice || practiceFullMarks <= 0) return 0;
+
+    const eachWeight = practiceFullMarks / 2;
+    const contribution = [assignmentAssessment, presentationAssessment].reduce(
+      (sum, assessment) => {
+        if (!assessment || isAssessmentMarkHidden(assessment)) return sum;
+        const full = safeNum(assessment.fullMarks, 0);
+        const obtained = assessment.obtainedMarks;
+        if (full <= 0 || obtained == null) return sum;
+        return sum + (safeNum(obtained, 0) / full) * eachWeight;
+      },
+      0
+    );
+
+    return round2(contribution);
+  }, [summary, hasCombinedPractice, practiceFullMarks, assignmentAssessment, presentationAssessment]);
+
+  const practiceParts = useMemo(
+    () => [presentationAssessment, assignmentAssessment].filter(Boolean),
+    [presentationAssessment, assignmentAssessment]
+  );
+
+  // Hybrid Mid/Final component marks are already shown inside their total cards.
+  // Combined Assignment + Presentation are shown inside one Assignment (Main) row/card.
+  const visibleNonCtAssessments = useMemo(() => {
+    let list = nonCtAssessments;
+
+    if (courseType === "hybrid") {
+      list = list.filter((assessment) => {
+        const name = String(assessment?.name || "").toLowerCase();
+        const isExam = name.includes("mid") || name.includes("final");
+        const isHybridPart = name.includes("theory") || name.includes("lab");
+        return !(isExam && isHybridPart);
+      });
+    }
+
+    if (hasCombinedPractice) {
+      list = list.filter(
+        (assessment) =>
+          !isAssignmentAssessment(assessment?.name) &&
+          !isPresentationAssessment(assessment?.name)
+      );
+    }
+
+    return list;
+  }, [nonCtAssessments, courseType, hasCombinedPractice]);
 
 
   const hybridExamTotals = useMemo(() => {
@@ -825,15 +882,22 @@ export default function StudentCoursePage() {
     );
   }
 
-  const openComplaintTab = () => {
-    setActiveTab("complaint");
+  const openComplaintTab = (assessmentOverride = "") => {
+    const params = new URLSearchParams();
+    const effectiveCategory = assessmentOverride ? "marks" : complaintCategory || "marks";
+    params.set("course", courseId);
+    params.set("category", effectiveCategory);
 
-    setTimeout(() => {
-      complaintRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    }, 50);
+    const targetAssessment = assessmentOverride || relatedTo;
+    if (
+      effectiveCategory === "marks" &&
+      targetAssessment &&
+      targetAssessment !== "overall"
+    ) {
+      params.set("assessment", targetAssessment);
+    }
+
+    navigate(`/student/issues?${params.toString()}`);
   };
 
   const showProjectTab =
@@ -842,10 +906,7 @@ export default function StudentCoursePage() {
 
   const tabs = [
     { key: "assessment", label: "Assessment" },
-    { key: "attendance", label: "Attendance" },
-    { key: "submissions", label: "Submissions" },
     ...(showProjectTab ? [{ key: "project", label: "Project" }] : []),
-    { key: "complaint", label: "Raise Issue", mobileLabel: "Issue" },
   ];
 
   if (loading) {
@@ -877,10 +938,10 @@ export default function StudentCoursePage() {
           <button
             type="button"
             className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-            onClick={() => navigate("/student/dashboard")}
+            onClick={() => navigate(-1)}
           >
             <ArrowLeftIcon />
-            Back to My Courses
+            Back to Marks
           </button>
         </div>
       </div>
@@ -904,7 +965,7 @@ export default function StudentCoursePage() {
               <div className="mb-4 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => navigate("/student/dashboard")}
+                  onClick={() => navigate(-1)}
                   className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                 >
                   <ArrowLeftIcon />
@@ -1012,11 +1073,13 @@ export default function StudentCoursePage() {
         </div>
       </section>
 
-      <CourseSectionTabs
-        tabs={tabs}
-        activeTab={activeTab}
-        onChange={setActiveTab}
-      />
+      {tabs.length > 1 && (
+        <CourseSectionTabs
+          tabs={tabs}
+          activeTab={activeTab}
+          onChange={setActiveTab}
+        />
+      )}
 
       {activeTab === "assessment" && (
         <section className="rounded-[28px] border border-slate-200/80 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -1026,24 +1089,11 @@ export default function StudentCoursePage() {
                 Assessment Breakdown
               </h2>
               <p className="mt-1 hidden text-[15px] text-slate-500 dark:text-slate-400 sm:block">
-                Published marks for this course. Structured Lab Mid and Lab Final show their component breakdowns.
+                Published marks are grouped by their main components so each calculation is easier to understand.
               </p>
             </div>
 
-            <button
-              type="button"
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700"
-              onClick={() => {
-                setComplaintCategory("marks");
-                setRelatedTo("overall");
-                setComplaintError("");
-                setComplaintSuccess("");
-                openComplaintTab();
-              }}
-            >
-              Raise Overall Issue
-              <ChatIcon />
-            </button>
+
           </div>
 
           <div className="hidden overflow-x-auto lg:block">
@@ -1069,66 +1119,6 @@ export default function StudentCoursePage() {
                   </tr>
                 ) : (
                   <>
-                    {courseType !== "lab" &&
-                      ctAssessments.map((a) => {
-                        const key = a.id || a._id;
-                        const markHidden = isAssessmentMarkHidden(a);
-                        const missing = a.obtainedMarks == null;
-
-                        return (
-                          <tr
-                            key={key}
-                            className="transition hover:bg-slate-50 dark:hover:bg-slate-800/40"
-                          >
-                            <td className="px-6 py-5">
-                              <div className="font-semibold text-slate-900 dark:text-white">
-                                {a.name}
-                              </div>
-                              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                {getAssessmentHint(a, courseType)}
-                              </div>
-                            </td>
-
-                            <td className="px-6 py-5 font-semibold text-slate-900 dark:text-white">
-                              {a.fullMarks}
-                            </td>
-
-                            <td className="px-6 py-5">
-                              {markHidden ? (
-                                <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
-                                  Hidden by teacher
-                                </span>
-                              ) : missing ? (
-                                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                                  Not published
-                                </span>
-                              ) : (
-                                <span className="text-lg font-bold text-slate-900 dark:text-white">
-                                  {a.obtainedMarks}
-                                </span>
-                              )}
-                            </td>
-
-                            <td className="px-6 py-5 text-right">
-                              <button
-                                type="button"
-                                className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-xs font-semibold text-violet-700 transition hover:bg-violet-100 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300 dark:hover:bg-violet-500/15"
-                                onClick={() => {
-                                  setComplaintCategory("marks");
-                                  setRelatedTo(key);
-                                  setComplaintError("");
-                                  setComplaintSuccess("");
-                                  openComplaintTab();
-                                }}
-                              >
-                                Raise Issue
-                                <ChevronIcon />
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-
                     <tr className="bg-violet-50/40 dark:bg-violet-500/5">
                       <td className="px-6 py-5">
                         <div className="font-semibold text-slate-900 dark:text-white">
@@ -1139,6 +1129,41 @@ export default function StudentCoursePage() {
                             ? "Auto calculated from average of regular lab assessments"
                             : "Auto calculated from selected CT policy"}
                         </div>
+
+                        {courseType !== "lab" && ctAssessments.length > 0 ? (
+                          <div className="mt-4 grid max-w-3xl grid-cols-1 gap-2 sm:grid-cols-2">
+                            {ctAssessments.map((part) => {
+                              const partId = part.id || part._id;
+                              const hidden = isAssessmentMarkHidden(part);
+                              return (
+                                <div
+                                  key={partId}
+                                  className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-violet-200/80 bg-white px-3.5 py-3 shadow-sm dark:border-violet-500/20 dark:bg-slate-900"
+                                >
+                                  <div className="min-w-0">
+                                    <div className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                      {part.name}
+                                    </div>
+                                    <div className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">
+                                      {hidden
+                                        ? "Hidden by teacher"
+                                        : part.obtainedMarks == null
+                                          ? "Not published"
+                                          : `${round2(part.obtainedMarks)} / ${part.fullMarks}`}
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => openComplaintTab(partId)}
+                                    className="shrink-0 rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-[11px] font-bold text-violet-700 hover:bg-violet-100 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300"
+                                  >
+                                    Issue
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : null}
                       </td>
 
                       <td className="px-6 py-5 font-semibold text-slate-900 dark:text-white">
@@ -1177,16 +1202,25 @@ export default function StudentCoursePage() {
                                   <span className="truncate text-sm font-semibold text-slate-600 dark:text-slate-300">
                                     {part.label}
                                   </span>
-                                  <span className="shrink-0 text-sm font-bold text-slate-900 dark:text-white">
-                                    {part.markHidden
-                                      ? "Hidden by teacher"
-                                      : part.obtainedMarks == null
-                                        ? "Not published"
-                                        : round2(part.obtainedMarks)}
-                                    <span className="ml-1 text-xs font-semibold text-slate-400">
-                                      / {part.fullMarks}
+                                  <div className="flex shrink-0 items-center gap-2">
+                                    <span className="text-sm font-bold text-slate-900 dark:text-white">
+                                      {part.markHidden
+                                        ? "Hidden by teacher"
+                                        : part.obtainedMarks == null
+                                          ? "Not published"
+                                          : round2(part.obtainedMarks)}
+                                      <span className="ml-1 text-xs font-semibold text-slate-400">
+                                        / {part.fullMarks}
+                                      </span>
                                     </span>
-                                  </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => openComplaintTab(part.key)}
+                                      className="rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-[11px] font-bold text-violet-700 transition hover:bg-violet-100 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300"
+                                    >
+                                      Issue
+                                    </button>
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -1214,6 +1248,64 @@ export default function StudentCoursePage() {
                           </td>
                         </tr>
                       ))}
+
+                    {hasCombinedPractice && (
+                      <tr className="bg-amber-50/50 dark:bg-amber-500/5">
+                        <td className="px-6 py-5">
+                          <div className="font-bold text-slate-900 dark:text-white">
+                            Assignment (Main)
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Auto calculated from Assignment and Presentation
+                          </div>
+                          <div className="mt-3 grid max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">
+                            {practiceParts.map((part) => {
+                              const partId = part.id || part._id;
+                              const hidden = isAssessmentMarkHidden(part);
+                              return (
+                                <div
+                                  key={partId}
+                                  className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-amber-200 bg-white px-4 py-3 shadow-sm dark:border-amber-500/20 dark:bg-slate-900"
+                                >
+                                  <div className="min-w-0">
+                                    <div className="truncate text-sm font-semibold text-slate-700 dark:text-slate-200">
+                                      {part.name}
+                                    </div>
+                                    <div className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">
+                                      {hidden
+                                        ? "Hidden by teacher"
+                                        : part.obtainedMarks == null
+                                          ? "Not published"
+                                          : `${round2(part.obtainedMarks)} / ${part.fullMarks}`}
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => openComplaintTab(partId)}
+                                    className="shrink-0 rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-[11px] font-bold text-violet-700 hover:bg-violet-100 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300"
+                                  >
+                                    Issue
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </td>
+                        <td className="px-6 py-5 font-bold text-slate-900 dark:text-white">
+                          {practiceFullMarks}
+                        </td>
+                        <td className="px-6 py-5">
+                          <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-sm font-bold text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+                            {round2(practiceMain)} / {practiceFullMarks}
+                          </span>
+                        </td>
+                        <td className="px-6 py-5 text-right">
+                          <span className="text-xs font-semibold text-slate-400 dark:text-slate-500">
+                            Auto calculated
+                          </span>
+                        </td>
+                      </tr>
+                    )}
 
                     {courseType === "lab" && regularLabAssessments.length > 0 && (
                       <tr className="bg-indigo-50/30 dark:bg-indigo-500/5">
@@ -1274,13 +1366,7 @@ export default function StudentCoursePage() {
                                           <button
                                             type="button"
                                             className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-xs font-semibold text-violet-700 transition hover:bg-violet-100 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300 dark:hover:bg-violet-500/15"
-                                            onClick={() => {
-                                              setComplaintCategory("marks");
-                                              setRelatedTo(key);
-                                              setComplaintError("");
-                                              setComplaintSuccess("");
-                                              openComplaintTab();
-                                            }}
+                                            onClick={() => openComplaintTab(key)}
                                           >
                                             Raise Issue
                                             <ChevronIcon />
@@ -1297,7 +1383,7 @@ export default function StudentCoursePage() {
                       </tr>
                     )}
 
-                    {visibleNonCtAssessments.map((a) => {
+                {visibleNonCtAssessments.map((a) => {
                       const key = a.id || a._id;
                       const markHidden = isAssessmentMarkHidden(a);
                       const missing = a.obtainedMarks == null;
@@ -1339,13 +1425,7 @@ export default function StudentCoursePage() {
                               <button
                                 type="button"
                                 className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-xs font-semibold text-violet-700 transition hover:bg-violet-100 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300 dark:hover:bg-violet-500/15"
-                                onClick={() => {
-                                  setComplaintCategory("marks");
-                                  setRelatedTo(key);
-                                  setComplaintError("");
-                                  setComplaintSuccess("");
-                                  openComplaintTab();
-                                }}
+                                onClick={() => openComplaintTab(key)}
                               >
                                 Raise Issue
                                 <ChevronIcon />
@@ -1418,24 +1498,19 @@ export default function StudentCoursePage() {
               </div>
             ) : (
               <>
-                {(courseType === "lab" ? regularLabAssessments : ctAssessments).map((a) => {
-                  const key = a.id || a._id;
+                {courseType === "lab" &&
+                  regularLabAssessments.map((a) => {
+                    const key = a.id || a._id;
 
-                  return (
-                    <AssessmentCard
-                      key={key}
-                      assessment={a}
-                      courseType={courseType}
-                      onComplaint={() => {
-                        setComplaintCategory("marks");
-                        setRelatedTo(key);
-                        setComplaintError("");
-                        setComplaintSuccess("");
-                        openComplaintTab();
-                      }}
-                    />
-                  );
-                })}
+                    return (
+                      <AssessmentCard
+                        key={key}
+                        assessment={a}
+                        courseType={courseType}
+                        onComplaint={() => openComplaintTab(key)}
+                      />
+                    );
+                  })}
 
                 <div className="rounded-2xl border border-violet-200 bg-violet-50/60 p-4 shadow-sm dark:border-violet-500/20 dark:bg-violet-500/10">
                   <div className="flex items-start justify-between gap-3">
@@ -1469,6 +1544,41 @@ export default function StudentCoursePage() {
                       Auto calculated
                     </span>
                   </div>
+
+                  {courseType !== "lab" && ctAssessments.length > 0 ? (
+                    <div className="mt-4 space-y-2 border-t border-violet-200/70 pt-4 dark:border-violet-500/20">
+                      {ctAssessments.map((part) => {
+                        const partId = part.id || part._id;
+                        const hidden = isAssessmentMarkHidden(part);
+                        return (
+                          <div
+                            key={partId}
+                            className="flex items-center justify-between gap-3 rounded-xl border border-violet-200 bg-white px-3 py-2.5 dark:border-violet-500/20 dark:bg-slate-900"
+                          >
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                {part.name}
+                              </div>
+                              <div className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">
+                                {hidden
+                                  ? "Hidden by teacher"
+                                  : part.obtainedMarks == null
+                                    ? "Not published"
+                                    : `${round2(part.obtainedMarks)} / ${part.fullMarks}`}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => openComplaintTab(partId)}
+                              className="shrink-0 rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-[11px] font-bold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300"
+                            >
+                              Issue
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                 </div>
 
                 {courseType === "hybrid" &&
@@ -1517,13 +1627,22 @@ export default function StudentCoursePage() {
                             <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                               {part.label}
                             </div>
-                            <div className="mt-1 font-bold text-slate-900 dark:text-white">
-                              {part.markHidden
-                                ? "Hidden by teacher"
-                                : part.obtainedMarks == null
-                                  ? "Not published"
-                                  : round2(part.obtainedMarks)}
-                              <span className="ml-1 text-xs text-slate-400">/{part.fullMarks}</span>
+                            <div className="mt-2 flex items-center justify-between gap-2">
+                              <div className="font-bold text-slate-900 dark:text-white">
+                                {part.markHidden
+                                  ? "Hidden by teacher"
+                                  : part.obtainedMarks == null
+                                    ? "Not published"
+                                    : round2(part.obtainedMarks)}
+                                <span className="ml-1 text-xs text-slate-400">/{part.fullMarks}</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => openComplaintTab(part.key)}
+                                className="rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-[11px] font-bold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300"
+                              >
+                                Issue
+                              </button>
                             </div>
                           </div>
                         ))}
@@ -1537,6 +1656,68 @@ export default function StudentCoursePage() {
                     </div>
                   ))}
 
+                {hasCombinedPractice ? (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 shadow-sm dark:border-amber-500/20 dark:bg-amber-500/10">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-bold text-slate-900 dark:text-white">Assignment (Main)</div>
+                        <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          Auto calculated from Assignment and Presentation
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm font-bold text-amber-700 dark:border-amber-500/20 dark:bg-slate-900 dark:text-amber-300">
+                        {practiceFullMarks}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex items-end justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                          Your Total
+                        </div>
+                        <div className="mt-1 text-2xl font-black text-amber-700 dark:text-amber-300">
+                          {round2(practiceMain)}
+                          <span className="ml-1 text-sm font-bold text-slate-400">/{practiceFullMarks}</span>
+                        </div>
+                      </div>
+                      <span className="inline-flex items-center rounded-full border border-amber-200 bg-white px-3 py-1 text-xs font-semibold text-amber-700 dark:border-amber-500/20 dark:bg-slate-900 dark:text-amber-300">
+                        Auto calculated
+                      </span>
+                    </div>
+
+                    <div className="mt-4 space-y-2">
+                      {practiceParts.map((part) => {
+                        const partId = part.id || part._id;
+                        const hidden = isAssessmentMarkHidden(part);
+                        return (
+                          <div
+                            key={partId}
+                            className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-white px-3 py-2.5 dark:border-amber-500/20 dark:bg-slate-900"
+                          >
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{part.name}</div>
+                              <div className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">
+                                {hidden
+                                  ? "Hidden by teacher"
+                                  : part.obtainedMarks == null
+                                    ? "Not published"
+                                    : `${round2(part.obtainedMarks)} / ${part.fullMarks}`}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => openComplaintTab(partId)}
+                              className="shrink-0 rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-[11px] font-bold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300"
+                            >
+                              Issue
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+
                 {visibleNonCtAssessments.map((a) => {
                   const key = a.id || a._id;
 
@@ -1546,13 +1727,7 @@ export default function StudentCoursePage() {
                       assessment={a}
                       courseType={courseType}
                       advancedRows={breakdownMap[key] || []}
-                      onComplaint={() => {
-                        setComplaintCategory("marks");
-                        setRelatedTo(key);
-                        setComplaintError("");
-                        setComplaintSuccess("");
-                        openComplaintTab();
-                      }}
+                      onComplaint={() => openComplaintTab(key)}
                     />
                   );
                 })}

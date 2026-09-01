@@ -155,7 +155,7 @@ export default function StudentLabSubmissions({ courseId }) {
   const [loading, setLoading] = useState(true);
   const [uploadingId, setUploadingId] = useState("");
   const [now, setNow] = useState(() => Date.now());
-  const [showOldSubmissions, setShowOldSubmissions] = useState(false);
+  const [activeView, setActiveView] = useState("running");
 
   const load = async () => {
     setLoading(true);
@@ -250,66 +250,92 @@ export default function StudentLabSubmissions({ courseId }) {
 
   return (
     <div className="min-w-0 max-w-full space-y-4">
-      {currentSubmissionItems.length > 0 ? (
-        <div className="grid gap-4">
-          {currentSubmissionItems.map((item) => (
-            <SubmissionTaskCard
-              key={item.id}
-              item={item}
-              now={now}
-              uploadingId={uploadingId}
-              onFileChange={handleFileChange}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-400">
-          No current running submissions are available right now.
-        </div>
-      )}
-
-      {oldSubmissionItems.length > 0 && (
-        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between">
+      <div className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between sm:px-5">
           <div>
-            <div className="text-sm font-semibold text-slate-900 dark:text-white">
-              Old Submissions
-            </div>
+            <div className="text-sm font-bold text-slate-900 dark:text-white">Submission tasks</div>
             <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Closed, expired, or previous submission tasks are hidden by default.
+              Running tasks stay separate from your submission history.
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setShowOldSubmissions((value) => !value)}
-            className="inline-flex w-full items-center justify-center rounded-xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-sm font-semibold text-violet-700 transition hover:bg-violet-100 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300 dark:hover:bg-violet-500/20 sm:w-auto"
-          >
-            {showOldSubmissions
-              ? "Hide Old Submissions"
-              : `View Old Submissions (${oldSubmissionItems.length})`}
-          </button>
-        </div>
-      )}
-
-      {showOldSubmissions && oldSubmissionItems.length > 0 && (
-        <div className="space-y-3">
-          <div className="text-sm font-semibold text-slate-600 dark:text-slate-300">
-            Previous Submission Tasks
+          <div className="grid grid-cols-2 rounded-2xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800">
+            <button
+              type="button"
+              onClick={() => setActiveView("running")}
+              className={[
+                "rounded-xl px-4 py-2 text-xs font-bold transition",
+                activeView === "running"
+                  ? "bg-white text-violet-700 shadow-sm dark:bg-slate-950 dark:text-violet-300"
+                  : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200",
+              ].join(" ")}
+            >
+              Running ({currentSubmissionItems.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView("past")}
+              className={[
+                "rounded-xl px-4 py-2 text-xs font-bold transition",
+                activeView === "past"
+                  ? "bg-white text-violet-700 shadow-sm dark:bg-slate-950 dark:text-violet-300"
+                  : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200",
+              ].join(" ")}
+            >
+              Past ({oldSubmissionItems.length})
+            </button>
           </div>
+        </div>
 
-          <div className="grid gap-4">
-            {oldSubmissionItems.map((item) => (
-              <SubmissionTaskCard
-                key={item.id}
-                item={item}
-                now={now}
-                uploadingId={uploadingId}
-                onFileChange={handleFileChange}
+        <div className="p-4 sm:p-5">
+          {activeView === "running" ? (
+            currentSubmissionItems.length > 0 ? (
+              <div className="grid gap-4 xl:grid-cols-2">
+                {currentSubmissionItems.map((item) => (
+                  <SubmissionTaskCard
+                    key={item.id}
+                    item={item}
+                    now={now}
+                    uploadingId={uploadingId}
+                    onFileChange={handleFileChange}
+                  />
+                ))}
+              </div>
+            ) : (
+              <EmptySubmissionState
+                title="No running submissions"
+                text="There is no active submission deadline for this course right now."
               />
-            ))}
-          </div>
+            )
+          ) : oldSubmissionItems.length > 0 ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              {oldSubmissionItems.map((item) => (
+                <SubmissionTaskCard
+                  key={item.id}
+                  item={item}
+                  now={now}
+                  uploadingId={uploadingId}
+                  onFileChange={handleFileChange}
+                />
+              ))}
+            </div>
+          ) : (
+            <EmptySubmissionState
+              title="No past submissions"
+              text="Previous or expired submission tasks will appear here."
+            />
+          )}
         </div>
-      )}
+      </div>
+    </div>
+  );
+}
+
+function EmptySubmissionState({ title, text }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 px-5 py-10 text-center dark:border-slate-700 dark:bg-slate-800/40">
+      <div className="text-sm font-bold text-slate-900 dark:text-white">{title}</div>
+      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{text}</div>
     </div>
   );
 }

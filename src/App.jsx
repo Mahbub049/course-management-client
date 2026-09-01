@@ -30,6 +30,7 @@ import AppLayout from './layouts/AppLayout.jsx';
 import TeacherAttendanceSheetPage from './pages/TeacherAttendanceSheetPage.jsx';
 import StudentAttendanceSheetPage from './pages/StudentAttendanceSheetPage.jsx';
 import { StudentCoursesPage } from './pages/StudentCoursesPage.jsx';
+import StudentSubmissionsPage from './pages/StudentSubmissionsPage.jsx';
 
 function App() {
   return (
@@ -56,12 +57,10 @@ function App() {
           path="/student/dashboard"
           element={<StudentDashboard />}
         />
-        <Route
-          path="/student/courses/:courseId"
-          element={<StudentCoursePage />}
-        />
-        <Route path="/student/courses" element={<StudentCoursesPage />} />
+        <Route path="/student/marks" element={<StudentCoursesPage />} />
+        <Route path="/student/courses" element={<Navigate to="/student/marks" replace />} />
         <Route path="/student/courses/:courseId" element={<StudentCoursePage />} />
+        <Route path="/student/submissions" element={<StudentSubmissionsPage />} />
         <Route path="/student/issues" element={<StudentComplaintsPage />} />
         <Route
           path="/student/complaints"
