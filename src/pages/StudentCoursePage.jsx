@@ -522,25 +522,29 @@ export default function StudentCoursePage() {
   const hasCombinedPractice =
     courseType !== "lab" && Boolean(assignmentAssessment && presentationAssessment);
 
-  const practiceFullMarks =
-    courseType === "hybrid" ? Math.max(0, 25 - getCtMainWeight(course)) : 10;
+  const practiceFullMarks = Number(course?.assignmentPolicy?.totalWeight ?? 10);
 
   const practiceMain = useMemo(() => {
     const fromSummary = Number(summary?.assignmentMain);
     if (Number.isFinite(fromSummary)) return round2(fromSummary);
     if (!hasCombinedPractice || practiceFullMarks <= 0) return 0;
 
-    const eachWeight = practiceFullMarks / 2;
-    const contribution = [assignmentAssessment, presentationAssessment].reduce(
-      (sum, assessment) => {
-        if (!assessment || isAssessmentMarkHidden(assessment)) return sum;
-        const full = safeNum(assessment.fullMarks, 0);
-        const obtained = assessment.obtainedMarks;
-        if (full <= 0 || obtained == null) return sum;
-        return sum + (safeNum(obtained, 0) / full) * eachWeight;
-      },
-      0
-    );
+    const proportional = course?.assignmentPolicy?.mode === "proportional_full_marks";
+    const fullTotal = safeNum(assignmentAssessment?.fullMarks, 0) + safeNum(presentationAssessment?.fullMarks, 0);
+    const assignmentWeight = proportional && fullTotal > 0
+      ? practiceFullMarks * safeNum(assignmentAssessment?.fullMarks, 0) / fullTotal
+      : practiceFullMarks / 2;
+    const presentationWeight = practiceFullMarks - assignmentWeight;
+    const contribution = [
+      [assignmentAssessment, assignmentWeight],
+      [presentationAssessment, presentationWeight],
+    ].reduce((sum, [assessment, weight]) => {
+      if (!assessment || isAssessmentMarkHidden(assessment)) return sum;
+      const full = safeNum(assessment.fullMarks, 0);
+      const obtained = assessment.obtainedMarks;
+      if (full <= 0 || obtained == null) return sum;
+      return sum + (safeNum(obtained, 0) / full) * weight;
+    }, 0);
 
     return round2(contribution);
   }, [summary, hasCombinedPractice, practiceFullMarks, assignmentAssessment, presentationAssessment]);

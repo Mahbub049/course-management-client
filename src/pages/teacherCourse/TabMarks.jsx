@@ -228,7 +228,7 @@ function getCtMainWeight(course) {
 }
 
 function getHybridAssignmentWeight(course) {
-  return Math.max(0, 25 - getCtMainWeight(course));
+  return Number(course?.assignmentPolicy?.totalWeight ?? 10);
 }
 
 function findAssignmentAssessment(assessments = []) {
@@ -244,9 +244,7 @@ function findPresentationAssessment(assessments = []) {
 }
 
 function getAssignmentMainWeight(course) {
-  return getCourseType(course) === "hybrid"
-    ? getHybridAssignmentWeight(course)
-    : 10;
+  return Number(course?.assignmentPolicy?.totalWeight ?? 10);
 }
 
 function computeAssignmentMain(course, assessments = [], rowMarks = {}) {
@@ -260,18 +258,13 @@ function computeAssignmentMain(course, assessments = [], rowMarks = {}) {
   // When both exist, each contributes exactly half of the category weight,
   // regardless of whether its own full mark is 5, 10, or another value.
   if (assignment && presentation) {
-    const eachWeight = targetWeight / 2;
+    const proportional = course?.assignmentPolicy?.mode === "proportional_full_marks";
+    const fullTotal = Number(assignment.fullMarks || 0) + Number(presentation.fullMarks || 0);
+    const assignmentWeight = proportional && fullTotal > 0 ? targetWeight * Number(assignment.fullMarks || 0) / fullTotal : targetWeight / 2;
+    const presentationWeight = targetWeight - assignmentWeight;
     return roundPolicyTotal(
-      pct(
-        getMainMarkValue(rowMarks?.[assignment._id]),
-        assignment.fullMarks
-      ) *
-        eachWeight +
-        pct(
-          getMainMarkValue(rowMarks?.[presentation._id]),
-          presentation.fullMarks
-        ) *
-          eachWeight
+      pct(getMainMarkValue(rowMarks?.[assignment._id]), assignment.fullMarks) * assignmentWeight +
+      pct(getMainMarkValue(rowMarks?.[presentation._id]), presentation.fullMarks) * presentationWeight
     );
   }
 
@@ -464,8 +457,6 @@ function getGradeImprovementAdvice(total) {
 function getFinalCompletionNotice(course, assessments, rowMarks, attendanceMarks5, inputAssessments, planTotal) {
   if (Number(planTotal || 0) < 100) return null;
   if (!isRowCompleteForFinalCheck(inputAssessments, rowMarks)) return null;
-  if (studentHasFinalIncomplete(assessments, rowMarks)) return null;
-
   const total = computeTotal100(course, assessments, rowMarks, attendanceMarks5);
 
   if (!isWholeNumber(total)) {

@@ -17,6 +17,9 @@ import {
   reuseObeData,
 } from "../../services/obeService";
 import { fetchTeacherCourses } from "../../services/courseService";
+import { fetchAssessmentsForCourse } from "../../services/assessmentService";
+import { fetchMarksForCourse } from "../../services/markService";
+import { fetchAttendanceSummary } from "../../services/attendanceSummaryService";
 
 import { exportObeWorkbook } from "../../utils/obeWorkbookExport";
 import {
@@ -35,6 +38,7 @@ import {
 } from "../../utils/obeMarksExcelImport";
 import { getAuthItem } from "../../utils/authStorage";
 import { premiumSwal } from "../../utils/premiumDialog";
+import CourseAssessmentPolicyModal from "./CourseAssessmentPolicyModal";
 
 const defaultLevels = [
   { min: 70, max: 100, level: 4 },
@@ -156,12 +160,11 @@ const getExpectedLabAssessmentMarks = (type) => {
 
 const createEmptyBlueprintForm = (isLabCourse, coCode = "") => {
   const assessmentType = isLabCourse ? "mid" : "ct";
-  const totalMarks = isLabCourse
-    ? getExpectedLabAssessmentMarks(assessmentType)
-    : 0;
+  const totalMarks = isLabCourse ? getExpectedLabAssessmentMarks(assessmentType) : 7.5;
 
   return {
     ...emptyBlueprint,
+    assessmentName: isLabCourse ? "Lab Mid" : "CT-01",
     assessmentType,
     totalMarks,
     items: [
@@ -172,6 +175,83 @@ const createEmptyBlueprintForm = (isLabCourse, coCode = "") => {
       },
     ],
   };
+};
+
+const normalizeObeCtPolicy = (course = {}) => {
+  const raw = course?.classTestPolicy || {};
+  return {
+    mode: raw.mode || "best_n_average_scaled",
+    bestCount: Number(raw.bestCount) > 0 ? Number(raw.bestCount) : 2,
+    totalWeight: Number(raw.totalWeight) >= 0 ? Number(raw.totalWeight) : 15,
+    manualSelectedAssessmentIds: Array.isArray(raw.manualSelectedAssessmentIds)
+      ? raw.manualSelectedAssessmentIds.map(String)
+      : [],
+  };
+};
+
+const getObeAssignmentPolicy = (course = {}) => ({
+  mode: course?.assignmentPolicy?.mode === "proportional_full_marks" ? "proportional_full_marks" : "equal_parts_scaled",
+  totalWeight: Number(course?.assignmentPolicy?.totalWeight) >= 0
+    ? Number(course.assignmentPolicy.totalWeight)
+    : 10,
+});
+
+const isHalfStepValue = (value) => {
+  const n = Number(value);
+  return Number.isFinite(n) && Math.abs(n * 2 - Math.round(n * 2)) < 1e-9;
+};
+
+const gradeImprovementAdvice = (total) => {
+  const t = Number(total || 0);
+  if (!Number.isFinite(t)) return null;
+  const thresholds = [
+    [40, "D"], [45, "C"], [50, "C+"], [55, "B-"], [60, "B"],
+    [65, "B+"], [70, "A-"], [75, "A"], [80, "A+"],
+  ];
+  const next = thresholds.find(([min]) => min > t);
+  if (!next) return null;
+  const needed = round2(next[0] - t);
+  if (needed <= 0 || needed > 1) return null;
+  return `Increase ${needed % 1 === 0 ? needed : needed.toFixed(1)} mark${needed === 1 ? "" : "s"} to reach ${next[1]}`;
+};
+
+const suggestedBlueprintName = (type, existing = []) => {
+  const same = existing.filter((bp) => bp.assessmentType === type);
+  if (type === "assignment") return same.length === 0 ? "Assignment" : same.length === 1 ? "Presentation" : `Assignment-${String(same.length + 1).padStart(2, "0")}`;
+  if (type === "mid") return same.length ? `Mid-${String(same.length + 1).padStart(2, "0")}` : "Mid Term";
+  if (type === "final") return same.length ? `Final-${String(same.length + 1).padStart(2, "0")}` : "Final";
+  if (type === "attendance") return "Attendance";
+  const last = same[same.length - 1]?.assessmentName || "";
+  const match = last.match(/^(.*?)(\d+)\s*$/);
+  if (match) {
+    const width = match[2].length;
+    return `${match[1]}${String(Number(match[2]) + 1).padStart(width, "0")}`;
+  }
+  return `CT-${String(same.length + 1).padStart(2, "0")}`;
+};
+
+const getObeBlueprintTheme = () => ({
+  // Keep all assessment sections neutral and fully opaque. Colour is reserved
+  // for calculated total columns so the grid stays calm and readable.
+  group: "bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-100",
+  sub: "bg-slate-50 text-slate-700 dark:bg-slate-950 dark:text-slate-200",
+  cell: "bg-transparent",
+});
+
+const suggestedBlueprintMarks = (type, existing = [], course = {}) => {
+  if (type === "ct") {
+    const policy = normalizeObeCtPolicy(course);
+    return round2(policy.totalWeight / Math.max(1, policy.bestCount || 2));
+  }
+  if (type === "assignment") {
+    const policy = getObeAssignmentPolicy(course);
+    const count = existing.filter((bp) => bp.assessmentType === "assignment").length;
+    return count < 2 ? round2(policy.totalWeight / 2) : policy.totalWeight;
+  }
+  if (type === "mid") return 30;
+  if (type === "final") return 40;
+  if (type === "attendance") return 5;
+  return 0;
 };
 
 const sortBlueprints = (list = []) =>
@@ -246,9 +326,13 @@ const buildMarkEntryState = (data = {}) => {
   for (const mark of marks) {
     const key = `${mark.student}__${mark.blueprint}`;
     if (!draft[key]) draft[key] = {};
-    for (const entry of mark.entries || []) {
-      draft[key][entry.itemKey] = entry.obtainedMarks;
+    const blueprint = loadedBlueprints.find((bp) => String(bp._id) === String(mark.blueprint));
+    if (mark.status === "absent" || mark.status === "incomplete") {
+      const firstItem = blueprint?.items?.[0];
+      if (firstItem) draft[key][firstItem.key] = mark.status === "absent" ? "A" : "I";
+      continue;
     }
+    for (const entry of mark.entries || []) draft[key][entry.itemKey] = entry.obtainedMarks;
   }
 
   return { students, blueprints: loadedBlueprints, draft };
@@ -261,7 +345,7 @@ const isPersistedSetupData = (data = {}) =>
       data?.mappings?.length
   );
 
-export default function TabObe({ courseId, course }) {
+export default function TabObe({ courseId, course, onCourseUpdated }) {
   const courseType = getCourseType(course);
   const isLabCourse = courseType === "lab";
   const availableAssessmentTypes = isLabCourse
@@ -304,6 +388,10 @@ export default function TabObe({ courseId, course }) {
   const [obeTabMode, setObeTabMode] = useState("row");
   const [obeSortMode, setObeSortMode] = useState("entered");
   const [obeStudentSearch, setObeStudentSearch] = useState("");
+  const [normalAssessments, setNormalAssessments] = useState([]);
+  const [normalMarks, setNormalMarks] = useState([]);
+  const [attendanceSummary, setAttendanceSummary] = useState([]);
+  const [policyModalOpen, setPolicyModalOpen] = useState(false);
 
   const obeInputRefs = useRef([]);
   const obeMarksImportInputRef = useRef(null);
@@ -445,13 +533,20 @@ export default function TabObe({ courseId, course }) {
   const loadMarks = async () => {
     try {
       setMarkLoading(true);
-      const data = await getObeMarks(courseId);
-      const { students, blueprints: loadedBlueprints, draft } =
-        buildMarkEntryState(data);
+      const [data, assessmentsData, normalMarksData, attendanceData] = await Promise.all([
+        getObeMarks(courseId),
+        fetchAssessmentsForCourse(courseId),
+        fetchMarksForCourse(courseId),
+        fetchAttendanceSummary(courseId),
+      ]);
+      const { students, blueprints: loadedBlueprints, draft } = buildMarkEntryState(data);
 
       setMarkStudents(students);
       setMarkBlueprints(loadedBlueprints);
       setMarkDraft(draft);
+      setNormalAssessments(Array.isArray(assessmentsData) ? assessmentsData : []);
+      setNormalMarks(Array.isArray(normalMarksData) ? normalMarksData : []);
+      setAttendanceSummary(Array.isArray(attendanceData) ? attendanceData : attendanceData?.records || []);
       return { students, blueprints: loadedBlueprints, draft };
     } catch (error) {
       console.error(error);
@@ -836,11 +931,20 @@ const saveSetup = async () => {
     setDragOverBlueprintItemIndex(null);
   };
 
-  const resetBlueprintForm = () => {
+  const resetBlueprintForm = (existingOverride = blueprints) => {
     setEditingBlueprintId(null);
-    setBlueprintForm(
-      createEmptyBlueprintForm(isLabCourse, coOptions[0]?.code || "")
-    );
+    if (isLabCourse) {
+      setBlueprintForm(createEmptyBlueprintForm(true, coOptions[0]?.code || ""));
+      return;
+    }
+    const assessmentType = "ct";
+    const totalMarks = suggestedBlueprintMarks(assessmentType, existingOverride, course);
+    setBlueprintForm({
+      ...createEmptyBlueprintForm(false, coOptions[0]?.code || ""),
+      assessmentName: suggestedBlueprintName(assessmentType, existingOverride),
+      totalMarks,
+      items: [{ key: "q1", label: "Q1", marks: totalMarks, coCode: coOptions[0]?.code || "", order: 0 }],
+    });
   };
 
   const saveBlueprint = async () => {
@@ -863,7 +967,7 @@ const saveSetup = async () => {
         toast("success", "Blueprint created successfully.");
       }
 
-      resetBlueprintForm();
+      resetBlueprintForm(editingBlueprintId ? blueprints : [...blueprints, normalizedBlueprintForm]);
       await Promise.all([loadBlueprints(), loadMarks()]);
     } catch (error) {
       console.error(error);
@@ -939,6 +1043,16 @@ const saveSetup = async () => {
 
   const handleDraftChange = (studentId, blueprintId, itemKey, rawValue, maxMarks) => {
     let nextValue = String(rawValue ?? "").replace(",", ".");
+    const blueprint = markBlueprints.find((bp) => String(bp._id) === String(blueprintId));
+    const statusValue = nextValue.trim().toUpperCase();
+    if (["mid", "final"].includes(blueprint?.assessmentType) && ["A", "I"].includes(statusValue)) {
+      const key = `${studentId}__${blueprintId}`;
+      setMarkDraft((prev) => ({
+        ...prev,
+        [key]: Object.fromEntries((blueprint.items || []).map((item) => [item.key, item.key === itemKey ? statusValue : ""])),
+      }));
+      return;
+    }
 
     if (nextValue === "") {
       setDraftValue(studentId, blueprintId, itemKey, "");
@@ -949,7 +1063,7 @@ const saveSetup = async () => {
     // the user is typing. Converting them to Number immediately removes the dot
     // and makes values such as 4.5 / 15.5 impossible to enter naturally.
     if (nextValue === ".") nextValue = "0.";
-    if (!/^\d*(?:\.\d{0,2})?$/.test(nextValue)) return;
+    if (!/^\d*(?:\.\d?)?$/.test(nextValue)) return;
 
     if (nextValue.endsWith(".")) {
       setDraftValue(studentId, blueprintId, itemKey, nextValue);
@@ -971,6 +1085,7 @@ const saveSetup = async () => {
   const handleDraftBlur = (studentId, blueprintId, itemKey, maxMarks) => {
     const currentValue = getDraftValue(studentId, blueprintId, itemKey);
     if (currentValue === "") return;
+    if (["A", "I"].includes(String(currentValue).trim().toUpperCase())) return;
 
     const numeric = Number(currentValue);
     if (!Number.isFinite(numeric)) {
@@ -979,12 +1094,13 @@ const saveSetup = async () => {
     }
 
     const max = Number(maxMarks || 0);
-    setDraftValue(
-      studentId,
-      blueprintId,
-      itemKey,
-      round2(Math.max(0, Math.min(numeric, max)))
-    );
+    const clamped = round2(Math.max(0, Math.min(numeric, max)));
+    if (!isHalfStepValue(clamped)) {
+      toast("warning", "Only whole or .5 marks are allowed.");
+      setDraftValue(studentId, blueprintId, itemKey, Math.round(clamped * 2) / 2);
+      return;
+    }
+    setDraftValue(studentId, blueprintId, itemKey, clamped);
   };
 
   const getDraftValue = (studentId, blueprintId, itemKey) => {
@@ -995,41 +1111,384 @@ const saveSetup = async () => {
   const getAssessmentDraftTotal = (studentId, blueprint) => {
     return round2(
       (blueprint.items || []).reduce((sum, item) => {
-        const val = Number(getDraftValue(studentId, blueprint._id, item.key) || 0);
-        return sum + val;
+        const raw = getDraftValue(studentId, blueprint._id, item.key);
+        const val = Number(raw);
+        return sum + (Number.isFinite(val) ? val : 0);
       }, 0)
     );
   };
 
-  const getObeRowCompletionNotice = (studentId) => {
-    const totalConfiguredMarks = round2(
-      (markBlueprints || []).reduce(
-        (sum, blueprint) => sum + Number(blueprint.totalMarks || 0),
+  const getBlueprintTypeRows = (type) => markBlueprints.filter((bp) => bp.assessmentType === type);
+
+  const getCategoryDraftTotal = (studentId, type) => {
+    const rows = getBlueprintTypeRows(type);
+    if (!rows.length) return 0;
+    const scored = rows.map((bp) => ({
+      blueprint: bp,
+      raw: getAssessmentDraftTotal(studentId, bp),
+      pct: Number(bp.totalMarks || 0) > 0 ? getAssessmentDraftTotal(studentId, bp) / Number(bp.totalMarks) : 0,
+    }));
+
+    if (type === "ct") {
+      const policy = normalizeObeCtPolicy(course);
+      let selected = scored;
+      if (policy.mode === "manual_average_scaled" && policy.manualSelectedAssessmentIds.length) {
+        selected = scored.filter(({ blueprint }) => policy.manualSelectedAssessmentIds.includes(String(blueprint._id)));
+      } else {
+        const count = policy.mode === "best_one_scaled" ? 1 : Math.max(1, policy.bestCount || 2);
+        selected = [...scored].sort((a, b) => b.pct - a.pct).slice(0, count);
+      }
+      if (!selected.length) return 0;
+      if (policy.mode === "best_n_individual_scaled") {
+        const each = policy.totalWeight / selected.length;
+        return round2(selected.reduce((sum, row) => sum + row.pct * each, 0));
+      }
+      return round2((selected.reduce((sum, row) => sum + row.pct, 0) / selected.length) * policy.totalWeight);
+    }
+
+    if (type === "assignment") {
+      const policy = getObeAssignmentPolicy(course);
+      if (policy.mode === "proportional_full_marks") {
+        const full = scored.reduce((sum, row) => sum + Number(row.blueprint.totalMarks || 0), 0);
+        if (full > 0) return round2(scored.reduce((sum, row) => sum + row.pct * policy.totalWeight * Number(row.blueprint.totalMarks || 0) / full, 0));
+      }
+      const each = policy.totalWeight / scored.length;
+      return round2(scored.reduce((sum, row) => sum + row.pct * each, 0));
+    }
+
+    return round2(scored.reduce((sum, row) => sum + row.raw, 0));
+  };
+
+  const getObeGrandTotal = (studentId) => round2(
+    getCategoryDraftTotal(studentId, "ct") +
+    getCategoryDraftTotal(studentId, "assignment") +
+    getCategoryDraftTotal(studentId, "mid") +
+    getCategoryDraftTotal(studentId, "final") +
+    Math.min(5, getCategoryDraftTotal(studentId, "attendance"))
+  );
+
+  const getNormalAssessmentCategory = (assessment) => {
+    const n = String(assessment?.name || "").toLowerCase();
+    if (n.includes("att")) return "attendance";
+    if (n.includes("assign") || n.includes("present")) return "assignment";
+    if (n.includes("mid")) return "mid";
+    if (n.includes("final")) return "final";
+    if (n.includes("ct") || n.includes("class test") || n.includes("quiz")) return "ct";
+    return "other";
+  };
+
+  const getStudentNormalMarks = (studentId) =>
+    normalMarks.filter((mark) => {
+      const markStudentId = mark?.student?._id || mark?.student?.id || mark?.student;
+      return String(markStudentId) === String(studentId);
+    });
+
+  const getStudentNormalMarkMap = (studentId) =>
+    new Map(
+      getStudentNormalMarks(studentId).map((mark) => {
+        const assessmentId = mark?.assessment?._id || mark?.assessment?.id || mark?.assessment;
+        return [String(assessmentId), mark];
+      })
+    );
+
+  const getNormalTotal = (studentId) => {
+    const studentMarks = getStudentNormalMarks(studentId);
+    if (!studentMarks.length) return null;
+
+    const markMap = getStudentNormalMarkMap(studentId);
+    const byType = (type) =>
+      normalAssessments
+        .filter((assessment) => getNormalAssessmentCategory(assessment) === type)
+        .map((assessment) => {
+          const mark = markMap.get(String(assessment._id));
+          return {
+            assessment,
+            mark,
+            pct:
+              Number(assessment.fullMarks || 0) > 0
+                ? Number(mark?.obtainedMarks || 0) / Number(assessment.fullMarks)
+                : 0,
+          };
+        });
+
+    const ctRows = byType("ct");
+    const ctPolicy = normalizeObeCtPolicy(course);
+    const ctCount =
+      ctPolicy.mode === "best_one_scaled"
+        ? 1
+        : Math.max(1, ctPolicy.bestCount || 2);
+    let selectedCt = ctRows;
+    if (
+      ctPolicy.mode === "manual_average_scaled" &&
+      ctPolicy.manualSelectedAssessmentIds.length
+    ) {
+      selectedCt = ctRows.filter((row) =>
+        ctPolicy.manualSelectedAssessmentIds.includes(String(row.assessment._id))
+      );
+    } else {
+      selectedCt = [...ctRows]
+        .sort((a, b) => b.pct - a.pct)
+        .slice(0, ctCount);
+    }
+
+    const ct = selectedCt.length
+      ? round2(
+          (selectedCt.reduce((sum, row) => sum + row.pct, 0) /
+            selectedCt.length) *
+            ctPolicy.totalWeight
+        )
+      : 0;
+
+    const assignmentRows = byType("assignment");
+    const assignmentPolicy = getObeAssignmentPolicy(course);
+    const assignmentWeight = assignmentPolicy.totalWeight;
+    let assignment = 0;
+    if (assignmentRows.length) {
+      if (assignmentPolicy.mode === "proportional_full_marks") {
+        const full = assignmentRows.reduce(
+          (sum, row) => sum + Number(row.assessment.fullMarks || 0),
+          0
+        );
+        assignment =
+          full > 0
+            ? round2(
+                assignmentRows.reduce(
+                  (sum, row) =>
+                    sum +
+                    row.pct *
+                      assignmentWeight *
+                      Number(row.assessment.fullMarks || 0) /
+                      full,
+                  0
+                )
+              )
+            : 0;
+      } else {
+        assignment = round2(
+          assignmentRows.reduce(
+            (sum, row) =>
+              sum + row.pct * (assignmentWeight / assignmentRows.length),
+            0
+          )
+        );
+      }
+    }
+
+    const mid = round2(
+      byType("mid").reduce(
+        (sum, row) => sum + Number(row.mark?.obtainedMarks || 0),
         0
       )
     );
+    const final = round2(
+      byType("final").reduce(
+        (sum, row) => sum + Number(row.mark?.obtainedMarks || 0),
+        0
+      )
+    );
+    const attRow = attendanceSummary.find(
+      (row) =>
+        String(row.student || row.studentId || row._id) === String(studentId)
+    );
+    const attendance = Math.min(
+      5,
+      Number(attRow?.marks ?? attRow?.attendanceMarks ?? attRow?.obtainedMarks ?? 0)
+    );
 
-    if (totalConfiguredMarks < 100) return null;
+    return round2(ct + assignment + mid + final + attendance);
+  };
 
+  const normalizeAssessmentMatchName = (value) =>
+    String(value || "")
+      .toLowerCase()
+      .replace(/class\s*[-_]?\s*test/g, "ct")
+      .replace(/quiz/g, "ct")
+      .replace(/[^a-z0-9]+/g, "")
+      .trim();
+
+  const getAssessmentOrdinal = (value) => {
+    const matches = String(value || "").match(/\d+/g);
+    if (!matches?.length) return null;
+    return Number(matches[matches.length - 1]);
+  };
+
+  const findNormalAssessmentForBlueprint = (blueprint) => {
+    const type = blueprint?.assessmentType;
+    const candidates = normalAssessments.filter(
+      (assessment) => getNormalAssessmentCategory(assessment) === type
+    );
+    if (!candidates.length) return null;
+
+    const blueprintName = normalizeAssessmentMatchName(blueprint?.assessmentName);
+    const exact = candidates.find(
+      (assessment) =>
+        normalizeAssessmentMatchName(assessment?.name) === blueprintName
+    );
+    if (exact) return exact;
+
+    if (type === "assignment") {
+      const rawName = String(blueprint?.assessmentName || "").toLowerCase();
+      const wantsPresentation = rawName.includes("present");
+      const semantic = candidates.find((assessment) => {
+        const name = String(assessment?.name || "").toLowerCase();
+        return wantsPresentation ? name.includes("present") : name.includes("assign");
+      });
+      if (semantic) return semantic;
+    }
+
+    const ordinal = getAssessmentOrdinal(blueprint?.assessmentName);
+    if (ordinal !== null) {
+      const ordinalMatch = candidates.find(
+        (assessment) => getAssessmentOrdinal(assessment?.name) === ordinal
+      );
+      if (ordinalMatch) return ordinalMatch;
+    }
+
+    const sameTypeBlueprints = getBlueprintTypeRows(type);
+    const blueprintIndex = sameTypeBlueprints.findIndex(
+      (row) => String(row._id) === String(blueprint?._id)
+    );
+    if (blueprintIndex >= 0 && candidates[blueprintIndex]) {
+      return candidates[blueprintIndex];
+    }
+
+    return candidates.length === 1 ? candidates[0] : null;
+  };
+
+  const getBlueprintStatusToken = (studentId, blueprint) =>
+    (blueprint?.items || [])
+      .map((item) =>
+        String(getDraftValue(studentId, blueprint._id, item.key))
+          .trim()
+          .toUpperCase()
+      )
+      .find((value) => ["A", "I"].includes(value)) || "";
+
+  const isBlueprintFilledForStudent = (studentId, blueprint) => {
+    if (getBlueprintStatusToken(studentId, blueprint)) return true;
+    return (blueprint?.items || []).every(
+      (item) =>
+        String(getDraftValue(studentId, blueprint._id, item.key) ?? "").trim() !==
+        ""
+    );
+  };
+
+  const getAttendanceSource = (studentId) => {
+    const row = attendanceSummary.find(
+      (item) =>
+        String(item.student || item.studentId || item._id) === String(studentId)
+    );
+    if (!row) return null;
+    const raw = row?.marks ?? row?.attendanceMarks ?? row?.obtainedMarks;
+    if (raw === "" || raw === null || raw === undefined) return null;
+    const value = Number(raw);
+    return Number.isFinite(value) ? Math.min(5, value) : null;
+  };
+
+  const getAssessmentMismatchNotices = (studentId) => {
+    const markMap = getStudentNormalMarkMap(studentId);
+    const notices = [];
+
+    for (const blueprint of markBlueprints || []) {
+      if (!isBlueprintFilledForStudent(studentId, blueprint)) continue;
+
+      const sourceAssessment = findNormalAssessmentForBlueprint(blueprint);
+      if (!sourceAssessment) continue;
+
+      const sourceMark = markMap.get(String(sourceAssessment._id));
+      const obeStatus = getBlueprintStatusToken(studentId, blueprint);
+      const label = blueprint.assessmentName || getAssessmentTypeLabel(blueprint.assessmentType, isLabCourse);
+
+      if (sourceMark) {
+        const sourceStatus = String(sourceMark.status || "present").toLowerCase();
+        const expectedStatus =
+          sourceStatus === "absent"
+            ? "A"
+            : sourceStatus === "incomplete"
+              ? "I"
+              : "";
+
+        if (expectedStatus || obeStatus) {
+          if (expectedStatus !== obeStatus) {
+            notices.push({
+              type: "assessment-mismatch",
+              message: `${label} mismatch: Marks sheet ${expectedStatus || "numeric"}, OBE ${obeStatus || "numeric"}.`,
+            });
+          }
+          continue;
+        }
+
+        const sourceFull = Number(sourceAssessment.fullMarks || 0);
+        const targetFull = Number(blueprint.totalMarks || 0);
+        const sourceObtained = Number(sourceMark.obtainedMarks || 0);
+        const comparableSource =
+          sourceFull > 0 && targetFull > 0
+            ? round2((sourceObtained / sourceFull) * targetFull)
+            : round2(sourceObtained);
+        const obeObtained = round2(getAssessmentDraftTotal(studentId, blueprint));
+
+        if (Math.abs(comparableSource - obeObtained) > 1e-9) {
+          const sourceDisplay = sourceFull > 0
+            ? `${round2(sourceObtained)}/${sourceFull}`
+            : `${round2(sourceObtained)}`;
+          const obeDisplay = targetFull > 0
+            ? `${obeObtained}/${targetFull}`
+            : `${obeObtained}`;
+          notices.push({
+            type: "assessment-mismatch",
+            message: `${label} mismatch: Marks ${sourceDisplay}, OBE ${obeDisplay}.`,
+          });
+        }
+        continue;
+      }
+
+      if (blueprint.assessmentType === "attendance") {
+        const attendanceValue = getAttendanceSource(studentId);
+        if (attendanceValue === null) continue;
+        const targetFull = Number(blueprint.totalMarks || 5);
+        const comparableSource = round2((attendanceValue / 5) * targetFull);
+        const obeObtained = round2(getAssessmentDraftTotal(studentId, blueprint));
+        if (Math.abs(comparableSource - obeObtained) > 1e-9) {
+          notices.push({
+            type: "assessment-mismatch",
+            message: `${label} mismatch: Attendance ${round2(attendanceValue)}/5, OBE ${obeObtained}/${targetFull}.`,
+          });
+        }
+      }
+    }
+
+    return notices;
+  };
+
+  const getObeRowCompletionNotice = (studentId) => {
     const allItems = (markBlueprints || []).flatMap((blueprint) =>
       (blueprint.items || []).map((item) => ({ blueprint, item }))
     );
-
     if (!allItems.length) return null;
 
-    const allFilled = allItems.every(({ blueprint, item }) =>
-      String(getDraftValue(studentId, blueprint._id, item.key) ?? "").trim() !== ""
+    const statusBlueprintIds = new Set(
+      markBlueprints
+        .filter((blueprint) =>
+          (blueprint.items || []).some((item) =>
+            ["A", "I"].includes(
+              String(getDraftValue(studentId, blueprint._id, item.key))
+                .trim()
+                .toUpperCase()
+            )
+          )
+        )
+        .map((blueprint) => String(blueprint._id))
     );
 
+    const allFilled = allItems.every(
+      ({ blueprint, item }) =>
+        statusBlueprintIds.has(String(blueprint._id)) ||
+        String(getDraftValue(studentId, blueprint._id, item.key) ?? "").trim() !==
+          ""
+    );
     if (!allFilled) return null;
 
-    const totalObtained = round2(
-      (markBlueprints || []).reduce(
-        (sum, blueprint) => sum + getAssessmentDraftTotal(studentId, blueprint),
-        0
-      )
-    );
-
+    const totalObtained = getObeGrandTotal(studentId);
     if (Math.abs(totalObtained - Math.round(totalObtained)) > 1e-9) {
       return {
         type: "error",
@@ -1038,7 +1497,35 @@ const saveSetup = async () => {
       };
     }
 
+    const normalTotal = getNormalTotal(studentId);
+    if (normalTotal !== null && Math.abs(normalTotal - totalObtained) > 1e-9) {
+      return {
+        type: "mismatch",
+        message: `Overall total mismatch: Marks ${normalTotal}, OBE ${totalObtained}.`,
+      };
+    }
+
+    const hasFinalStatus = markBlueprints.some(
+      (blueprint) =>
+        ["mid", "final"].includes(blueprint.assessmentType) &&
+        (blueprint.items || []).some((item) =>
+          ["A", "I"].includes(
+            String(getDraftValue(studentId, blueprint._id, item.key))
+              .trim()
+              .toUpperCase()
+          )
+        )
+    );
+    const advice = hasFinalStatus ? null : gradeImprovementAdvice(totalObtained);
+    if (advice) return { type: "advice", message: advice };
     return null;
+  };
+
+  const getObeRowNotices = (studentId) => {
+    const notices = getAssessmentMismatchNotices(studentId);
+    const completionNotice = getObeRowCompletionNotice(studentId);
+    if (completionNotice) notices.push(completionNotice);
+    return notices;
   };
 
     const sortedMarkStudents = useMemo(() => {
@@ -1192,12 +1679,201 @@ const saveSetup = async () => {
     }
   };
 
+  const handleFetchFromMarksSheet = async () => {
+    const sourceOptions = [
+      ...normalAssessments.map(
+        (assessment) =>
+          `<option value="a:${assessment._id}">${escapeHtml(assessment.name || "Assessment")} (${assessment.fullMarks})</option>`
+      ),
+      '<option value="attendance">Attendance</option>',
+    ].join("");
+    const targetOptions = markBlueprints
+      .map(
+        (blueprint) =>
+          `<option value="${blueprint._id}">${escapeHtml(blueprint.assessmentName || "OBE Assessment")} (${blueprint.totalMarks})</option>`
+      )
+      .join("");
+
+    const isDark = document.documentElement.classList.contains("dark");
+    const palette = isDark
+      ? {
+          panel: "#0f172a",
+          card: "#111c30",
+          border: "#334155",
+          text: "#f8fafc",
+          muted: "#94a3b8",
+          select: "#0b1220",
+          soft: "#182235",
+          accent: "#818cf8",
+        }
+      : {
+          panel: "#ffffff",
+          card: "#f8fafc",
+          border: "#dbe3ee",
+          text: "#0f172a",
+          muted: "#64748b",
+          select: "#ffffff",
+          soft: "#eef2ff",
+          accent: "#4f46e5",
+        };
+
+    const rowMarkup = (index) => `
+      <div class="obe-fetch-row" style="display:grid;grid-template-columns:28px minmax(0,1fr) 30px minmax(0,1fr) 32px;gap:10px;align-items:center;padding:10px;border:1px solid ${palette.border};border-radius:14px;background:${palette.card};">
+        <span class="obe-fetch-index" style="display:flex;width:26px;height:26px;align-items:center;justify-content:center;border-radius:9px;background:${palette.soft};color:${palette.accent};font-size:11px;font-weight:800;">${index + 1}</span>
+        <select class="obe-fetch-source" style="width:100%;height:40px;margin:0;border:1px solid ${palette.border};border-radius:10px;background:${palette.select};color:${palette.text};padding:0 34px 0 11px;font-size:13px;outline:none;">
+          <option value="">Select marksheet assessment</option>${sourceOptions}
+        </select>
+        <span style="text-align:center;color:${palette.muted};font-size:17px;font-weight:700;">→</span>
+        <select class="obe-fetch-target" style="width:100%;height:40px;margin:0;border:1px solid ${palette.border};border-radius:10px;background:${palette.select};color:${palette.text};padding:0 34px 0 11px;font-size:13px;outline:none;">
+          <option value="">Select OBE assessment</option>${targetOptions}
+        </select>
+        <button type="button" class="obe-fetch-remove" aria-label="Remove mapping" title="Remove mapping" style="width:30px;height:30px;border:1px solid ${palette.border};border-radius:9px;background:${palette.select};color:${palette.muted};font-size:17px;line-height:1;cursor:pointer;">×</button>
+      </div>`;
+
+    const result = await Swal.fire({
+      title: "Fetch marks into OBE",
+      html: `
+        <div style="text-align:left;color:${palette.text};">
+          <div style="margin:-2px 0 16px;padding:12px 14px;border:1px solid ${palette.border};border-radius:13px;background:${palette.card};">
+            <div style="font-size:13px;font-weight:800;color:${palette.text};">Map marksheet assessments to OBE assessments</div>
+            <div style="margin-top:4px;font-size:12px;line-height:1.55;color:${palette.muted};">Choose only the rows you need. Attendance can also be fetched. For an OBE assessment with multiple questions, question-wise source marks must be available.</div>
+          </div>
+          <div style="display:grid;grid-template-columns:28px minmax(0,1fr) 30px minmax(0,1fr) 32px;gap:10px;padding:0 10px 7px;color:${palette.muted};font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;">
+            <span></span><span>From marksheet</span><span></span><span>To OBE</span><span></span>
+          </div>
+          <div id="obe-fetch-rows" style="display:flex;flex-direction:column;gap:8px;">${rowMarkup(0)}</div>
+          <button type="button" id="obe-fetch-add" style="display:inline-flex;align-items:center;gap:7px;margin-top:11px;border:1px solid ${palette.border};border-radius:10px;background:${palette.select};color:${palette.text};padding:8px 11px;font-size:12px;font-weight:800;cursor:pointer;">＋ Add another mapping</button>
+        </div>`,
+      width: 780,
+      background: palette.panel,
+      color: palette.text,
+      showCancelButton: true,
+      confirmButtonText: "Fetch selected marks",
+      cancelButtonText: "Cancel",
+      buttonsStyling: false,
+      customClass: {
+        popup: "obe-fetch-popup",
+        title: "obe-fetch-title",
+        actions: "obe-fetch-actions",
+        confirmButton: "obe-fetch-confirm",
+        cancelButton: "obe-fetch-cancel",
+      },
+      didOpen: (popup) => {
+        const style = document.createElement("style");
+        style.id = "obe-fetch-modal-styles";
+        style.textContent = `
+          .obe-fetch-popup{border:1px solid ${palette.border}!important;border-radius:20px!important;box-shadow:0 24px 70px rgba(2,6,23,.28)!important;padding:24px!important}
+          .obe-fetch-title{padding:0 0 16px!important;text-align:left!important;font-size:24px!important;font-weight:800!important;color:${palette.text}!important}
+          .obe-fetch-actions{width:100%!important;justify-content:flex-end!important;gap:9px!important;margin:20px 0 0!important}
+          .obe-fetch-confirm,.obe-fetch-cancel{height:40px!important;border-radius:11px!important;padding:0 16px!important;font-size:13px!important;font-weight:800!important;cursor:pointer!important}
+          .obe-fetch-confirm{border:1px solid #4f46e5!important;background:#4f46e5!important;color:white!important}
+          .obe-fetch-confirm:hover{background:#4338ca!important}
+          .obe-fetch-cancel{border:1px solid ${palette.border}!important;background:${palette.select}!important;color:${palette.text}!important}
+          .obe-fetch-row select:focus{border-color:${palette.accent}!important;box-shadow:0 0 0 3px ${isDark ? "rgba(99,102,241,.18)" : "rgba(99,102,241,.12)"}!important}
+          .obe-fetch-remove:hover{color:#e11d48!important;border-color:${isDark ? "rgba(244,63,94,.4)" : "#fecdd3"}!important;background:${isDark ? "rgba(244,63,94,.08)" : "#fff1f2"}!important}
+          @media(max-width:680px){.obe-fetch-popup{padding:18px!important}.obe-fetch-row{grid-template-columns:24px 1fr 30px!important}.obe-fetch-row .obe-fetch-source,.obe-fetch-row .obe-fetch-target{grid-column:2}.obe-fetch-row>span:nth-child(3){grid-column:2}.obe-fetch-row .obe-fetch-remove{grid-column:3;grid-row:1}.obe-fetch-title{font-size:21px!important}}
+        `;
+        document.head.appendChild(style);
+
+        const rowsEl = popup.querySelector("#obe-fetch-rows");
+        const renumber = () => {
+          [...rowsEl.querySelectorAll(".obe-fetch-row")].forEach((row, index) => {
+            row.querySelector(".obe-fetch-index").textContent = String(index + 1);
+          });
+        };
+        const wireRemoveButtons = () => {
+          [...rowsEl.querySelectorAll(".obe-fetch-remove")].forEach((button) => {
+            button.onclick = () => {
+              const rows = rowsEl.querySelectorAll(".obe-fetch-row");
+              if (rows.length === 1) {
+                const row = button.closest(".obe-fetch-row");
+                row.querySelector(".obe-fetch-source").value = "";
+                row.querySelector(".obe-fetch-target").value = "";
+                return;
+              }
+              button.closest(".obe-fetch-row")?.remove();
+              renumber();
+            };
+          });
+        };
+        popup.querySelector("#obe-fetch-add")?.addEventListener("click", () => {
+          rowsEl.insertAdjacentHTML("beforeend", rowMarkup(rowsEl.children.length));
+          wireRemoveButtons();
+        });
+        wireRemoveButtons();
+      },
+      willClose: () => document.getElementById("obe-fetch-modal-styles")?.remove(),
+      preConfirm: () => {
+        const mappings = [...document.querySelectorAll(".obe-fetch-row")]
+          .map((row) => ({
+            source: row.querySelector(".obe-fetch-source")?.value || "",
+            target: row.querySelector(".obe-fetch-target")?.value || "",
+          }))
+          .filter((mapping) => mapping.source || mapping.target);
+
+        if (!mappings.length) {
+          Swal.showValidationMessage("Add at least one assessment mapping.");
+          return false;
+        }
+        if (mappings.some((mapping) => !mapping.source || !mapping.target)) {
+          Swal.showValidationMessage("Complete both From and To for every mapping you added.");
+          return false;
+        }
+        const targetIds = mappings.map((mapping) => mapping.target);
+        if (new Set(targetIds).size !== targetIds.length) {
+          Swal.showValidationMessage("Each OBE assessment can be selected only once.");
+          return false;
+        }
+        return mappings;
+      },
+    });
+    if (!result.isConfirmed) return;
+
+    const nextDraft = structuredClone(markDraft);
+    let copied = 0;
+    let skipped = 0;
+    const attendanceMap = new Map(attendanceSummary.map((r) => [String(r.student || r.studentId || r._id), Number(r.marks ?? r.attendanceMarks ?? r.obtainedMarks ?? 0)]));
+    const marksByAssessmentStudent = new Map(normalMarks.map((m) => [`${m.assessment}__${m.student}`, m]));
+
+    for (const mapping of result.value) {
+      const target = markBlueprints.find((bp) => String(bp._id) === String(mapping.target));
+      if (!target) continue;
+      const sourceAssessment = mapping.source.startsWith("a:") ? normalAssessments.find((a) => String(a._id) === mapping.source.slice(2)) : null;
+      for (const student of markStudents) {
+        const key = `${student.studentId}__${target._id}`;
+        if (!nextDraft[key]) nextDraft[key] = {};
+        if (mapping.source === "attendance") {
+          const value = Math.min(Number(target.totalMarks || 5), attendanceMap.get(String(student.studentId)) || 0);
+          if ((target.items || []).length === 1) { nextDraft[key][target.items[0].key] = value; copied++; } else skipped++;
+          continue;
+        }
+        const mark = marksByAssessmentStudent.get(`${sourceAssessment?._id}__${student.studentId}`);
+        if (!mark) continue;
+        const targetItems = target.items || [];
+        const subMarks = Array.isArray(mark.subMarks) ? mark.subMarks : [];
+        if (["mid", "final"].includes(target.assessmentType) && ["absent", "incomplete"].includes(mark.status)) {
+          targetItems.forEach((item, index) => { nextDraft[key][item.key] = index === 0 ? (mark.status === "absent" ? "A" : "I") : ""; });
+          copied++;
+        } else if (targetItems.length === 1) {
+          const scaled = Number(sourceAssessment?.fullMarks || 0) > 0 ? (Number(mark.obtainedMarks || 0) / Number(sourceAssessment.fullMarks)) * Number(targetItems[0].marks || target.totalMarks || 0) : 0;
+          nextDraft[key][targetItems[0].key] = Math.round(scaled * 2) / 2;
+          copied++;
+        } else if (subMarks.length === targetItems.length) {
+          targetItems.forEach((item, index) => { nextDraft[key][item.key] = Math.min(Number(item.marks || 0), Math.round(Number(subMarks[index]?.obtainedMarks || 0) * 2) / 2); });
+          copied++;
+        } else skipped++;
+      }
+    }
+    setMarkDraft(nextDraft);
+    await Swal.fire({ icon: copied ? "success" : "info", title: copied ? "Marks fetched" : "Nothing fetched", text: `Updated ${copied} student-assessment entries.${skipped ? ` Skipped ${skipped} entries where question-wise source marks were unavailable.` : ""} Review and click Save OBE Marks.` });
+  };
+
   const saveMarks = async () => {
     try {
       setMarkSaving(true);
 
-      const fractionalRows = markStudents.filter((student) =>
-        getObeRowCompletionNotice(student.studentId)
+      const fractionalRows = markStudents.filter(
+        (student) => getObeRowCompletionNotice(student.studentId)?.type === "error"
       );
 
       if (fractionalRows.length) {
@@ -1214,15 +1890,16 @@ const saveSetup = async () => {
 
       for (const student of markStudents) {
         for (const blueprint of markBlueprints) {
+          const statusToken = (blueprint.items || []).map((item) => String(getDraftValue(student.studentId, blueprint._id, item.key)).trim().toUpperCase()).find((value) => ["A", "I"].includes(value));
           records.push({
             studentId: student.studentId,
             blueprintId: blueprint._id,
-            entries: (blueprint.items || []).map((item) => ({
-              itemKey: item.key,
-              obtainedMarks: Number(
-                getDraftValue(student.studentId, blueprint._id, item.key) || 0
-              ),
-            })),
+            status: statusToken === "A" ? "absent" : statusToken === "I" ? "incomplete" : "present",
+            entries: (blueprint.items || []).map((item) => {
+              const raw = getDraftValue(student.studentId, blueprint._id, item.key);
+              const numeric = Number(raw);
+              return { itemKey: item.key, obtainedMarks: Number.isFinite(numeric) ? numeric : 0 };
+            }),
           });
         }
       }
@@ -3423,16 +4100,28 @@ const saveSetup = async () => {
                 : "Create assessment-wise question/item mapping with Course Outcomes."
             }
             actions={
-              <label className={`${secondaryButtonClass} inline-flex items-center gap-2`}>
-                <ObeIcon name="upload" className="h-4 w-4" />
-                Import Course Outline
-                <input
-                  type="file"
-                  accept=".pdf,application/pdf"
-                  className="hidden"
-                  onChange={handleImportCourseOutline}
-                />
-              </label>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {!isLabCourse && (
+                  <button
+                    type="button"
+                    onClick={() => setPolicyModalOpen(true)}
+                    className={`${secondaryButtonClass} inline-flex items-center gap-2 border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20`}
+                  >
+                    <ObeIcon name="settings" className="h-4 w-4" />
+                    Assessment Policies
+                  </button>
+                )}
+                <label className={`${secondaryButtonClass} inline-flex items-center gap-2`}>
+                  <ObeIcon name="upload" className="h-4 w-4" />
+                  Import Course Outline
+                  <input
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    className="hidden"
+                    onChange={handleImportCourseOutline}
+                  />
+                </label>
+              </div>
             }
           >
             {isLabCourse && (
@@ -3442,20 +4131,6 @@ const saveSetup = async () => {
             )}
 
             <div className="grid gap-4 lg:grid-cols-3">
-              <FormField label="Assessment Name">
-                <input
-                  value={blueprintForm.assessmentName}
-                  onChange={(e) =>
-                    setBlueprintForm((prev) => ({
-                      ...prev,
-                      assessmentName: e.target.value,
-                    }))
-                  }
-                  className={inputClass}
-                  placeholder={isLabCourse ? "Lab Mid / Lab Final" : "CT 1 / Mid / Final"}
-                />
-              </FormField>
-
               <FormField label="Assessment Type">
                 <select
                   value={blueprintForm.assessmentType}
@@ -3466,24 +4141,17 @@ const saveSetup = async () => {
                       : 0;
 
                     setBlueprintForm((prev) => {
-                      const previousExpectedMarks = isLabCourse
-                        ? getExpectedLabAssessmentMarks(prev.assessmentType)
-                        : 0;
-                      const shouldUpdateSingleItem =
-                        isLabCourse &&
-                        prev.items.length === 1 &&
-                        [0, previousExpectedMarks].includes(
-                          Number(prev.items[0]?.marks || 0)
-                        );
-
+                      const suggestedMarks = isLabCourse ? expectedMarks : suggestedBlueprintMarks(assessmentType, blueprints, course);
+                      const suggestedName = isLabCourse
+                        ? (assessmentType === "final" ? "Lab Final" : "Lab Mid")
+                        : suggestedBlueprintName(assessmentType, blueprints);
                       return {
                         ...prev,
                         assessmentType,
-                        totalMarks: isLabCourse
-                          ? expectedMarks
-                          : prev.totalMarks,
-                        items: shouldUpdateSingleItem
-                          ? [{ ...prev.items[0], marks: expectedMarks }]
+                        assessmentName: editingBlueprintId ? prev.assessmentName : suggestedName,
+                        totalMarks: suggestedMarks,
+                        items: prev.items.length === 1
+                          ? [{ ...prev.items[0], marks: suggestedMarks }]
                           : prev.items,
                       };
                     });
@@ -3496,6 +4164,15 @@ const saveSetup = async () => {
                     </option>
                   ))}
                 </select>
+              </FormField>
+
+              <FormField label="Assessment Name">
+                <input
+                  value={blueprintForm.assessmentName}
+                  onChange={(e) => setBlueprintForm((prev) => ({ ...prev, assessmentName: e.target.value }))}
+                  className={inputClass}
+                  placeholder={isLabCourse ? "Lab Mid / Lab Final" : "Suggested automatically; editable"}
+                />
               </FormField>
 
               <FormField
@@ -3784,7 +4461,7 @@ const saveSetup = async () => {
         <div className="space-y-6">
           <SectionCard
             title="Mark Entry Grid"
-            subtitle="Use Tab, Enter, or arrow keys to move between cells. Values are limited to each question's configured full mark."
+            subtitle="Use Tab, Enter, or arrow keys to move between cells. Only whole/.5 marks are accepted; Mid/Final also accept A or I status."
             actions={
               <div className="flex flex-wrap items-center gap-2">
                 <input
@@ -3802,6 +4479,15 @@ const saveSetup = async () => {
                 >
                   <ObeIcon name="upload" className="h-4 w-4" />
                   Smart Import Excel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleFetchFromMarksSheet}
+                  disabled={markSaving || markLoading || !markBlueprints.length}
+                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-xs font-bold text-slate-700 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-indigo-500/40 dark:hover:bg-indigo-500/10 dark:hover:text-indigo-300"
+                >
+                  <ObeIcon name="download" className="h-4 w-4" />
+                  Fetch Marks
                 </button>
                 <button
                   type="button"
@@ -3828,7 +4514,7 @@ const saveSetup = async () => {
             ) : (
               <>
                 <div className="mb-4">
-                  <div className="rounded-3xl border border-slate-200 bg-gradient-to-r from-white to-slate-50/80 p-4 shadow-sm dark:border-slate-800 dark:from-slate-900 dark:to-slate-950/50">
+                  <div className="rounded-3xl border border-slate-200 bg-gradient-to-r from-white via-slate-50/80 to-indigo-50/60 p-4 shadow-sm dark:border-slate-700 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/35 dark:shadow-[0_12px_32px_rgba(0,0,0,0.22)]">
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                       <label className="block">
                         <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -3837,7 +4523,7 @@ const saveSetup = async () => {
                         <select
                           value={obeTabMode}
                           onChange={(e) => setObeTabMode(e.target.value)}
-                          className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                          className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm outline-none transition hover:border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500 dark:focus:border-indigo-400 dark:focus:ring-indigo-500/25"
                         >
                           <option value="row">Row-wise Entry</option>
                           <option value="column">Column-wise Entry</option>
@@ -3851,7 +4537,7 @@ const saveSetup = async () => {
                         <select
                           value={obeSortMode}
                           onChange={(e) => setObeSortMode(e.target.value)}
-                          className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                          className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm outline-none transition hover:border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500 dark:focus:border-indigo-400 dark:focus:ring-indigo-500/25"
                         >
                           <option value="entered">Default / Entered Order</option>
                           <option value="roll_asc">Roll Ascending</option>
@@ -3868,7 +4554,7 @@ const saveSetup = async () => {
                           value={obeStudentSearch}
                           onChange={(e) => setObeStudentSearch(e.target.value)}
                           placeholder="Search by roll, name, or email"
-                          className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                          className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm outline-none transition hover:border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-500 dark:focus:border-indigo-400 dark:focus:ring-indigo-500/25"
                         />
 
                         <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
@@ -3879,28 +4565,40 @@ const saveSetup = async () => {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-950">
+                <div className="overflow-hidden rounded-3xl border border-slate-300 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.08)] dark:border-slate-700 dark:bg-slate-950 dark:shadow-[0_12px_34px_rgba(0,0,0,0.32)]">
                   <div className="max-h-[68vh] overflow-auto">
                     <table className="w-full min-w-[980px] border-separate border-spacing-0 text-xs sm:text-sm">
                       <thead className="sticky top-0 z-30">
                         <tr>
-                          <th className="sticky left-0 z-40 w-[170px] min-w-[150px] max-w-[210px] border-b border-r border-slate-300 bg-slate-100 px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 sm:w-[200px] sm:px-4">
+                          <th className="sticky left-0 z-40 w-[170px] min-w-[150px] max-w-[210px] border-b border-r border-slate-300 bg-slate-900 px-3 py-3 text-left text-[11px] font-black uppercase tracking-[0.12em] text-white dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 sm:w-[200px] sm:px-4">
                             Student
                           </th>
 
-                          {markBlueprints.map((blueprint) => (
-                            <th
-                              key={blueprint._id}
-                              colSpan={(blueprint.items || []).length + 1}
-                              className="border-b border-r border-slate-300 bg-slate-100 px-2 py-3 text-center text-[11px] font-bold uppercase tracking-wide text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 sm:px-3"
-                            >
-                              {blueprint.assessmentName} ({blueprint.totalMarks})
-                            </th>
-                          ))}
+                          {markBlueprints.flatMap((blueprint) => {
+                            const sameType = getBlueprintTypeRows(blueprint.assessmentType);
+                            const isLastOfType = String(sameType[sameType.length - 1]?._id) === String(blueprint._id);
+                            const cells = [
+                              <th
+                                key={blueprint._id}
+                                colSpan={(blueprint.items || []).length + ((blueprint.items || []).length > 1 ? 1 : 0)}
+                                className={`border-b border-r border-slate-300 px-2 py-3 text-center text-[11px] font-black uppercase tracking-[0.08em] dark:border-slate-700 sm:px-3 ${getObeBlueprintTheme(blueprint.assessmentType).group}`}
+                              >
+                                {blueprint.assessmentName} ({blueprint.totalMarks})
+                              </th>,
+                            ];
+                            if (blueprint.assessmentType === "ct" && isLastOfType) cells.push(
+                              <th key="ct-category-total" rowSpan={2} className="border-b border-r border-indigo-200 bg-indigo-50 px-2 py-3 text-center text-[11px] font-black uppercase text-indigo-800 dark:border-indigo-500/20 dark:bg-indigo-950 dark:text-indigo-200">Class Test Total ({normalizeObeCtPolicy(course).totalWeight})</th>
+                            );
+                            if (blueprint.assessmentType === "assignment" && isLastOfType) cells.push(
+                              <th key="assignment-category-total" rowSpan={2} className="border-b border-r border-indigo-200 bg-indigo-50 px-2 py-3 text-center text-[11px] font-black uppercase text-indigo-800 dark:border-indigo-500/20 dark:bg-indigo-950 dark:text-indigo-200">Assignment Total ({getObeAssignmentPolicy(course).totalWeight})</th>
+                            );
+                            return cells;
+                          })}
+                          <th rowSpan={2} className="border-b border-r border-emerald-200 bg-emerald-50 px-3 py-3 text-center text-[11px] font-black uppercase tracking-wide text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-950 dark:text-emerald-200">Grand Total</th>
                         </tr>
 
                         <tr>
-                          <th className="sticky left-0 z-40 w-[170px] min-w-[150px] max-w-[210px] border-b border-r border-slate-300 bg-slate-50 px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 sm:w-[200px] sm:px-4">
+                          <th className="sticky left-0 z-40 w-[170px] min-w-[150px] max-w-[210px] border-b border-r border-slate-300 bg-slate-800 px-3 py-3 text-left text-[11px] font-black uppercase tracking-[0.1em] text-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 sm:w-[200px] sm:px-4">
                             Roll / Name
                           </th>
 
@@ -3908,7 +4606,7 @@ const saveSetup = async () => {
                             ...(blueprint.items || []).map((item) => (
                               <th
                                 key={`${blueprint._id}-${item.key}`}
-                                className="w-[70px] min-w-[64px] border-b border-r border-slate-300 bg-slate-50 px-2 py-3 text-center text-[11px] font-bold uppercase tracking-wide text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 sm:w-[82px] sm:min-w-[76px]"
+                                className={`w-[70px] min-w-[64px] border-b border-r border-slate-300 px-2 py-3 text-center text-[11px] font-black uppercase tracking-wide dark:border-slate-700 sm:w-[82px] sm:min-w-[76px] ${getObeBlueprintTheme(blueprint.assessmentType).sub}`}
                               >
                                 <div>{item.label}</div>
                                 <div className="mt-1 text-[10px] font-medium normal-case text-slate-500 dark:text-slate-400">
@@ -3916,12 +4614,10 @@ const saveSetup = async () => {
                                 </div>
                               </th>
                             )),
-                            <th
+                            ...((blueprint.items || []).length > 1 ? [<th
                               key={`${blueprint._id}-total`}
-                              className="w-[58px] min-w-[54px] border-b border-r border-slate-300 bg-indigo-50 px-2 py-3 text-center text-[11px] font-bold uppercase tracking-wide text-indigo-700 dark:border-slate-700 dark:bg-indigo-500/10 dark:text-indigo-300 sm:w-[70px] sm:min-w-[64px]"
-                            >
-                              Total
-                            </th>,
+                              className="w-[58px] min-w-[54px] border-b border-r border-indigo-200 bg-indigo-50 px-2 py-3 text-center text-[11px] font-black uppercase tracking-wide text-indigo-800 dark:border-indigo-500/20 dark:bg-indigo-950 dark:text-indigo-200 sm:w-[70px] sm:min-w-[64px]"
+                            >Total</th>] : []),
                           ])}
                         </tr>
                       </thead>
@@ -3930,82 +4626,64 @@ const saveSetup = async () => {
                         {visibleMarkStudents.map((student, rowIndex) => (
                           <tr
                             key={student.studentId}
-                            className="group hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                            className={`group transition-colors ${rowIndex % 2 === 0 ? "bg-white dark:bg-slate-950" : "bg-slate-50/70 dark:bg-slate-900/65"} hover:bg-indigo-50/60 dark:hover:bg-indigo-950/25`}
                           >
-                            <td className="sticky left-0 z-20 w-[170px] min-w-[150px] max-w-[210px] border-b border-r border-slate-200 bg-white px-3 py-3 dark:border-slate-800 dark:bg-slate-950 group-hover:bg-slate-50 dark:group-hover:bg-slate-800 sm:w-[200px] sm:px-4">
+                            <td className={`sticky left-0 z-20 w-[170px] min-w-[150px] max-w-[210px] border-b border-r border-slate-200 px-3 py-3 dark:border-slate-800 sm:w-[200px] sm:px-4 ${rowIndex % 2 === 0 ? "bg-white dark:bg-slate-950" : "bg-slate-50 dark:bg-slate-900"} group-hover:bg-indigo-50 dark:group-hover:bg-slate-900`}>
                               <div className="font-bold text-slate-900 dark:text-slate-100">
                                 {student.roll}
                               </div>
                               <div className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
                                 {student.name}
                               </div>
-                              {getObeRowCompletionNotice(student.studentId) && (
-                                <div className="mt-2 max-w-[180px] rounded-lg bg-rose-50 px-2 py-1 text-[10px] font-semibold leading-tight text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">
-                                  Fraction not allowed after all assessments are filled.
+                              {getObeRowNotices(student.studentId).length > 0 && (
+                                <div className="mt-2 space-y-1.5">
+                                  {getObeRowNotices(student.studentId).map((notice, noticeIndex) => (
+                                    <div
+                                      key={`${student.studentId}-notice-${noticeIndex}`}
+                                      className={`max-w-[195px] rounded-lg border px-2 py-1.5 text-[10px] font-bold leading-[1.35] ${notice.type === "advice"
+                                        ? "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200"
+                                        : notice.type === "assessment-mismatch"
+                                          ? "border-orange-200 bg-orange-50 text-orange-800 dark:border-orange-500/25 dark:bg-orange-500/10 dark:text-orange-200"
+                                          : "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-200"}`}
+                                    >
+                                      {notice.message}
+                                    </div>
+                                  ))}
                                 </div>
                               )}
                             </td>
 
-                            {markBlueprints.flatMap((blueprint) => [
-                              ...(blueprint.items || []).map((item) => (
-                                <td
-                                  key={`${student.studentId}-${blueprint._id}-${item.key}`}
-                                  className="border-b border-r border-slate-200 px-1.5 py-2 text-center dark:border-slate-800 sm:px-2"
-                                >
-                                  <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    autoComplete="off"
-                                    value={getDraftValue(
-                                      student.studentId,
-                                      blueprint._id,
-                                      item.key
-                                    )}
-                                    onChange={(e) =>
-                                      handleDraftChange(
-                                        student.studentId,
-                                        blueprint._id,
-                                        item.key,
-                                        e.target.value,
-                                        item.marks
-                                      )
-                                    }
-                                    onBlur={() =>
-                                      handleDraftBlur(
-                                        student.studentId,
-                                        blueprint._id,
-                                        item.key,
-                                        item.marks
-                                      )
-                                    }
-                                    onKeyDown={handleObeKeyDown}
-                                    data-row={rowIndex}
-                                    data-col={getObeInputColIndex(blueprint._id, item.key)}
+                            {markBlueprints.flatMap((blueprint) => {
+                              const cells = (blueprint.items || []).map((item) => (
+                                <td key={`${student.studentId}-${blueprint._id}-${item.key}`} className={`border-b border-r border-slate-200 px-1.5 py-2 text-center dark:border-slate-800 sm:px-2 ${getObeBlueprintTheme(blueprint.assessmentType).cell}`}>
+                                  <input type="text" inputMode="decimal" autoComplete="off"
+                                    value={getDraftValue(student.studentId, blueprint._id, item.key)}
+                                    onChange={(e) => handleDraftChange(student.studentId, blueprint._id, item.key, e.target.value, item.marks)}
+                                    onBlur={() => handleDraftBlur(student.studentId, blueprint._id, item.key, item.marks)}
+                                    onKeyDown={handleObeKeyDown} data-row={rowIndex} data-col={getObeInputColIndex(blueprint._id, item.key)}
                                     ref={(el) => {
-                                      const colIndex = getObeInputColIndex(
-                                        blueprint._id,
-                                        item.key
-                                      );
-
+                                      const colIndex = getObeInputColIndex(blueprint._id, item.key);
                                       if (colIndex < 0) return;
-
-                                      if (!obeInputRefs.current[rowIndex]) {
-                                        obeInputRefs.current[rowIndex] = [];
-                                      }
-
+                                      if (!obeInputRefs.current[rowIndex]) obeInputRefs.current[rowIndex] = [];
                                       obeInputRefs.current[rowIndex][colIndex] = el;
                                     }}
-                                    className="h-8 w-full min-w-[48px] max-w-[64px] rounded-lg border border-slate-300 bg-white px-1.5 text-center text-xs font-semibold text-slate-800 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-indigo-400 dark:focus:ring-indigo-500/20 sm:h-9 sm:max-w-[72px] sm:text-sm"
-                                  />
+                                    className="h-8 w-full min-w-[48px] max-w-[64px] rounded-lg border border-slate-300 bg-white px-1.5 text-center text-xs font-bold tabular-nums text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)] outline-none transition hover:border-slate-400 focus:border-indigo-500 focus:bg-indigo-50/30 focus:ring-2 focus:ring-indigo-200 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-50 dark:shadow-[inset_0_1px_2px_rgba(0,0,0,0.35)] dark:hover:border-slate-500 dark:focus:border-indigo-400 dark:focus:bg-indigo-950/35 dark:focus:ring-indigo-500/25 sm:h-9 sm:max-w-[72px] sm:text-sm" />
                                 </td>
-                              )),
-                              <td
-                                key={`${student.studentId}-${blueprint._id}-total`}
-                                className="border-b border-r border-slate-200 bg-indigo-50/60 px-2 py-2 text-center text-xs font-bold text-indigo-700 dark:border-slate-800 dark:bg-indigo-500/10 dark:text-indigo-300 sm:text-sm"
-                              >
-                                {getAssessmentDraftTotal(student.studentId, blueprint)}
-                              </td>,
-                            ])}
+                              ));
+                              if ((blueprint.items || []).length > 1) cells.push(
+                                <td key={`${student.studentId}-${blueprint._id}-total`} className="border-b border-r border-indigo-100 bg-indigo-50 px-2 py-2 text-center text-xs font-black tabular-nums text-indigo-800 dark:border-indigo-500/15 dark:bg-indigo-950 dark:text-indigo-200 sm:text-sm">{getAssessmentDraftTotal(student.studentId, blueprint)}</td>
+                              );
+                              const sameType = getBlueprintTypeRows(blueprint.assessmentType);
+                              const isLastOfType = String(sameType[sameType.length - 1]?._id) === String(blueprint._id);
+                              if (blueprint.assessmentType === "ct" && isLastOfType) cells.push(
+                                <td key={`${student.studentId}-ct-category`} className="border-b border-r border-indigo-100 bg-indigo-50 px-2 py-2 text-center font-black tabular-nums text-indigo-800 dark:border-indigo-500/15 dark:bg-indigo-950 dark:text-indigo-200">{getCategoryDraftTotal(student.studentId, "ct")}</td>
+                              );
+                              if (blueprint.assessmentType === "assignment" && isLastOfType) cells.push(
+                                <td key={`${student.studentId}-assignment-category`} className="border-b border-r border-indigo-100 bg-indigo-50 px-2 py-2 text-center font-black tabular-nums text-indigo-800 dark:border-indigo-500/15 dark:bg-indigo-950 dark:text-indigo-200">{getCategoryDraftTotal(student.studentId, "assignment")}</td>
+                              );
+                              return cells;
+                            })}
+                            <td className="border-b border-r border-emerald-100 bg-emerald-50 px-3 py-2 text-center font-black tabular-nums text-emerald-800 dark:border-emerald-500/15 dark:bg-emerald-950 dark:text-emerald-200">{getObeGrandTotal(student.studentId)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -4335,6 +5013,15 @@ const saveSetup = async () => {
           )}
         </div>
       )}
+
+      <CourseAssessmentPolicyModal
+        open={policyModalOpen}
+        onClose={() => setPolicyModalOpen(false)}
+        courseId={courseId}
+        course={course}
+        assessments={normalAssessments}
+        onCourseUpdated={onCourseUpdated}
+      />
     </div>
   );
 }
@@ -4421,6 +5108,8 @@ function ObeIcon({ name, className = "h-4 w-4" }) {
   switch (name) {
     case "setup":
       return <svg {...common}><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="4"/><path d="m5.6 5.6 2.1 2.1m8.6 8.6 2.1 2.1m0-12.8-2.1 2.1m-8.6 8.6-2.1 2.1"/></svg>;
+    case "settings":
+      return <svg {...common}><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>;
     case "blueprint":
       return <svg {...common}><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>;
     case "marks":

@@ -7,7 +7,6 @@ import TabStudents from "./teacherCourse/TabStudents";
 import TabAssessments from "./teacherCourse/TabAssessments";
 import TabMarks from "./teacherCourse/TabMarks";
 import TabSettings from "./teacherCourse/TabSettings";
-import TabAttendance from "./teacherCourse/TabAttendence";
 import TabMaterials from "./teacherCourse/TabMaterials";
 import TabProjects from "./teacherCourse/TabProjects";
 import TeacherLabSubmissions from "./teacherCourse/TeacherLabSubmissions";
@@ -24,7 +23,6 @@ const BASE_TABS = [
   "obe",
   "submissions",
   "students",
-  "attendance",
   "settings",
 ];
 
@@ -133,12 +131,10 @@ export default function TeacherCoursePage() {
         <TabMarks courseId={courseId} course={course} />
       )}
 
-      {activeTab === "attendance" && <TabAttendance courseId={courseId} />}
-
       {activeTab === "materials" && <TabMaterials courseId={courseId} />}
 
       {activeTab === "obe" && (
-        <TabObe courseId={courseId} course={course} />
+        <TabObe courseId={courseId} course={course} onCourseUpdated={setCourse} />
       )}
 
       {activeTab === "submissions" && (
