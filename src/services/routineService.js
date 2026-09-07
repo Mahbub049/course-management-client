@@ -33,6 +33,26 @@ export const downloadRoutineDocument = async (kind) => {
   window.URL.revokeObjectURL(url);
 };
 
+
+export const downloadDayOffApplication = async ({ dayOff, applicationDate }) => {
+  const res = await api.post(
+    "/routine/my/download/day-off-application",
+    { dayOff, applicationDate },
+    { responseType: "blob" }
+  );
+  const disposition = String(res.headers?.["content-disposition"] || "");
+  const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+  const filename = filenameMatch?.[1] || "Day_Off_Application.docx";
+  const url = window.URL.createObjectURL(res.data);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+};
+
 export const getTeacherCounsellingBookings = async ({ includeRegister = false } = {}) => {
   const res = await api.get("/routine/my/counselling-bookings", {
     params: includeRegister ? { includeRegister: true } : undefined,

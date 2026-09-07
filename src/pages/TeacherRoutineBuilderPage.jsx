@@ -234,7 +234,7 @@ function TeacherRoutineBuilderPage() {
     if (!isSlotAvailableForDay(slotId, day)) {
       Swal.fire(
         "Slot not available",
-        "Evening classes use 05:45 PM–09:30 PM on normal days. The additional Evening slots are available on Friday.",
+        "Friday uses only the university Evening timetable (08:00 AM–09:30 PM). Regular Day slots are not available on Friday.",
         "info"
       );
       return;
@@ -617,10 +617,15 @@ function TeacherRoutineBuilderPage() {
 
   const handleApplyRoutineImport = async (importResult) => {
     const validRecords = (importResult?.records || []).filter(
-      (record) => record.day && record.slotId && record.courseCode && record.room
+      (record) =>
+        record.day &&
+        record.slotId &&
+        record.courseCode &&
+        record.room &&
+        isSlotAvailableForDay(record.slotId, record.day)
     );
     if (!validRecords.length) {
-      Swal.fire("No complete classes", "Keep at least one row with day, time, course code, and room.", "warning");
+      Swal.fire("No available classes", "Keep at least one row with a valid day/time, course code, and room. Friday accepts only the Evening timetable.", "warning");
       return false;
     }
 
@@ -858,7 +863,7 @@ function TeacherRoutineBuilderPage() {
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="font-black text-slate-950 dark:text-white">Weekly Routine</h2>
-            <p className="text-xs text-slate-500">All university Day and Evening schedules are stored. P&L is fixed from 12:45 PM to 01:15 PM.</p>
+            <p className="text-xs text-slate-500">All university Day and Evening schedules are stored. Regular P&L is 12:45 PM–01:15 PM; Friday uses only Evening slots with P&L from 01:00 PM–03:15 PM.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex rounded-xl border border-slate-200 p-1 dark:border-slate-700">
@@ -886,7 +891,16 @@ function TeacherRoutineBuilderPage() {
                   <tr key={day}>
                     <th className="sticky left-0 z-10 border-b border-r border-slate-200 bg-white p-3 text-sm font-black dark:border-slate-700 dark:bg-slate-950">{DAY_LABELS[day]}</th>
                     {tableColumns.map((column) => column.kind === "lunch" ? (
-                      <td key={column.id} className={`border-b border-r border-slate-200 p-2 text-sm font-black dark:border-slate-700 ${working ? "bg-amber-50 text-amber-700 dark:bg-amber-500/5 dark:text-amber-300" : "bg-slate-200 text-slate-500 dark:bg-slate-900"}`}>{working ? "P&L" : "OFF"}</td>
+                      <td
+                        key={column.id}
+                        className={`border-b border-r border-slate-200 p-2 text-sm font-black dark:border-slate-700 ${
+                          !working || day === "Fri"
+                            ? "bg-slate-200 text-slate-500 dark:bg-slate-900"
+                            : "bg-amber-50 text-amber-700 dark:bg-amber-500/5 dark:text-amber-300"
+                        }`}
+                      >
+                        {!working ? "OFF" : day === "Fri" ? "Not used" : "P&L"}
+                      </td>
                     ) : (
                       <RoutineButton key={column.slot.id} day={day} slot={column.slot} working={working} available={isSlotAvailableForDay(column.slot, day)} entry={routine.entries?.[day]?.[column.slot.id]} onClick={handleCellClick} />
                     ))}

@@ -216,7 +216,12 @@ export function createEntries(days = OFFICIAL_DAYS.map((item) => item.id), sourc
     OFFICIAL_TIME_SLOTS.forEach((slot) => {
       const oldId = reverseLegacy[slot.id];
       const rawEntry = source?.[day]?.[slot.id] || (oldId ? source?.[day]?.[oldId] : null) || null;
-      entries[day][slot.id] = normalizeRoutineEntry(rawEntry, courses);
+      // Friday follows the university Evening timetable only. Any legacy
+      // entry saved in the regular Day timetable is discarded so the editor
+      // cannot expose or preserve an invalid Friday Day slot.
+      entries[day][slot.id] = isSlotAvailableForDay(slot, day)
+        ? normalizeRoutineEntry(rawEntry, courses)
+        : null;
     });
   });
   return entries;
@@ -274,8 +279,13 @@ export function getNextLabSlot(slotId, day = "") {
 export function isSlotAvailableForDay(slotOrId, day) {
   const slot = typeof slotOrId === "string" ? SLOT_MAP[slotOrId] : slotOrId;
   if (!slot) return false;
+
+  // Friday uses the separate Evening timetable from 08:00 AM onward. The
+  // regular Day slots (08:15-09:45 through 04:15-05:45) are not valid on
+  // Friday and must never be selectable in the routine builder.
+  if (day === "Fri") return slot.shift === "Evening";
+
   if (slot.shift !== "Evening") return true;
-  if (day === "Fri") return true;
   return Number(slot.sequenceOrder) >= 7;
 }
 
@@ -347,7 +357,7 @@ export function getClientValidation(routine) {
 
     dayEntries.forEach(([slotId, entry]) => {
       if (!isSlotAvailableForDay(slotId, day)) {
-        blockingErrors.push(`${SLOT_MAP[slotId]?.label || slotId} is not an available Evening slot on ${DAY_LABELS[day] || day}.`);
+        blockingErrors.push(`${SLOT_MAP[slotId]?.label || slotId} is not available on ${DAY_LABELS[day] || day}.`);
       }
     });
   });

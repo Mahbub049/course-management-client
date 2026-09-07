@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
-import { downloadRoutineDocument, getMyRoutine } from "../services/routineService";
+import { downloadDayOffApplication, downloadRoutineDocument, getMyRoutine } from "../services/routineService";
 import { downloadClassRoutinePdf } from "../utils/routinePdfExport";
 import {
   DAY_LABELS,
@@ -27,6 +27,82 @@ function formatWorkingDuration(value) {
   const minutes = totalMinutes % 60;
 
   return `${hours} hour${hours === 1 ? "" : "s"} ${minutes} minute${minutes === 1 ? "" : "s"}`;
+}
+
+const DAY_OFF_ORDER = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri"];
+
+const FRIDAY_DISPLAY_COLUMNS = [
+  { kind: "slot", id: "eve_0800_0915" },
+  { kind: "slot", id: "eve_0915_1030" },
+  { kind: "slot", id: "eve_1030_1145" },
+  { kind: "slot", id: "eve_1145_1300" },
+  { kind: "friday-lunch", id: "friday_prayer_lunch" },
+  { kind: "slot", id: "eve_1515_1630" },
+  { kind: "slot", id: "eve_1630_1745" },
+  { kind: "slot", id: "eve_1745_1900" },
+  { kind: "slot", id: "eve_1900_2015" },
+  { kind: "slot", id: "eve_2015_2130" },
+];
+
+function getFridayDisplayColumns(routine, normalColumns = []) {
+  const lunchIndex = normalColumns.findIndex((column) => column.kind === "lunch");
+  const beforeLunch = FRIDAY_DISPLAY_COLUMNS.slice(0, 4);
+  const lunch = FRIDAY_DISPLAY_COLUMNS[4];
+  const afterLunch = FRIDAY_DISPLAY_COLUMNS.slice(5);
+
+  if (lunchIndex < 0) {
+    return FRIDAY_DISPLAY_COLUMNS.filter(
+      (column) => column.kind === "friday-lunch" || routine.entries?.Fri?.[column.id]
+    );
+  }
+
+  const targetBeforeLunch = lunchIndex;
+  const targetAfterLunch = Math.max(0, normalColumns.length - lunchIndex - 1);
+
+  const requiredBefore = new Set([beforeLunch[0].id]);
+  beforeLunch.forEach((column) => {
+    if (routine.entries?.Fri?.[column.id]) requiredBefore.add(column.id);
+  });
+
+  // Keep the first Friday slot visible, preserve every occupied period, then
+  // use the latest remaining blank periods to fill exactly the same number of
+  // physical columns that appear before P&L in the normal routine.
+  if (requiredBefore.size > targetBeforeLunch) return FRIDAY_DISPLAY_COLUMNS;
+
+  const keepBefore = new Set(requiredBefore);
+  for (let index = beforeLunch.length - 1; index >= 0 && keepBefore.size < targetBeforeLunch; index -= 1) {
+    keepBefore.add(beforeLunch[index].id);
+  }
+  const alignedBefore = beforeLunch.filter((column) => keepBefore.has(column.id));
+
+  const requiredAfter = new Set(
+    afterLunch.filter((column) => routine.entries?.Fri?.[column.id]).map((column) => column.id)
+  );
+  if (requiredAfter.size > targetAfterLunch) return FRIDAY_DISPLAY_COLUMNS;
+
+  const keepAfter = new Set(requiredAfter);
+  for (let index = 0; index < afterLunch.length && keepAfter.size < targetAfterLunch; index += 1) {
+    keepAfter.add(afterLunch[index].id);
+  }
+  const alignedAfter = afterLunch.filter((column) => keepAfter.has(column.id));
+
+  return [...alignedBefore, lunch, ...alignedAfter];
+}
+
+function compactTimeRange(slot) {
+  if (!slot) return "";
+  const clean = (value) => String(value || "")
+    .replace(/^0/, "")
+    .replace(/\s*(AM|PM)$/i, "");
+  return `${clean(slot.start)}-${clean(slot.end)}`;
+}
+
+function localDateString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function TeacherRoutinePage() {
@@ -55,7 +131,39 @@ function TeacherRoutinePage() {
     };
   }, []);
 
-  const columns = useMemo(() => (routine ? getDocumentColumns(routine) : []), [routine]);
+  const showFridayDoubleRow = Boolean(
+    routine?.days?.includes("Fri") && routine?.workingDays?.includes("Fri")
+  );
+  const columns = useMemo(() => {
+    if (!routine) return [];
+    if (!showFridayDoubleRow) return getDocumentColumns(routine);
+    return getDocumentColumns({
+      ...routine,
+      workingDays: (routine.workingDays || []).filter((day) => day !== "Fri"),
+    });
+  }, [routine, showFridayDoubleRow]);
+  const fridayColumns = useMemo(() => {
+    if (!routine || !showFridayDoubleRow) return [];
+    return getFridayDisplayColumns(routine, columns);
+  }, [routine, showFridayDoubleRow, columns]);
+  const fridayMatchesMainGrid = fridayColumns.length === columns.length;
+  const standardDays = useMemo(
+    () => (showFridayDoubleRow ? (routine?.days || []).filter((day) => day !== "Fri") : (routine?.days || [])),
+    [routine, showFridayDoubleRow]
+  );
+  const classDays = useMemo(() => {
+    if (!routine) return new Set();
+    return new Set(
+      (routine.days || []).filter((day) =>
+        Object.values(routine.entries?.[day] || {}).some((entry) => entry?.type === "CLASS")
+      )
+    );
+  }, [routine]);
+  const hasFridayClasses = classDays.has("Fri");
+  const dayOffChoices = useMemo(
+    () => DAY_OFF_ORDER.filter((day) => day !== "Sat" && !classDays.has(day)),
+    [classDays]
+  );
 
   const download = async (kind) => {
     try {
@@ -63,6 +171,129 @@ function TeacherRoutinePage() {
       await downloadRoutineDocument(kind);
     } catch (error) {
       Swal.fire("Download failed", error?.response?.data?.message || "Create and save a valid routine first.", "error");
+    } finally {
+      setDownloading("");
+    }
+  };
+
+  const downloadDayOff = async () => {
+    if (!routine || !hasFridayClasses) return;
+
+    if (!dayOffChoices.length) {
+      Swal.fire(
+        "No class-free day available",
+        "Saturday is excluded, and every other day currently has at least one class in your saved routine.",
+        "info"
+      );
+      return;
+    }
+
+    const darkMode = document.documentElement.classList.contains("dark");
+    const palette = darkMode
+      ? {
+          surface: "#020617",
+          surfaceSoft: "#0f172a",
+          border: "#243247",
+          text: "#f8fafc",
+          muted: "#94a3b8",
+          accentSoft: "rgba(124, 58, 237, 0.14)",
+          accentBorder: "rgba(167, 139, 250, 0.28)",
+        }
+      : {
+          surface: "#ffffff",
+          surfaceSoft: "#f8fafc",
+          border: "#dbe3ef",
+          text: "#0f172a",
+          muted: "#64748b",
+          accentSoft: "#f5f3ff",
+          accentBorder: "#ddd6fe",
+        };
+
+    const optionMarkup = dayOffChoices
+      .map((day) => `<option value="${day}">${DAY_LABELS[day] || day}</option>`)
+      .join("");
+
+    const result = await Swal.fire({
+      title: "",
+      html: `
+        <div style="text-align:left;">
+          <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;">
+            <div style="display:flex;height:48px;width:48px;flex:0 0 48px;align-items:center;justify-content:center;border-radius:15px;background:${palette.accentSoft};border:1px solid ${palette.accentBorder};">
+              <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M8 2v4M16 2v4M3 10h18"/>
+                <rect x="3" y="4" width="18" height="18" rx="3"/>
+                <path d="m9 16 2 2 4-5"/>
+              </svg>
+            </div>
+            <div>
+              <div style="font-size:23px;line-height:1.2;font-weight:850;color:${palette.text};">Day-off Application</div>
+              <div style="margin-top:4px;font-size:13px;color:${palette.muted};">Generate your official day-off request letter</div>
+            </div>
+          </div>
+
+          <div style="margin-bottom:18px;border:1px solid ${palette.border};background:${palette.surfaceSoft};border-radius:16px;padding:13px 14px;font-size:13px;line-height:1.55;color:${palette.muted};">
+            Select the class-free day you want to request. The chosen day will be inserted automatically throughout the application.
+          </div>
+
+          <label for="day-off-select" style="display:block;margin:0 0 8px 2px;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:${palette.muted};">Requested day-off</label>
+          <select id="day-off-select" style="box-sizing:border-box;width:100%;height:48px;border:1px solid ${palette.border};border-radius:14px;background:${palette.surfaceSoft};padding:0 14px;font-size:14px;font-weight:650;color:${palette.text};outline:none;">
+            <option value="">Select a class-free day</option>
+            ${optionMarkup}
+          </select>
+
+          <div style="display:flex;align-items:center;gap:7px;margin-top:11px;font-size:12px;color:${palette.muted};">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            Saturday is excluded automatically; only days without scheduled classes are listed.
+          </div>
+        </div>
+      `,
+      width: "36rem",
+      padding: "1.55rem",
+      background: palette.surface,
+      color: palette.text,
+      showCancelButton: true,
+      confirmButtonText: "Generate Application",
+      cancelButtonText: "Cancel",
+      buttonsStyling: false,
+      focusConfirm: false,
+      customClass: {
+        actions: "!mt-6 !mb-0 gap-3",
+        confirmButton: "rounded-xl bg-violet-600 px-5 py-3 text-sm font-extrabold text-white shadow-lg shadow-violet-500/20 transition hover:bg-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-400",
+        cancelButton: darkMode
+          ? "rounded-xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-bold text-slate-200 transition hover:bg-slate-800 focus:outline-none"
+          : "rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50 focus:outline-none",
+      },
+      didOpen: (popup) => {
+        popup.style.border = `1px solid ${palette.border}`;
+        popup.style.borderRadius = "28px";
+        popup.style.boxShadow = darkMode
+          ? "0 30px 90px rgba(0, 0, 0, 0.62), 0 0 0 1px rgba(124, 58, 237, 0.06)"
+          : "0 30px 80px rgba(15, 23, 42, 0.18), 0 0 0 1px rgba(124, 58, 237, 0.04)";
+      },
+      preConfirm: () => {
+        const selectedDay = document.getElementById("day-off-select")?.value;
+        if (!selectedDay) {
+          Swal.showValidationMessage("Please select a day-off.");
+          return false;
+        }
+        return selectedDay;
+      },
+    });
+
+    if (!result.isConfirmed || !result.value) return;
+
+    try {
+      setDownloading("day-off-application");
+      await downloadDayOffApplication({
+        dayOff: result.value,
+        applicationDate: localDateString(),
+      });
+    } catch (error) {
+      Swal.fire(
+        "Download failed",
+        error?.response?.data?.message || "Could not generate the day-off application.",
+        "error"
+      );
     } finally {
       setDownloading("");
     }
@@ -96,6 +327,9 @@ function TeacherRoutinePage() {
             <button type="button" onClick={() => navigate("/teacher/routine/manage")} className="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-bold text-white">Create / Update</button>
             <button type="button" onClick={() => window.open("/routine-reference", "_blank", "noopener,noreferrer")} className="hidden rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold dark:border-slate-700">Schedule & Rooms</button>
             <button type="button" onClick={() => download("class-routine")} disabled={Boolean(downloading)} className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700 disabled:opacity-60 dark:bg-emerald-500/10 dark:text-emerald-300">{downloading === "class-routine" ? "Preparing..." : "Official Routine Download"}</button>
+            {hasFridayClasses && (
+              <button type="button" onClick={downloadDayOff} disabled={Boolean(downloading)} className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-bold text-amber-700 disabled:opacity-60 dark:bg-amber-500/10 dark:text-amber-300">{downloading === "day-off-application" ? "Preparing..." : "Day-off Application"}</button>
+            )}
             <button type="button" onClick={downloadPdf} disabled={Boolean(downloading) || !routine} className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2.5 text-sm font-bold text-rose-700 disabled:opacity-60 dark:bg-rose-500/10 dark:text-rose-300">{downloading === "class-routine-pdf" ? "Preparing PDF..." : "Routine Download"}</button>
             <button type="button" onClick={() => download("faculty-nameplate")} disabled={Boolean(downloading)} className="rounded-xl border border-sky-300 bg-sky-50 px-4 py-2.5 text-sm font-bold text-sky-700 disabled:opacity-60 dark:bg-sky-500/10 dark:text-sky-300">{downloading === "faculty-nameplate" ? "Preparing..." : "Download Nameplate"}</button>
           </div>
@@ -125,7 +359,7 @@ function TeacherRoutinePage() {
           <section className="w-full min-w-0 rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950">
             <div className="mb-4">
               <h2 className="text-lg font-black text-slate-950 dark:text-white">Saved Routine</h2>
-              <p className="text-xs text-slate-500">Only time slots containing at least one class or weekly activity are shown.</p>
+              <p className="text-xs text-slate-500">Only time slots containing at least one class or weekly activity are shown. Friday uses its own compact two-row timetable.</p>
             </div>
             <div className="w-full min-w-0 overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
               <table
@@ -143,7 +377,7 @@ function TeacherRoutinePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {routine.days.map((day) => {
+                  {standardDays.map((day) => {
                     const working = routine.workingDays.includes(day);
                     return (
                       <tr key={day}>
@@ -163,6 +397,109 @@ function TeacherRoutinePage() {
                       </tr>
                     );
                   })}
+
+                  {showFridayDoubleRow && fridayColumns.length > 0 && (
+                    fridayMatchesMainGrid ? (
+                      <>
+                        <tr className="bg-slate-100 dark:bg-slate-900">
+                          <th
+                            rowSpan={2}
+                            className="sticky left-0 z-10 border-b border-r border-slate-200 bg-slate-100 p-3 align-middle text-sm font-black dark:border-slate-700 dark:bg-slate-900"
+                          >
+                            {DAY_LABELS.Fri}
+                          </th>
+                          {fridayColumns.map((column) => {
+                            const isLunch = column.kind === "friday-lunch";
+                            const slot = isLunch ? null : SLOT_MAP[column.id];
+                            return (
+                              <td
+                                key={`friday-time-${column.id}`}
+                                className={`h-12 border-b border-r border-slate-200 px-2 py-2 text-center text-[11px] font-black leading-tight dark:border-slate-700 ${isLunch ? "bg-amber-100 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300" : "bg-slate-100 text-slate-700 dark:bg-slate-900 dark:text-slate-200"}`}
+                              >
+                                {isLunch ? "1:00-3:15" : compactTimeRange(slot)}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                        <tr className="bg-slate-50 dark:bg-slate-950">
+                          {fridayColumns.map((column) => {
+                            const isLunch = column.kind === "friday-lunch";
+                            if (isLunch) {
+                              return (
+                                <td
+                                  key={`friday-entry-${column.id}`}
+                                  className="h-20 border-b border-r border-slate-200 bg-amber-50 p-2 text-sm font-black text-amber-700 dark:border-slate-700 dark:bg-amber-500/5 dark:text-amber-300"
+                                >
+                                  P&amp;L
+                                </td>
+                              );
+                            }
+
+                            const entry = routine.entries?.Fri?.[column.id];
+                            const lines = entryLines(entry);
+                            return (
+                              <td
+                                key={`friday-entry-${column.id}`}
+                                className="h-20 border-b border-r border-slate-200 p-2 text-xs dark:border-slate-700"
+                              >
+                                {lines.map((line, index) => (
+                                  <div
+                                    key={`${line}-${index}`}
+                                    className={index === 1 && entry?.type === "CLASS" ? "font-black" : "font-bold"}
+                                  >
+                                    {line}
+                                  </div>
+                                ))}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      </>
+                    ) : (
+                      <>
+                        <tr>
+                          <th
+                            rowSpan={2}
+                            className="sticky left-0 z-10 border-b border-r border-slate-200 bg-slate-100 p-3 align-middle text-sm font-black dark:border-slate-700 dark:bg-slate-900"
+                          >
+                            {DAY_LABELS.Fri}
+                          </th>
+                          <td colSpan={Math.max(1, columns.length)} className="border-b border-r border-slate-200 p-0 dark:border-slate-700">
+                            <div className="grid bg-slate-100 dark:bg-slate-900" style={{ gridTemplateColumns: `repeat(${fridayColumns.length}, minmax(0, 1fr))` }}>
+                              {fridayColumns.map((column) => {
+                                const isLunch = column.kind === "friday-lunch";
+                                const slot = isLunch ? null : SLOT_MAP[column.id];
+                                return (
+                                  <div key={column.id} className={`flex min-h-12 items-center justify-center border-r border-slate-200 px-2 py-2 text-center text-[11px] font-black leading-tight last:border-r-0 dark:border-slate-700 ${isLunch ? "bg-amber-100 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300" : "text-slate-700 dark:text-slate-200"}`}>
+                                    {isLunch ? "1:00-3:15" : compactTimeRange(slot)}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td colSpan={Math.max(1, columns.length)} className="border-b border-r border-slate-200 p-0 dark:border-slate-700">
+                            <div className="grid bg-slate-50 dark:bg-slate-950" style={{ gridTemplateColumns: `repeat(${fridayColumns.length}, minmax(0, 1fr))` }}>
+                              {fridayColumns.map((column) => {
+                                const isLunch = column.kind === "friday-lunch";
+                                if (isLunch) {
+                                  return <div key={column.id} className="flex min-h-20 items-center justify-center border-r border-slate-200 bg-amber-50 p-2 text-sm font-black text-amber-700 last:border-r-0 dark:border-slate-700 dark:bg-amber-500/5 dark:text-amber-300">P&amp;L</div>;
+                                }
+                                const entry = routine.entries?.Fri?.[column.id];
+                                const lines = entryLines(entry);
+                                return (
+                                  <div key={column.id} className="flex min-h-20 flex-col items-center justify-center border-r border-slate-200 p-2 text-xs last:border-r-0 dark:border-slate-700">
+                                    {lines.map((line, index) => <div key={`${line}-${index}`} className={index === 1 && entry?.type === "CLASS" ? "font-black" : "font-bold"}>{line}</div>)}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </td>
+                        </tr>
+                      </>
+                    )
+                  )}
                 </tbody>
               </table>
             </div>

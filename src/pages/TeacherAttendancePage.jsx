@@ -25,6 +25,37 @@ const sortStudentsByRoll = (studentList = []) => {
   });
 };
 
+const getCourseTermValue = (course) =>
+  `${String(course?.semester || "").trim()}::${String(course?.year || "").trim()}`;
+
+const buildSemesterOptions = (courseList = []) => {
+  const semesterRank = { Spring: 1, Summer: 2, Fall: 3 };
+  const unique = new Map();
+
+  courseList.forEach((course) => {
+    const semester = String(course?.semester || "").trim();
+    const year = String(course?.year || "").trim();
+    if (!semester && !year) return;
+    const value = `${semester}::${year}`;
+    if (!unique.has(value)) {
+      unique.set(value, {
+        value,
+        semester,
+        year,
+        label: [semester, year].filter(Boolean).join(" "),
+      });
+    }
+  });
+
+  return Array.from(unique.values()).sort((a, b) => {
+    const yearDifference = Number(b.year || 0) - Number(a.year || 0);
+    if (yearDifference !== 0) return yearDifference;
+    const rankDifference = (semesterRank[b.semester] || 0) - (semesterRank[a.semester] || 0);
+    if (rankDifference !== 0) return rankDifference;
+    return b.label.localeCompare(a.label, undefined, { numeric: true, sensitivity: "base" });
+  });
+};
+
 export default function TeacherAttendancePage() {
   const dateInputRef = useRef(null);
   const copySourceDateRef = useRef(null);
@@ -33,8 +64,14 @@ export default function TeacherAttendancePage() {
   const [courses, setCourses] = useState([]);
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [courseError, setCourseError] = useState("");
+  const [archivedCourses, setArchivedCourses] = useState([]);
+  const [archivedCoursesLoaded, setArchivedCoursesLoaded] = useState(false);
+  const [loadingArchivedCourses, setLoadingArchivedCourses] = useState(false);
+  const [archivedCourseError, setArchivedCourseError] = useState("");
+  const [archiveSemester, setArchiveSemester] = useState("");
+  const [archiveSessionState, setArchiveSessionState] = useState(null); // null | "existing" | "new"
 
-  const [mode, setMode] = useState("create"); // "create" | "update" | "delete"
+  const [mode, setMode] = useState("create"); // "create" | "update" | "delete" | "archive"
   const [entryMode, setEntryMode] = useState("single"); // "single" | "bulk"
 
   const [form, setForm] = useState({
@@ -85,10 +122,58 @@ export default function TeacherAttendancePage() {
     loadCourses();
   }, []);
 
-  const selectedCourse = useMemo(
-    () => courses.find((c) => (c._id || c.id) === form.courseId),
-    [courses, form.courseId]
+  const archivedSemesterOptions = useMemo(
+    () => buildSemesterOptions(archivedCourses),
+    [archivedCourses]
   );
+
+  const archivedCoursesForSemester = useMemo(() => {
+    if (!archiveSemester) return [];
+    return archivedCourses
+      .filter((course) => getCourseTermValue(course) === archiveSemester)
+      .sort((a, b) => {
+        const codeCompare = String(a?.code || "").localeCompare(String(b?.code || ""), undefined, { numeric: true, sensitivity: "base" });
+        if (codeCompare !== 0) return codeCompare;
+        return String(a?.section || "").localeCompare(String(b?.section || ""), undefined, { numeric: true, sensitivity: "base" });
+      });
+  }, [archivedCourses, archiveSemester]);
+
+  const availableCourses = mode === "archive" ? archivedCoursesForSemester : courses;
+  const selectedCourse = useMemo(
+    () => availableCourses.find((c) => (c._id || c.id) === form.courseId),
+    [availableCourses, form.courseId]
+  );
+
+  const changeMode = (nextMode) => {
+    setMode(nextMode);
+    setShowSheet(false);
+    setStudents([]);
+    setAttendance({});
+    setStudentsError("");
+    setArchiveSessionState(null);
+    setForm((prev) => ({ ...prev, courseId: "" }));
+  };
+
+  const openArchiveMode = async () => {
+    changeMode("archive");
+    setArchivedCourseError("");
+    if (archivedCoursesLoaded || loadingArchivedCourses) return;
+
+    try {
+      setLoadingArchivedCourses(true);
+      const data = await fetchTeacherCourses({ archived: true });
+      const list = data || [];
+      setArchivedCourses(list);
+      setArchivedCoursesLoaded(true);
+      const firstTerm = buildSemesterOptions(list)[0]?.value || "";
+      setArchiveSemester((current) => current || firstTerm);
+    } catch (err) {
+      console.error(err);
+      setArchivedCourseError(err?.response?.data?.message || "Failed to load archived courses.");
+    } finally {
+      setLoadingArchivedCourses(false);
+    }
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -96,6 +181,14 @@ export default function TeacherAttendancePage() {
       ...prev,
       [name]: value,
     }));
+
+    if (mode === "archive" && ["courseId", "date", "period"].includes(name)) {
+      setArchiveSessionState(null);
+      setShowSheet(false);
+      setStudents([]);
+      setAttendance({});
+      setStudentsError("");
+    }
   };
 
   const toggleStudent = (roll) => {
@@ -131,21 +224,29 @@ export default function TeacherAttendancePage() {
     setShowSheet(false);
     setStudents([]);
     setAttendance({});
+    setArchiveSessionState(null);
   };
 
   const handleLoadStudents = async (e) => {
     e.preventDefault();
+
+    if (mode === "archive" && !archiveSemester) {
+      setStudentsError("Please select an archived semester first.");
+      return;
+    }
 
     if (!form.courseId || !form.date) {
       setStudentsError("Please select both course and date.");
       return;
     }
 
-    if ((mode === "update" || mode === "delete") && !form.period) {
+    if ((mode === "update" || mode === "delete" || mode === "archive") && !form.period) {
       setStudentsError(
         mode === "delete"
           ? "Please select a period to delete."
-          : "Please select a period to update."
+          : mode === "archive"
+            ? "Please select a period for the archived attendance."
+            : "Please select a period to update."
       );
       return;
     }
@@ -186,13 +287,30 @@ export default function TeacherAttendancePage() {
         });
 
         setAttendance(map);
+        if (mode === "archive") {
+          setArchiveSessionState("existing");
+        }
       } catch (err) {
-        console.error(err);
-        setStudentsError(
-          err?.response?.data?.message ||
-          "No attendance found for this date and period."
-        );
-        setAttendance({});
+        const message = err?.response?.data?.message || "";
+        const attendanceMissing =
+          mode === "archive" &&
+          err?.response?.status === 404 &&
+          /no attendance found/i.test(message);
+
+        if (attendanceMissing) {
+          // Archived courses may need a missed date/period added later.
+          // Prepare a brand-new attendance session instead of blocking the teacher.
+          setAttendance(initialAttendance);
+          setArchiveSessionState("new");
+          setStudentsError("");
+        } else {
+          console.error(err);
+          setStudentsError(
+            message || "No attendance found for this date and period."
+          );
+          setAttendance({});
+          if (mode === "archive") setArchiveSessionState(null);
+        }
       }
     } catch (err) {
       console.error(err);
@@ -274,14 +392,25 @@ export default function TeacherAttendancePage() {
           records: baseRecords,
         };
 
-        await updateAttendanceDay(payload);
+        if (mode === "archive" && archiveSessionState === "new") {
+          await createAttendanceRecord(payload);
 
-        await Swal.fire({
-          icon: "success",
-          title: "Attendance Updated",
-          text: `Attendance updated for Period ${Number(form.period)}.`,
-          confirmButtonText: "OK",
-        });
+          await Swal.fire({
+            icon: "success",
+            title: "Archived Attendance Created",
+            text: `A new attendance session was created for ${form.date}, Period ${Number(form.period)}.`,
+            confirmButtonText: "OK",
+          });
+        } else {
+          await updateAttendanceDay(payload);
+
+          await Swal.fire({
+            icon: "success",
+            title: mode === "archive" ? "Archived Attendance Updated" : "Attendance Updated",
+            text: `Attendance updated for Period ${Number(form.period)}.`,
+            confirmButtonText: "OK",
+          });
+        }
 
         resetSheet();
       }
@@ -405,11 +534,15 @@ export default function TeacherAttendancePage() {
   };
 
   const sectionTitle =
-    mode === "update"
-      ? `Updating Period ${Number(form.period)}`
-      : mode === "delete"
-        ? `Deleting Period ${Number(form.period)}`
-        : entryMode === "single"
+    mode === "archive"
+      ? archiveSessionState === "new"
+        ? `Archived · New Period ${Number(form.period)}`
+        : `Archived Update · Period ${Number(form.period)}`
+      : mode === "update"
+        ? `Updating Period ${Number(form.period)}`
+        : mode === "delete"
+          ? `Deleting Period ${Number(form.period)}`
+          : entryMode === "single"
           ? `Creating Period ${Number(form.period)}`
           : `Bulk: Period ${Number(form.startPeriod)} to ${Number(form.startPeriod) + Number(form.numClasses) - 1
           }`;
@@ -440,12 +573,12 @@ export default function TeacherAttendancePage() {
               </div>
               <div className="min-w-0">
                 <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Attendance Management</h1>
-                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Create, update, copy or remove period-wise attendance.</p>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Create, update, copy, remove, or add/correct archived period-wise attendance.</p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-300">{courses.length} courses</span>
+              <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-300">{mode === "archive" ? `${archivedCourses.length} archived courses` : `${courses.length} courses`}</span>
               {students.length > 0 && (
                 <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">{students.length} students loaded</span>
               )}
@@ -458,7 +591,7 @@ export default function TeacherAttendancePage() {
           <div className="mb-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-2">
             <button
               type="button"
-              onClick={() => setMode("create")}
+              onClick={() => changeMode("create")}
               className={`inline-flex min-w-0 items-center justify-center rounded-2xl px-2 py-2.5 text-xs font-semibold transition sm:px-5 sm:text-sm ${mode === "create"
                 ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20"
                 : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
@@ -470,7 +603,7 @@ export default function TeacherAttendancePage() {
 
             <button
               type="button"
-              onClick={() => setMode("update")}
+              onClick={() => changeMode("update")}
               className={`inline-flex min-w-0 items-center justify-center rounded-2xl px-2 py-2.5 text-xs font-semibold transition sm:px-5 sm:text-sm ${mode === "update"
                 ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20"
                 : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
@@ -482,13 +615,7 @@ export default function TeacherAttendancePage() {
 
             <button
               type="button"
-              onClick={() => {
-                setMode("delete");
-                setShowSheet(false);
-                setStudents([]);
-                setAttendance({});
-                setStudentsError("");
-              }}
+              onClick={() => changeMode("delete")}
               className={`inline-flex min-w-0 items-center justify-center rounded-2xl px-2 py-2.5 text-xs font-semibold transition sm:px-5 sm:text-sm ${mode === "delete"
                 ? "bg-rose-600 text-white shadow-lg shadow-rose-600/20"
                 : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
@@ -506,6 +633,19 @@ export default function TeacherAttendancePage() {
               <CopyIcon />
               <span className="sm:hidden">Copy</span>
               <span className="hidden sm:inline">Copy Attendance</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={openArchiveMode}
+              className={`inline-flex min-w-0 items-center justify-center gap-2 rounded-2xl px-2 py-2.5 text-xs font-semibold transition sm:px-5 sm:text-sm ${mode === "archive"
+                ? "bg-slate-800 text-white shadow-lg shadow-slate-800/20 dark:bg-slate-100 dark:text-slate-900"
+                : "border border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                }`}
+            >
+              <ArchiveIcon />
+              <span className="sm:hidden">Archive</span>
+              <span className="hidden sm:inline">Archive Attendance</span>
             </button>
           </div>
 
@@ -585,11 +725,11 @@ export default function TeacherAttendancePage() {
               </div>
             )}
 
-            {(mode === "update" || mode === "delete") && (
+            {(mode === "update" || mode === "delete" || mode === "archive") && (
               <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div>
                   <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    {mode === "delete" ? "Period for Delete" : "Period for Update"}
+                    {mode === "delete" ? "Period for Delete" : mode === "archive" ? "Archived Period (Existing or New)" : "Period for Update"}
                   </label>
                   <select
                     name="period"
@@ -607,22 +747,53 @@ export default function TeacherAttendancePage() {
               </div>
             )}
 
+            {mode === "archive" && (
+              <div className="mb-4 rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-300">
+                Select the semester, archived course, date, and period. If attendance already exists, it will be loaded for correction. If that date/period was never taken or is missing, a new attendance session will be prepared and created. This does not restore the course.
+              </div>
+            )}
+
             <form
               onSubmit={handleLoadStudents}
               className="grid grid-cols-1 gap-4 lg:grid-cols-12"
             >
-              <div className="lg:col-span-6">
+              {mode === "archive" && (
+                <div className="lg:col-span-3">
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    Semester
+                  </label>
+                  <select
+                    value={archiveSemester}
+                    onChange={(e) => {
+                      setArchiveSemester(e.target.value);
+                      setForm((prev) => ({ ...prev, courseId: "" }));
+                      setStudentsError("");
+                      resetSheet();
+                    }}
+                    disabled={loadingArchivedCourses}
+                    className={`${commonInputClass} disabled:cursor-not-allowed disabled:opacity-60`}
+                  >
+                    <option value="">Select semester</option>
+                    {archivedSemesterOptions.map((term) => (
+                      <option key={term.value} value={term.value}>{term.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className={mode === "archive" ? "lg:col-span-4" : "lg:col-span-6"}>
                 <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  Course
+                  {mode === "archive" ? "Archived Course" : "Course"}
                 </label>
                 <select
                   name="courseId"
                   value={form.courseId}
                   onChange={handleChange}
-                  className={commonInputClass}
+                  disabled={mode === "archive" && (!archiveSemester || loadingArchivedCourses)}
+                  className={`${commonInputClass} disabled:cursor-not-allowed disabled:opacity-60`}
                 >
-                  <option value="">Select course</option>
-                  {courses.map((c, i) => {
+                  <option value="">{mode === "archive" ? "Select archived course" : "Select course"}</option>
+                  {availableCourses.map((c, i) => {
                     const courseId = c._id || c.id;
                     return (
                       <option
@@ -636,7 +807,7 @@ export default function TeacherAttendancePage() {
                 </select>
               </div>
 
-              <div className="lg:col-span-3">
+              <div className={mode === "archive" ? "lg:col-span-2" : "lg:col-span-3"}>
                 <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                   Date
                 </label>
@@ -655,25 +826,30 @@ export default function TeacherAttendancePage() {
               <div className="flex items-end lg:col-span-3">
                 <button
                   type="submit"
-                  disabled={loadingCourses || !courses.length || loadingStudents}
+                  disabled={
+                    loadingStudents ||
+                    (mode === "archive"
+                      ? loadingArchivedCourses || !archiveSemester || !availableCourses.length
+                      : loadingCourses || !courses.length)
+                  }
                   className="inline-flex w-full items-center justify-center rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {loadingStudents
-                    ? mode === "delete"
-                      ? "Loading Attendance..."
-                      : "Loading Students..."
-                    : mode === "delete"
-                      ? "Load Attendance"
-                      : "Load Students"}
+                    ? "Loading Attendance..."
+                    : mode === "archive"
+                      ? "Load / Create Attendance"
+                      : mode === "delete" || mode === "update"
+                        ? "Load Attendance"
+                        : "Load Students"}
                 </button>
               </div>
             </form>
 
-            {(courseError || studentsError) && (
+            {((mode === "archive" ? archivedCourseError : courseError) || studentsError) && (
               <div className="mt-4 space-y-2">
-                {courseError && (
+                {(mode === "archive" ? archivedCourseError : courseError) && (
                   <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
-                    {courseError}
+                    {mode === "archive" ? archivedCourseError : courseError}
                   </div>
                 )}
                 {studentsError && (
@@ -694,7 +870,7 @@ export default function TeacherAttendancePage() {
                     {selectedCourse.code} – {selectedCourse.title}
                   </h2>
                   <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                    Section {selectedCourse.section} • {form.date}
+                    Section {selectedCourse.section} • {form.date}{mode === "archive" ? ` • ${selectedCourse.semester || ""} ${selectedCourse.year || ""} • Archived` : ""}
                   </p>
                 </div>
 
@@ -702,6 +878,20 @@ export default function TeacherAttendancePage() {
                   {sectionTitle}
                 </div>
               </div>
+
+              {mode === "archive" && archiveSessionState && (
+                <div
+                  className={`mb-5 rounded-2xl border px-4 py-3 text-sm ${
+                    archiveSessionState === "new"
+                      ? "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300"
+                      : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+                  }`}
+                >
+                  {archiveSessionState === "new"
+                    ? `No attendance was found for ${form.date}, Period ${Number(form.period)}. A new archived attendance session is ready to be created.`
+                    : `Existing attendance was found for ${form.date}, Period ${Number(form.period)}. You can correct it and save the update.`}
+                </div>
+              )}
 
               {loadingStudents && (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
@@ -891,12 +1081,18 @@ export default function TeacherAttendancePage() {
                     <div className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white/95 p-4 shadow-xl backdrop-blur sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:bg-slate-950/95">
                       <div>
                         <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                          {mode === "delete" ? "Ready to delete attendance?" : "Ready to save attendance?"}
+                          {mode === "delete"
+                            ? "Ready to delete attendance?"
+                            : mode === "archive" && archiveSessionState === "new"
+                              ? "Ready to create this archived attendance session?"
+                              : "Ready to save attendance?"}
                         </div>
                         <div className="text-xs text-slate-500 dark:text-slate-400">
                           {mode === "delete"
                             ? "Review the loaded attendance carefully before deleting."
-                            : "Review the student status and submit when finished."}
+                            : mode === "archive" && archiveSessionState === "new"
+                              ? "This date/period did not exist before. Review the student status, then create it in the archived course."
+                              : "Review the student status and submit when finished."}
                         </div>
                       </div>
 
@@ -920,7 +1116,11 @@ export default function TeacherAttendancePage() {
                               ? entryMode === "single"
                                 ? "Submit Attendance"
                                 : "Submit Bulk Attendance"
-                              : "Update Attendance"}
+                              : mode === "archive"
+                                ? archiveSessionState === "new"
+                                  ? "Create Archived Attendance"
+                                  : "Update Archived Attendance"
+                                : "Update Attendance"}
                         </button>
                       )}
                     </div>
@@ -1045,6 +1245,9 @@ function CalendarIcon() {
 }
 function CopyIcon() {
   return <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>;
+}
+function ArchiveIcon() {
+  return <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 7h16"/><path d="M5 7l1 13h12l1-13"/><path d="M9 11h6"/><path d="M7 4h10l1 3H6l1-3Z"/></svg>;
 }
 function SourceIcon() {
   return <svg className="h-4 w-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>;

@@ -23,6 +23,37 @@ const parsePercentage = (value) => {
   return number;
 };
 
+const getCourseTermValue = (course) =>
+  `${String(course?.semester || "").trim()}::${String(course?.year || "").trim()}`;
+
+const buildSemesterOptions = (courseList = []) => {
+  const semesterRank = { Spring: 1, Summer: 2, Fall: 3 };
+  const unique = new Map();
+
+  courseList.forEach((course) => {
+    const semester = String(course?.semester || "").trim();
+    const year = String(course?.year || "").trim();
+    if (!semester && !year) return;
+    const value = `${semester}::${year}`;
+    if (!unique.has(value)) {
+      unique.set(value, {
+        value,
+        semester,
+        year,
+        label: [semester, year].filter(Boolean).join(" "),
+      });
+    }
+  });
+
+  return Array.from(unique.values()).sort((a, b) => {
+    const yearDifference = Number(b.year || 0) - Number(a.year || 0);
+    if (yearDifference !== 0) return yearDifference;
+    const rankDifference = (semesterRank[b.semester] || 0) - (semesterRank[a.semester] || 0);
+    if (rankDifference !== 0) return rankDifference;
+    return b.label.localeCompare(a.label, undefined, { numeric: true, sensitivity: "base" });
+  });
+};
+
 export default function TeacherAttendanceSheetPage() {
   const topScrollRef = useRef(null);
   const tableScrollRef = useRef(null);
@@ -36,6 +67,15 @@ export default function TeacherAttendanceSheetPage() {
   const [err, setErr] = useState("");
   const [data, setData] = useState(null);
   const [exportingPdf, setExportingPdf] = useState(false);
+
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archivedCourses, setArchivedCourses] = useState([]);
+  const [archivedCoursesLoaded, setArchivedCoursesLoaded] = useState(false);
+  const [loadingArchivedCourses, setLoadingArchivedCourses] = useState(false);
+  const [archiveErr, setArchiveErr] = useState("");
+  const [archiveSemester, setArchiveSemester] = useState("");
+  const [archiveCourseId, setArchiveCourseId] = useState("");
+  const [loadingArchivedSheet, setLoadingArchivedSheet] = useState(false);
 
   const [percentageMode, setPercentageMode] = useState("all");
   const [percentageValue, setPercentageValue] = useState("60");
@@ -55,6 +95,78 @@ export default function TeacherAttendanceSheetPage() {
     }
     loadCourses();
   }, []);
+
+  const archivedSemesterOptions = useMemo(
+    () => buildSemesterOptions(archivedCourses),
+    [archivedCourses]
+  );
+
+  const archivedCoursesForSemester = useMemo(() => {
+    if (!archiveSemester) return [];
+    return archivedCourses
+      .filter((course) => getCourseTermValue(course) === archiveSemester)
+      .sort((a, b) => {
+        const codeCompare = String(a?.code || "").localeCompare(String(b?.code || ""), undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+        if (codeCompare !== 0) return codeCompare;
+        return String(a?.section || "").localeCompare(String(b?.section || ""), undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+      });
+  }, [archivedCourses, archiveSemester]);
+
+  const openArchivedAttendance = async () => {
+    setArchiveOpen(true);
+    setArchiveErr("");
+    if (archivedCoursesLoaded || loadingArchivedCourses) return;
+
+    try {
+      setLoadingArchivedCourses(true);
+      const res = await fetchTeacherCourses({ archived: true });
+      const list = res || [];
+      setArchivedCourses(list);
+      setArchivedCoursesLoaded(true);
+      const firstTerm = buildSemesterOptions(list)[0]?.value || "";
+      setArchiveSemester((current) => current || firstTerm);
+    } catch (error) {
+      console.error(error);
+      setArchiveErr(error?.response?.data?.message || "Failed to load archived courses.");
+    } finally {
+      setLoadingArchivedCourses(false);
+    }
+  };
+
+  const handleGenerateArchived = async (e) => {
+    e.preventDefault();
+    setArchiveErr("");
+    if (!archiveSemester) {
+      setArchiveErr("Please select a semester.");
+      return;
+    }
+    if (!archiveCourseId) {
+      setArchiveErr("Please select an archived course.");
+      return;
+    }
+
+    try {
+      setLoadingArchivedSheet(true);
+      setErr("");
+      const res = await fetchAttendanceSheet(archiveCourseId);
+      setData(res);
+      setCourseId("");
+      setPercentageMode("all");
+      setPercentageValue("60");
+      setArchiveOpen(false);
+    } catch (error) {
+      console.error(error);
+      setArchiveErr(error?.response?.data?.message || "Failed to generate archived attendance sheet.");
+    } finally {
+      setLoadingArchivedSheet(false);
+    }
+  };
 
   const handleGenerate = async (e) => {
     e.preventDefault();
@@ -353,7 +465,7 @@ export default function TeacherAttendanceSheetPage() {
         <div className="p-4 sm:p-6 lg:p-8">
           <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4 sm:p-5 lg:p-6 dark:border-slate-800 dark:bg-slate-900/60">
             <form onSubmit={handleGenerate} className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-              <div className="lg:col-span-9">
+              <div className="lg:col-span-7">
                 <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Course</label>
                 <select value={courseId} onChange={(e) => setCourseId(e.target.value)} className={commonInputClass}>
                   <option value="">Select course</option>
@@ -367,6 +479,16 @@ export default function TeacherAttendanceSheetPage() {
               <div className="flex items-end lg:col-span-3">
                 <button type="submit" disabled={loading || loadingCourses || !courses.length} className="inline-flex w-full items-center justify-center rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60">
                   {loading ? "Generating..." : "Generate Sheet"}
+                </button>
+              </div>
+              <div className="flex items-end lg:col-span-2">
+                <button
+                  type="button"
+                  onClick={openArchivedAttendance}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-indigo-500/40 dark:hover:bg-indigo-500/10 dark:hover:text-indigo-300"
+                >
+                  <ArchiveIcon />
+                  <span>Archived</span>
                 </button>
               </div>
             </form>
@@ -483,12 +605,117 @@ export default function TeacherAttendanceSheetPage() {
           )}
         </div>
       </section>
+
+      {archiveOpen && (
+        <div
+          className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !loadingArchivedSheet) setArchiveOpen(false);
+          }}
+        >
+          <form
+            onSubmit={handleGenerateArchived}
+            className="w-full max-w-2xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-900">
+              <div className="flex min-w-0 gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-600 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300">
+                  <ArchiveIcon />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Archived Attendance Sheet</h3>
+                  <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">Select the semester first, then choose one of your archived courses.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => !loadingArchivedSheet && setArchiveOpen(false)}
+                className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                aria-label="Close"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+
+            <div className="space-y-4 p-5">
+              {loadingArchivedCourses ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-300">Loading archived courses...</div>
+              ) : archivedCourses.length === 0 && !archiveErr ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-300">No archived courses were found.</div>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Semester</label>
+                    <select
+                      value={archiveSemester}
+                      onChange={(e) => {
+                        setArchiveSemester(e.target.value);
+                        setArchiveCourseId("");
+                        setArchiveErr("");
+                      }}
+                      className={commonInputClass}
+                    >
+                      <option value="">Select semester</option>
+                      {archivedSemesterOptions.map((term) => (
+                        <option key={term.value} value={term.value}>{term.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Course</label>
+                    <select
+                      value={archiveCourseId}
+                      onChange={(e) => { setArchiveCourseId(e.target.value); setArchiveErr(""); }}
+                      disabled={!archiveSemester}
+                      className={`${commonInputClass} disabled:cursor-not-allowed disabled:opacity-55`}
+                    >
+                      <option value="">Select archived course</option>
+                      {archivedCoursesForSemester.map((course, i) => {
+                        const id = course._id || course.id;
+                        return <option key={id || i} value={id}>{course.code} - {course.title} (Sec {course.section})</option>;
+                      })}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {archiveErr && <Alert>{archiveErr}</Alert>}
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950/50">
+              <button
+                type="button"
+                onClick={() => !loadingArchivedSheet && setArchiveOpen(false)}
+                disabled={loadingArchivedSheet}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loadingArchivedCourses || loadingArchivedSheet || !archiveSemester || !archiveCourseId}
+                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loadingArchivedSheet ? "Generating..." : "Generate Archived Sheet"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
 
 function Alert({ children }) {
   return <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">{children}</div>;
+}
+
+function ArchiveIcon() {
+  return <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 7h16"/><path d="M5 7l1 13h12l1-13"/><path d="M9 11h6"/><path d="M7 4h10l1 3H6l1-3Z"/></svg>;
+}
+
+function CloseIcon() {
+  return <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 6l12 12M18 6 6 18"/></svg>;
 }
 
 function SummaryMini({ label, value }) {
