@@ -87,6 +87,7 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
     },
     { to: "/teacher/issues", label: "Issues", icon: <AlertIcon /> },
     { to: "/teacher/routine", label: "Routine", icon: <RoutineIcon /> },
+    { to: "/teacher/calculations", label: "Calculations", icon: <CalculatorSidebarIcon /> },
     { to: "/teacher/counselling", label: "Counselling", icon: <CounsellingIcon /> },
     {
       to: "/academic-calendar",
@@ -794,6 +795,24 @@ function AcademicCalendarIcon() {
     </svg>
   );
 }
+function CalculatorSidebarIcon() {
+  return (
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="5" y="2.5" width="14" height="19" rx="3" />
+      <path d="M8 6.5h8v3H8z" />
+      <path d="M8 13h1M12 13h1M16 13h1M8 17h1M12 17h1M16 17h1" />
+    </svg>
+  );
+}
+
 function NotificationIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">

@@ -25,6 +25,7 @@ import StudentCounsellingPage from "./pages/StudentCounsellingPage.jsx";
 import NotificationSettingsPage from "./pages/NotificationSettingsPage.jsx";
 import MobileNotificationBridge from "./components/MobileNotificationBridge.jsx";
 import TeacherCounsellingPage from "./pages/TeacherCounsellingPage.jsx";
+import TeacherCalculationsPage from "./pages/TeacherCalculationsPage.jsx";
 
 import AppLayout from './layouts/AppLayout.jsx';
 import TeacherAttendanceSheetPage from './pages/TeacherAttendanceSheetPage.jsx';
@@ -85,6 +86,7 @@ function App() {
         <Route path="/teacher/routine" element={<TeacherRoutinePage />} />
         <Route path="/teacher/counselling" element={<TeacherCounsellingPage />} />
         <Route path="/teacher/notebook" element={<TeacherNotebookPage />} />
+        <Route path="/teacher/calculations" element={<TeacherCalculationsPage />} />
         <Route path="/teacher/routine/manage" element={<TeacherRoutineBuilderPage />} />
 
         <Route path="/academic-calendar" element={<AcademicCalendarPage />} />
