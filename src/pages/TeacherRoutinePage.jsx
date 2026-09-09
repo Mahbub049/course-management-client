@@ -44,45 +44,84 @@ const FRIDAY_DISPLAY_COLUMNS = [
   { kind: "slot", id: "eve_2015_2130" },
 ];
 
+const NORMAL_PRE_LUNCH_SLOT_IDS = [
+  "day_0815_0945",
+  "day_0945_1115",
+  "day_1115_1245",
+];
+
+function getFridayCompatibleMainColumns(routine) {
+  const baseColumns = getDocumentColumns({
+    ...routine,
+    workingDays: (routine.workingDays || []).filter((day) => day !== "Fri"),
+  });
+  const lunchIndex = baseColumns.findIndex((column) => column.kind === "lunch");
+  if (lunchIndex < 0) return baseColumns;
+
+  const beforeLunch = baseColumns.slice(0, lunchIndex);
+  const afterLunch = baseColumns.slice(lunchIndex + 1);
+  // Friday has four possible periods before its longer P&L break, while the
+  // regular timetable has three. Keep the regular side at a minimum of three
+  // physical pre-P&L columns so Friday can map into the same grid without
+  // pushing P&L to the right merely because 08:15-09:45 is unused.
+  const alignedBefore = NORMAL_PRE_LUNCH_SLOT_IDS.map((id) => ({ kind: "slot", id }));
+  const extraBefore = beforeLunch.filter(
+    (column) => column.kind === "slot" && !NORMAL_PRE_LUNCH_SLOT_IDS.includes(column.id)
+  );
+
+  return [
+    ...alignedBefore,
+    ...extraBefore,
+    { kind: "lunch", id: PRAYER_LUNCH.id },
+    ...afterLunch,
+  ];
+}
+
 function getFridayDisplayColumns(routine, normalColumns = []) {
   const lunchIndex = normalColumns.findIndex((column) => column.kind === "lunch");
   const beforeLunch = FRIDAY_DISPLAY_COLUMNS.slice(0, 4);
   const lunch = FRIDAY_DISPLAY_COLUMNS[4];
   const afterLunch = FRIDAY_DISPLAY_COLUMNS.slice(5);
 
-  if (lunchIndex < 0) {
-    return FRIDAY_DISPLAY_COLUMNS.filter(
-      (column) => column.kind === "friday-lunch" || routine.entries?.Fri?.[column.id]
-    );
+  if (lunchIndex < 0) return FRIDAY_DISPLAY_COLUMNS;
+
+  // Normal days intentionally keep three pre-P&L columns. Friday has four
+  // candidates. Preserve every occupied Friday slot; if three or fewer are
+  // occupied, show exactly three by filling blank positions. When choosing a
+  // blank from the first pair, prefer the later 09:15-10:30 slot, matching the
+  // university mapping supplied by the faculty. Only four occupied Friday
+  // pre-P&L slots are allowed to expand/break the grid.
+  const targetBeforeLunch = Math.max(3, lunchIndex);
+  const occupiedBefore = beforeLunch.filter((column) => routine.entries?.Fri?.[column.id]);
+
+  let alignedBefore;
+  if (occupiedBefore.length > targetBeforeLunch) {
+    alignedBefore = beforeLunch;
+  } else {
+    const keepBefore = new Set(occupiedBefore.map((column) => column.id));
+    const fillPriority = [
+      "eve_0915_1030",
+      "eve_1030_1145",
+      "eve_1145_1300",
+      "eve_0800_0915",
+    ];
+    for (const id of fillPriority) {
+      if (keepBefore.size >= targetBeforeLunch) break;
+      keepBefore.add(id);
+    }
+    alignedBefore = beforeLunch.filter((column) => keepBefore.has(column.id));
   }
 
-  const targetBeforeLunch = lunchIndex;
   const targetAfterLunch = Math.max(0, normalColumns.length - lunchIndex - 1);
-
-  const requiredBefore = new Set([beforeLunch[0].id]);
-  beforeLunch.forEach((column) => {
-    if (routine.entries?.Fri?.[column.id]) requiredBefore.add(column.id);
-  });
-
-  // Keep the first Friday slot visible, preserve every occupied period, then
-  // use the latest remaining blank periods to fill exactly the same number of
-  // physical columns that appear before P&L in the normal routine.
-  if (requiredBefore.size > targetBeforeLunch) return FRIDAY_DISPLAY_COLUMNS;
-
-  const keepBefore = new Set(requiredBefore);
-  for (let index = beforeLunch.length - 1; index >= 0 && keepBefore.size < targetBeforeLunch; index -= 1) {
-    keepBefore.add(beforeLunch[index].id);
+  const occupiedAfter = afterLunch.filter((column) => routine.entries?.Fri?.[column.id]);
+  if (occupiedAfter.length > targetAfterLunch) {
+    return [...alignedBefore, lunch, ...afterLunch];
   }
-  const alignedBefore = beforeLunch.filter((column) => keepBefore.has(column.id));
 
-  const requiredAfter = new Set(
-    afterLunch.filter((column) => routine.entries?.Fri?.[column.id]).map((column) => column.id)
-  );
-  if (requiredAfter.size > targetAfterLunch) return FRIDAY_DISPLAY_COLUMNS;
-
-  const keepAfter = new Set(requiredAfter);
-  for (let index = 0; index < afterLunch.length && keepAfter.size < targetAfterLunch; index += 1) {
-    keepAfter.add(afterLunch[index].id);
+  const keepAfter = new Set(occupiedAfter.map((column) => column.id));
+  for (const column of afterLunch) {
+    if (keepAfter.size >= targetAfterLunch) break;
+    keepAfter.add(column.id);
   }
   const alignedAfter = afterLunch.filter((column) => keepAfter.has(column.id));
 
@@ -137,10 +176,7 @@ function TeacherRoutinePage() {
   const columns = useMemo(() => {
     if (!routine) return [];
     if (!showFridayDoubleRow) return getDocumentColumns(routine);
-    return getDocumentColumns({
-      ...routine,
-      workingDays: (routine.workingDays || []).filter((day) => day !== "Fri"),
-    });
+    return getFridayCompatibleMainColumns(routine);
   }, [routine, showFridayDoubleRow]);
   const fridayColumns = useMemo(() => {
     if (!routine || !showFridayDoubleRow) return [];
@@ -359,7 +395,7 @@ function TeacherRoutinePage() {
           <section className="w-full min-w-0 rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950">
             <div className="mb-4">
               <h2 className="text-lg font-black text-slate-950 dark:text-white">Saved Routine</h2>
-              <p className="text-xs text-slate-500">Only time slots containing at least one class or weekly activity are shown. Friday uses its own compact two-row timetable.</p>
+              <p className="text-xs text-slate-500">Friday uses its own compact two-row timetable while keeping P&amp;L and the main column lines aligned with the regular-day grid.</p>
             </div>
             <div className="w-full min-w-0 overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
               <table
