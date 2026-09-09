@@ -87,7 +87,6 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
     },
     { to: "/teacher/issues", label: "Issues", icon: <AlertIcon /> },
     { to: "/teacher/routine", label: "Routine", icon: <RoutineIcon /> },
-    { to: "/teacher/calculations", label: "Calculations", icon: <CalculatorSidebarIcon /> },
     { to: "/teacher/counselling", label: "Counselling", icon: <CounsellingIcon /> },
     {
       to: "/academic-calendar",
@@ -97,6 +96,7 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
     ...(isNativeApp
       ? [{ to: "/notifications", label: "Notifications", icon: <NotificationIcon /> }]
       : []),
+    { to: "/teacher/calculations", label: "Calculations", icon: <CalculatorSidebarIcon /> },
   ];
 
   const studentLinks = [

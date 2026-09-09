@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
 import { getAuthItem } from "../utils/authStorage";
 import {
@@ -36,6 +36,74 @@ function formatDate(value) {
   if (!match) return value;
   const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
   return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+}
+
+
+let dutyRowSequence = 0;
+
+function makeDutyRowKey(duty = {}, scope = "duty", index = 0) {
+  if (duty._rowKey) return String(duty._rowKey);
+  if (duty._id) return String(duty._id);
+  dutyRowSequence += 1;
+  return `${scope}-${index}-${Date.now()}-${dutyRowSequence}`;
+}
+
+function prepareDutyRows(duties = [], scope = "duty") {
+  return (Array.isArray(duties) ? duties : []).map((duty, index) => ({
+    ...duty,
+    _rowKey: makeDutyRowKey(duty, scope, index),
+  }));
+}
+
+function emptyDutyRow() {
+  dutyRowSequence += 1;
+  return {
+    _rowKey: `new-duty-${Date.now()}-${dutyRowSequence}`,
+    date: "",
+    day: "",
+    startTime: "",
+    endTime: "",
+    time: "",
+    program: "",
+    intake: "",
+    section: "",
+    course: "",
+    courseTeacher: "",
+    invigilators: "",
+    room: "",
+    dutyType: "day",
+  };
+}
+
+function timeToPickerValue(value = "") {
+  const text = String(value || "").trim().toUpperCase().replace(/\./g, ":");
+  let match = text.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
+  if (match) {
+    let hour = Number(match[1]);
+    const minute = Number(match[2]);
+    if (hour < 1 || hour > 12 || minute > 59) return "";
+    if (hour === 12) hour = 0;
+    if (match[3] === "PM") hour += 12;
+    return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  }
+  match = text.match(/^([01]?\d|2[0-3]):(\d{2})$/);
+  if (!match || Number(match[2]) > 59) return "";
+  return `${String(Number(match[1])).padStart(2, "0")}:${match[2]}`;
+}
+
+function pickerValueToTime(value = "") {
+  const match = String(value || "").match(/^(\d{2}):(\d{2})$/);
+  if (!match) return value;
+  const hour24 = Number(match[1]);
+  const minute = match[2];
+  const suffix = hour24 >= 12 ? "PM" : "AM";
+  const hour12 = hour24 % 12 || 12;
+  return `${hour12}:${minute} ${suffix}`;
+}
+
+function normalizeEditableTime(value = "") {
+  const pickerValue = timeToPickerValue(value);
+  return pickerValue ? pickerValueToTime(pickerValue) : String(value || "");
 }
 
 function TeacherCalculationsPage() {
@@ -448,8 +516,9 @@ function DutyListModal({ id, onClose, onSaved }) {
     setLoading(true);
     try {
       const data = await getDutyCalculation(id);
-      setItem(data.item);
-      setDraftDuties((data.item?.duties || []).map((duty) => ({ ...duty })));
+      const preparedDuties = prepareDutyRows(data.item?.duties || [], `saved-${id}`);
+      setItem(data.item ? { ...data.item, duties: preparedDuties } : data.item);
+      setDraftDuties(preparedDuties);
       setDraftMeta({ semester: data.item?.semester || "", examType: data.item?.examType || "" });
     } catch (error) {
       Swal.fire("Could not load duties", apiMessage(error, "Please try again."), "error");
@@ -474,8 +543,9 @@ function DutyListModal({ id, onClose, onSaved }) {
     setSaving(true);
     try {
       const data = await updateDutyCalculation(id, { ...draftMeta, duties: draftDuties });
-      setItem(data.item);
-      setDraftDuties((data.item?.duties || []).map((duty) => ({ ...duty })));
+      const preparedDuties = prepareDutyRows(data.item?.duties || [], `saved-${id}`);
+      setItem(data.item ? { ...data.item, duties: preparedDuties } : data.item);
+      setDraftDuties(preparedDuties);
       setEditing(false);
       await onSaved();
       Swal.fire({ icon: "success", title: "Duty data updated", timer: 1300, showConfirmButton: false });
@@ -496,13 +566,80 @@ function DutyListModal({ id, onClose, onSaved }) {
   }, [draftDuties, item]);
   const billing = editing ? editBilling : item?.billing;
 
-  return <ModalShell onClose={onClose} width="max-w-[1500px]"><ModalHeader title="Duty List" subtitle="Recognized rows are stored as editable data. Changing date or time automatically re-checks day/evening classification." onClose={onClose} icon={<DocumentIcon />} />{loading ? <div className="flex min-h-[420px] items-center justify-center text-sm text-slate-500"><Spinner /> <span className="ml-2">Loading duty list…</span></div> : item && <><div className="max-h-[calc(92vh-150px)] overflow-y-auto"><div className="border-b border-slate-200 p-5 dark:border-slate-800 sm:p-6"><div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between"><div className="grid flex-1 gap-3 sm:grid-cols-2 xl:max-w-2xl">{editing ? <><Field label="Semester"><input value={draftMeta.semester} onChange={(e) => setDraftMeta((old) => ({ ...old, semester: e.target.value }))} className="field-input" /></Field><Field label="Exam Type"><input value={draftMeta.examType} onChange={(e) => setDraftMeta((old) => ({ ...old, examType: e.target.value }))} className="field-input" /></Field></> : <><div><div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Semester</div><div className="mt-1 text-lg font-extrabold text-slate-950 dark:text-white">{item.semester}</div></div><div><div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Exam Type</div><div className="mt-1 text-lg font-extrabold text-slate-950 dark:text-white">{item.examType}</div></div></>}</div><div className="flex flex-wrap gap-2">{editing ? <><button onClick={() => { setEditing(false); setDraftDuties((item.duties || []).map((duty) => ({ ...duty }))); setDraftMeta({ semester: item.semester, examType: item.examType }); }} type="button" className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 dark:border-slate-700 dark:text-slate-200">Cancel Edit</button><button disabled={saving} onClick={save} type="button" className="rounded-xl bg-violet-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{saving ? "Saving…" : "Save & Recalculate"}</button></> : <button onClick={() => setEditing(true)} type="button" className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-xs font-bold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300"><EditIcon /> Edit OCR Data</button>}</div></div><div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-5"><MiniMetric label="Day Duties" value={`${billing?.dayDuties || 0} · ${money(billing?.dayAmount)}`} /><MiniMetric label="Evening Duties" value={`${billing?.eveningDuties || 0} · ${money(billing?.eveningAmount)}`} /><MiniMetric label="Gross Bill" value={money(billing?.gross)} /><MiniMetric label={`Tax (${billing?.taxRate || 0}%)`} value={money(billing?.taxAmount)} /><MiniMetric label="Net Total" value={money(billing?.total)} strong /></div></div><div className="overflow-x-auto"><table className="min-w-[1450px] w-full text-left text-xs"><thead className="sticky top-0 z-10 bg-slate-100 text-[10px] uppercase tracking-wide text-slate-500 shadow-sm dark:bg-slate-900"><tr><th className="px-3 py-3">#</th><th className="px-3 py-3">Date</th><th className="px-3 py-3">Time</th><th className="px-3 py-3">Program</th><th className="px-3 py-3">Intake</th><th className="px-3 py-3">Sec.</th><th className="px-3 py-3">Course</th><th className="px-3 py-3">Course Teacher</th><th className="px-3 py-3">Invigilators</th><th className="px-3 py-3">Room</th><th className="px-3 py-3">Type</th>{editing && <th className="px-3 py-3 text-right">Remove</th>}</tr></thead><tbody className="divide-y divide-slate-200 dark:divide-slate-800">{draftDuties.map((duty, index) => { const type = classifyDutyEntry(duty); return <tr key={duty._id || `${index}-${duty.date}-${duty.time}`} className="align-top"><td className="px-3 py-3 font-bold text-slate-400">{index + 1}</td><EditCell editing={editing} value={duty.date} onChange={(value) => updateRow(index, "date", value)} type="date" display={<><div className="font-semibold text-slate-800 dark:text-slate-200">{formatDate(duty.date)}</div><div className="mt-0.5 text-[10px] text-slate-500">{duty.day}</div></>} /><td className="px-3 py-3">{editing ? <div className="flex min-w-[205px] items-center gap-1"><TinyInput value={duty.startTime} onChange={(value) => updateRow(index, "startTime", value)} placeholder="9:30 AM" /><span className="text-slate-400">–</span><TinyInput value={duty.endTime} onChange={(value) => updateRow(index, "endTime", value)} placeholder="11:30 AM" /></div> : <span className="whitespace-nowrap font-medium text-slate-700 dark:text-slate-300">{duty.time}</span>}</td><EditCell editing={editing} value={duty.program} onChange={(value) => updateRow(index, "program", value)} wide /><EditCell editing={editing} value={duty.intake} onChange={(value) => updateRow(index, "intake", value)} /><EditCell editing={editing} value={duty.section} onChange={(value) => updateRow(index, "section", value)} /><EditCell editing={editing} value={duty.course} onChange={(value) => updateRow(index, "course", value)} /><EditCell editing={editing} value={duty.courseTeacher} onChange={(value) => updateRow(index, "courseTeacher", value)} /><EditCell editing={editing} value={duty.invigilators} onChange={(value) => updateRow(index, "invigilators", value)} wide /><EditCell editing={editing} value={duty.room} onChange={(value) => updateRow(index, "room", value)} /><td className="px-3 py-3"><TypeBadge type={type} /></td>{editing && <td className="px-3 py-3 text-right"><button onClick={() => setDraftDuties((rows) => rows.filter((_, rowIndex) => rowIndex !== index))} type="button" className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-[10px] font-bold text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">Remove</button></td>}</tr>; })}</tbody></table></div>{editing && <div className="border-t border-slate-200 p-4 dark:border-slate-800"><button type="button" onClick={() => setDraftDuties((rows) => [...rows, { date: "", day: "", startTime: "", endTime: "", time: "", program: "", intake: "", section: "", course: "", courseTeacher: "", invigilators: "", room: "", dutyType: "day" }])} className="inline-flex items-center gap-2 rounded-xl border border-dashed border-violet-300 bg-violet-50 px-4 py-2 text-xs font-bold text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300"><PlusIcon /> Add Duty Row</button></div>}</div><div className="flex items-center justify-between gap-3 border-t border-slate-200 px-5 py-4 dark:border-slate-800"><div className="text-[11px] text-slate-500">Source: {item.sourceFileName || "Recognized duty data"}</div><button onClick={onClose} type="button" className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200">Close</button></div></>}</ModalShell>;
+  return <ModalShell onClose={onClose} width="max-w-[1500px]"><ModalHeader title="Duty List" subtitle="Recognized rows are stored as editable data. Changing date or time automatically re-checks day/evening classification." onClose={onClose} icon={<DocumentIcon />} />{loading ? <div className="flex min-h-[420px] items-center justify-center text-sm text-slate-500"><Spinner /> <span className="ml-2">Loading duty list…</span></div> : item && <><div className="max-h-[calc(92vh-150px)] overflow-y-auto"><div className="border-b border-slate-200 p-5 dark:border-slate-800 sm:p-6"><div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between"><div className="grid flex-1 gap-3 sm:grid-cols-2 xl:max-w-2xl">{editing ? <><Field label="Semester"><input value={draftMeta.semester} onChange={(e) => setDraftMeta((old) => ({ ...old, semester: e.target.value }))} className="field-input" /></Field><Field label="Exam Type"><input value={draftMeta.examType} onChange={(e) => setDraftMeta((old) => ({ ...old, examType: e.target.value }))} className="field-input" /></Field></> : <><div><div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Semester</div><div className="mt-1 text-lg font-extrabold text-slate-950 dark:text-white">{item.semester}</div></div><div><div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Exam Type</div><div className="mt-1 text-lg font-extrabold text-slate-950 dark:text-white">{item.examType}</div></div></>}</div><div className="flex flex-wrap gap-2">{editing ? <><button onClick={() => { setEditing(false); setDraftDuties(prepareDutyRows(item.duties || [], `saved-${id}`)); setDraftMeta({ semester: item.semester, examType: item.examType }); }} type="button" className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 dark:border-slate-700 dark:text-slate-200">Cancel Edit</button><button disabled={saving} onClick={save} type="button" className="rounded-xl bg-violet-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{saving ? "Saving…" : "Save & Recalculate"}</button></> : <button onClick={() => setEditing(true)} type="button" className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-xs font-bold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300"><EditIcon /> Edit OCR Data</button>}</div></div><div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-5"><MiniMetric label="Day Duties" value={`${billing?.dayDuties || 0} · ${money(billing?.dayAmount)}`} /><MiniMetric label="Evening Duties" value={`${billing?.eveningDuties || 0} · ${money(billing?.eveningAmount)}`} /><MiniMetric label="Gross Bill" value={money(billing?.gross)} /><MiniMetric label={`Tax (${billing?.taxRate || 0}%)`} value={money(billing?.taxAmount)} /><MiniMetric label="Net Total" value={money(billing?.total)} strong /></div></div><div className="overflow-x-auto"><table className="min-w-[1450px] w-full text-left text-xs"><thead className="sticky top-0 z-10 bg-slate-100 text-[10px] uppercase tracking-wide text-slate-500 shadow-sm dark:bg-slate-900"><tr><th className="px-3 py-3">#</th><th className="px-3 py-3">Date</th><th className="px-3 py-3">Time</th><th className="px-3 py-3">Program</th><th className="px-3 py-3">Intake</th><th className="px-3 py-3">Sec.</th><th className="px-3 py-3">Course</th><th className="px-3 py-3">Course Teacher</th><th className="px-3 py-3">Invigilators</th><th className="px-3 py-3">Room</th><th className="px-3 py-3">Type</th>{editing && <th className="px-3 py-3 text-right">Remove</th>}</tr></thead><tbody className="divide-y divide-slate-200 dark:divide-slate-800">{draftDuties.map((duty, index) => { const type = classifyDutyEntry(duty); return <tr key={duty._rowKey || duty._id || index} className="align-top"><td className="px-3 py-3 font-bold text-slate-400">{index + 1}</td><DateEditCell editing={editing} value={duty.date} onChange={(value) => updateRow(index, "date", value)} display={<><div className="font-semibold text-slate-800 dark:text-slate-200">{formatDate(duty.date)}</div><div className="mt-0.5 text-[10px] text-slate-500">{duty.day}</div></>} /><td className="px-3 py-3">{editing ? <div className="flex min-w-[205px] items-center gap-1"><TimeInput value={duty.startTime} onChange={(value) => updateRow(index, "startTime", value)} placeholder="9:30 AM" ariaLabel={`Duty ${index + 1} start time`} /><span className="text-slate-400">–</span><TimeInput value={duty.endTime} onChange={(value) => updateRow(index, "endTime", value)} placeholder="11:30 AM" ariaLabel={`Duty ${index + 1} end time`} /></div> : <span className="whitespace-nowrap font-medium text-slate-700 dark:text-slate-300">{duty.time}</span>}</td><EditCell editing={editing} value={duty.program} onChange={(value) => updateRow(index, "program", value)} wide /><EditCell editing={editing} value={duty.intake} onChange={(value) => updateRow(index, "intake", value)} /><EditCell editing={editing} value={duty.section} onChange={(value) => updateRow(index, "section", value)} /><EditCell editing={editing} value={duty.course} onChange={(value) => updateRow(index, "course", value)} /><EditCell editing={editing} value={duty.courseTeacher} onChange={(value) => updateRow(index, "courseTeacher", value)} /><EditCell editing={editing} value={duty.invigilators} onChange={(value) => updateRow(index, "invigilators", value)} wide /><EditCell editing={editing} value={duty.room} onChange={(value) => updateRow(index, "room", value)} /><td className="px-3 py-3"><TypeBadge type={type} /></td>{editing && <td className="px-3 py-3 text-right"><button onClick={() => setDraftDuties((rows) => rows.filter((_, rowIndex) => rowIndex !== index))} type="button" className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-[10px] font-bold text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">Remove</button></td>}</tr>; })}</tbody></table></div>{editing && <div className="border-t border-slate-200 p-4 dark:border-slate-800"><button type="button" onClick={() => setDraftDuties((rows) => [...rows, emptyDutyRow()])} className="inline-flex items-center gap-2 rounded-xl border border-dashed border-violet-300 bg-violet-50 px-4 py-2 text-xs font-bold text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300"><PlusIcon /> Add Duty Row</button></div>}</div><div className="flex items-center justify-between gap-3 border-t border-slate-200 px-5 py-4 dark:border-slate-800"><div className="text-[11px] text-slate-500">Source: {item.sourceFileName || "Recognized duty data"}</div><button onClick={onClose} type="button" className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200">Close</button></div></>}</ModalShell>;
 }
 
 function EditCell({ editing, value, onChange, display, type = "text", wide = false }) {
   return <td className="px-3 py-3">{editing ? <input type={type} value={value || ""} onChange={(e) => onChange(e.target.value)} className={`${wide ? "min-w-[190px]" : "min-w-[100px]"} w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-900 outline-none focus:border-violet-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white`} /> : display || <span className={`${wide ? "inline-block max-w-[220px]" : ""} text-slate-700 dark:text-slate-300`}>{value || "—"}</span>}</td>;
 }
-function TinyInput({ value, onChange, placeholder }) { return <input value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="w-[92px] rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs outline-none focus:border-violet-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white" />; }
+
+function DateEditCell({ editing, value, onChange, display }) {
+  const inputRef = useRef(null);
+  const openPicker = () => {
+    const input = inputRef.current;
+    if (!input) return;
+    input.focus({ preventScroll: true });
+    if (typeof input.showPicker === "function") {
+      try { input.showPicker(); } catch { /* browser will still allow its native picker */ }
+    }
+  };
+
+  return (
+    <td className="px-3 py-3">
+      {editing ? (
+        <input
+          ref={inputRef}
+          type="date"
+          value={value || ""}
+          onChange={(e) => onChange(e.target.value)}
+          onClick={openPicker}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") openPicker();
+          }}
+          className="min-w-[138px] w-full cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-900 outline-none focus:border-violet-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+          aria-label="Duty date"
+        />
+      ) : display}
+    </td>
+  );
+}
+
+function TimeInput({ value, onChange, placeholder, ariaLabel }) {
+  const pickerRef = useRef(null);
+  const pickerValue = timeToPickerValue(value);
+
+  return (
+    <div className="relative w-[116px] shrink-0">
+      <input
+        type="text"
+        inputMode="text"
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={(e) => {
+          const normalized = normalizeEditableTime(e.target.value);
+          if (normalized !== e.target.value) onChange(normalized);
+        }}
+        placeholder={placeholder}
+        aria-label={ariaLabel}
+        autoComplete="off"
+        className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-2 pr-8 text-xs outline-none focus:border-violet-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+      />
+      <div className="absolute inset-y-0 right-0 flex w-8 items-center justify-center">
+        <ClockPickerIcon />
+        <input
+          ref={pickerRef}
+          type="time"
+          step="60"
+          value={pickerValue}
+          onChange={(e) => onChange(pickerValueToTime(e.target.value))}
+          aria-label={`${ariaLabel || "Duty time"} picker`}
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        />
+      </div>
+    </div>
+  );
+}
+function ClockPickerIcon() { return <svg viewBox="0 0 24 24" className="pointer-events-none h-3.5 w-3.5 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 1.5"/></svg>; }
 function Field({ label, children }) { return <label className="block"><span className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-300">{label}</span>{children}</label>; }
 function TypeBadge({ type }) { const evening = type === "evening"; return <span className={evening ? "inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300" : "inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300"}>{evening ? "Evening" : "Day"}</span>; }
 
