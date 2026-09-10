@@ -29,6 +29,7 @@ export default function TabSettings({
     semester: "Spring",
     year: "",
     courseType: "theory",
+    creditHours: "",
     projectFeature: {
       mode: "lab_final",
       totalProjectMarks: 40,
@@ -51,6 +52,7 @@ export default function TabSettings({
       semester: course?.semester || "Spring",
       year: course?.year || new Date().getFullYear(),
       courseType: (course?.courseType || "theory").toLowerCase(),
+      creditHours: course?.creditHours ?? "",
       projectFeature: {
         mode: course?.projectFeature?.mode || "lab_final",
         totalProjectMarks: Number(course?.projectFeature?.totalProjectMarks || 40),
@@ -75,6 +77,7 @@ export default function TabSettings({
       String(form.year || "") !== String(localCourse.year || "") ||
       String(form.courseType || "").toLowerCase() !==
       String(localCourse.courseType || "theory").toLowerCase() ||
+      String(form.creditHours ?? "") !== String(localCourse.creditHours ?? "") ||
       String(form.projectFeature?.mode || "lab_final") !==
       String(localCourse.projectFeature?.mode || "lab_final") ||
       Number(form.projectFeature?.totalProjectMarks || 40) !==
@@ -135,6 +138,7 @@ export default function TabSettings({
       semester: localCourse.semester || "Spring",
       year: localCourse.year || new Date().getFullYear(),
       courseType: (localCourse.courseType || "theory").toLowerCase(),
+      creditHours: localCourse.creditHours ?? "",
       projectFeature: {
         mode: localCourse?.projectFeature?.mode || "lab_final",
         totalProjectMarks: Number(localCourse?.projectFeature?.totalProjectMarks || 40),
@@ -167,6 +171,18 @@ export default function TabSettings({
       return;
     }
 
+    if ((form.courseType || "").toLowerCase() === "self_study") {
+      if (!(form.intake || "").trim()) {
+        Swal.fire({ icon: "warning", title: "Intake is required", text: "Enter the intake(s) for this Self Study Course.", confirmButtonColor: "#4f46e5" });
+        return;
+      }
+      const creditHours = Number(form.creditHours);
+      if (!Number.isFinite(creditHours) || creditHours <= 0) {
+        Swal.fire({ icon: "warning", title: "Credit hour is required", text: "Enter a credit hour greater than 0.", confirmButtonColor: "#4f46e5" });
+        return;
+      }
+    }
+
     const confirm = await Swal.fire({
       icon: "question",
       title: "Save changes?",
@@ -191,6 +207,7 @@ export default function TabSettings({
         semester: form.semester,
         year: Number(form.year),
         courseType: (form.courseType || "theory").toLowerCase(),
+        creditHours: (form.courseType || "").toLowerCase() === "self_study" ? Number(form.creditHours) : null,
         projectFeature: {
           mode: form.projectFeature?.mode === "project" ? "project" : "lab_final",
           totalProjectMarks: Number(form.projectFeature?.totalProjectMarks || 40),
@@ -245,14 +262,22 @@ export default function TabSettings({
 
   const currentType = (localCourse.courseType || "theory").toLowerCase();
   const courseTypeLabel =
-    currentType === "lab" ? "Lab" : currentType === "hybrid" ? "Hybrid" : "Theory";
+    currentType === "lab"
+      ? "Lab"
+      : currentType === "hybrid"
+        ? "Hybrid"
+        : currentType === "self_study"
+          ? "Self Study"
+          : "Theory";
 
   const typeBadgeClass =
     currentType === "lab"
       ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
       : currentType === "hybrid"
         ? "border-violet-500/20 bg-violet-500/10 text-violet-700 dark:text-violet-300"
-        : "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300";
+        : currentType === "self_study"
+          ? "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+          : "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300";
 
   const supportsProjectWorkflow = ["lab", "hybrid"].includes(
     (form.courseType || "theory").toLowerCase()
@@ -346,9 +371,28 @@ export default function TabSettings({
                     <option value="theory">Theory</option>
                     <option value="lab">Lab</option>
                     <option value="hybrid">Hybrid</option>
+                    <option value="self_study">Self Study</option>
                   </select>
                 )}
               </Field>
+
+              {(form.courseType || "").toLowerCase() === "self_study" && (
+                <Field label="Credit Hour">
+                  {!editMode ? (
+                    <DisplayValue value={localCourse.creditHours || "—"} />
+                  ) : (
+                    <input
+                      type="number"
+                      min="0.5"
+                      step="0.5"
+                      value={form.creditHours}
+                      onChange={(e) => handleChange("creditHours", e.target.value)}
+                      className={inputClass}
+                      placeholder="e.g. 3"
+                    />
+                  )}
+                </Field>
+              )}
 
               <div className="sm:col-span-2">
                 <Field label="Course Title">
@@ -417,7 +461,7 @@ export default function TabSettings({
                     value={form.intake}
                     onChange={(e) => handleChange("intake", e.target.value)}
                     className={inputClass}
-                    placeholder="e.g. 48"
+                    placeholder={(form.courseType || "").toLowerCase() === "self_study" ? "e.g. 47, 51" : "e.g. 48"}
                   />
                 )}
               </Field>

@@ -10,16 +10,19 @@ export default function TeacherCourseLayout({
 
   const type = (course?.courseType || "theory").toLowerCase();
   const isProjectMode = course?.projectFeature?.mode === "project";
+  const isSelfStudy = type === "self_study";
 
   const typeBadge =
     type === "lab"
       ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
       : type === "hybrid"
       ? "border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-500/20 dark:bg-purple-500/10 dark:text-purple-300"
+      : type === "self_study"
+      ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
       : "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300";
 
   const typeLabel =
-    type === "lab" ? "Lab" : type === "hybrid" ? "Hybrid" : "Theory";
+    type === "lab" ? "Lab" : type === "hybrid" ? "Hybrid" : type === "self_study" ? "Self Study" : "Theory";
 
   const tabs = [
     { id: "marks", label: "Marks", icon: <MarksIcon /> },
@@ -30,6 +33,7 @@ export default function TeacherCourseLayout({
     { id: "submissions", label: "Submissions", icon: <UploadIcon /> },
     { id: "obe", label: "OBE / CO-PO", icon: <TargetIcon /> },
     { id: "students", label: "Students", icon: <UsersIcon /> },
+    ...(isSelfStudy ? [{ id: "bill", label: "Bill Generate", icon: <BillIcon /> }] : []),
     { id: "settings", label: "Settings", icon: <SettingsIcon /> },
   ];
 
@@ -55,6 +59,7 @@ export default function TeacherCourseLayout({
                 <Pill label={`Sec ${course?.section || "-"}`} />
                 {course?.intake && <Pill label={`Intake ${course.intake}`} />}
                 <Pill label={`${course?.semester || "-"} ${course?.year || "-"}`} />
+                {isSelfStudy && course?.creditHours && <Pill label={`${course.creditHours} Credit Hour${Number(course.creditHours) === 1 ? "" : "s"}`} />}
                 {isProjectMode && (
                   <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
                     Project Workflow
@@ -202,6 +207,16 @@ function FolderIcon() {
   return (
     <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M3 7h5l2 2h11v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+    </svg>
+  );
+}
+
+function BillIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M6 2h9l4 4v16H6z" />
+      <path d="M14 2v5h5" />
+      <path d="M9 12h6M9 16h6" />
     </svg>
   );
 }

@@ -990,7 +990,7 @@ export default function StudentCoursePage() {
                 <Pill label={`Section: ${course.section || "—"}`} />
                 <Pill label={`Semester: ${course.semester || "—"}`} />
                 <Pill label={`Year: ${formatYear(course.year)}`} />
-                <Pill label={`Type: ${courseType === "lab" ? "Lab" : courseType === "hybrid" ? "Hybrid" : "Theory"}`} />
+                <Pill label={`Type: ${courseType === "lab" ? "Lab" : courseType === "hybrid" ? "Hybrid" : courseType === "self_study" ? "Self Study" : "Theory"}`} />
               </div>
             </div>
 

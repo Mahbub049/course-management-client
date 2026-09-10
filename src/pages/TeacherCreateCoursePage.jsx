@@ -17,6 +17,8 @@ function TeacherCreateCoursePage() {
     code: "",
     title: "",
     section: "",
+    intake: "",
+    creditHours: "",
     shift: "Day",
     department: "B.Sc. Engg. in CSE",
     semester: "Spring",
@@ -77,12 +79,21 @@ function TeacherCreateCoursePage() {
         code: form.code.trim(),
         title: form.title.trim(),
         section: form.section.trim(),
+        intake: form.intake.trim(),
+        creditHours: form.courseType === "self_study" ? Number(form.creditHours) : null,
         shift: form.shift,
         department: form.department,
         semester: form.semester,
         year: form.year,
         courseType: form.courseType,
       };
+
+      if (payload.courseType === "self_study") {
+        if (!payload.intake) throw new Error("Intake is required for a Self Study Course.");
+        if (!Number.isFinite(payload.creditHours) || payload.creditHours <= 0) {
+          throw new Error("Credit hour must be greater than 0 for a Self Study Course.");
+        }
+      }
 
       await createCourseRequest(payload);
 
@@ -108,6 +119,8 @@ function TeacherCreateCoursePage() {
           code: "",
           title: "",
           section: "",
+          intake: "",
+          creditHours: "",
           shift: form.shift,
           department: form.department,
           semester: form.semester,
@@ -122,11 +135,11 @@ function TeacherCreateCoursePage() {
         icon: "error",
         title: "Creation Failed",
         text:
-          err?.response?.data?.message ||
+          err?.response?.data?.message || err?.message ||
           "Failed to create course. Please try again.",
       });
 
-      setError(err?.response?.data?.message || "Failed to create course.");
+      setError(err?.response?.data?.message || err?.message || "Failed to create course.");
     } finally {
       setCreating(false);
     }
@@ -265,7 +278,36 @@ function TeacherCreateCoursePage() {
                 <option value="theory">Theory Course</option>
                 <option value="lab">Lab Course</option>
                 <option value="hybrid">Hybrid Course</option>
+                <option value="self_study">Self Study Course</option>
               </select>
+            </Field>
+
+            {form.courseType === "self_study" && (
+              <Field label="Credit Hour" hint="Example: 3">
+                <input
+                  type="number"
+                  name="creditHours"
+                  min="0.5"
+                  step="0.5"
+                  value={form.creditHours}
+                  onChange={handleChange}
+                  placeholder="3"
+                  className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 shadow-sm outline-none transition focus:border-violet-500 focus:bg-white focus:ring-2 focus:ring-violet-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
+                  required
+                />
+              </Field>
+            )}
+
+            <Field label="Intake" hint={form.courseType === "self_study" ? "Required; multiple: 47, 51" : "Example: 54"}>
+              <input
+                type="text"
+                name="intake"
+                value={form.intake}
+                onChange={handleChange}
+                placeholder="54"
+                className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 shadow-sm outline-none transition focus:border-violet-500 focus:bg-white focus:ring-2 focus:ring-violet-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-900"
+                required={form.courseType === "self_study"}
+              />
             </Field>
 
             <Field label="Section" hint="Example: 54/5">

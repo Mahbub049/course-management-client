@@ -12,6 +12,7 @@ function getTypeLabel(course) {
   const type = String(course?.courseType || "theory").toLowerCase();
   if (type === "lab") return "Lab";
   if (type === "hybrid") return "Hybrid";
+  if (type === "self_study") return "Self Study";
   return "Theory";
 }
 

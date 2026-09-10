@@ -317,6 +317,7 @@ export default function TeacherCoursesPage() {
       semester: createForm.semester,
       year: Number(createForm.year),
       courseType: createForm.courseType,
+      creditHours: createForm.courseType === "self_study" ? Number(createForm.creditHours) : null,
     };
 
     if (
@@ -332,6 +333,17 @@ export default function TeacherCoursesPage() {
         "Please fill in shift, department, course code, title, section, semester, and year."
       );
       return;
+    }
+
+    if (payload.courseType === "self_study") {
+      if (!payload.intake) {
+        setCreateError("Intake is required for a Self Study Course.");
+        return;
+      }
+      if (!Number.isFinite(payload.creditHours) || payload.creditHours <= 0) {
+        setCreateError("Credit hour must be a number greater than 0 for a Self Study Course.");
+        return;
+      }
     }
 
     try {
@@ -372,11 +384,12 @@ export default function TeacherCoursesPage() {
   };
 
   const counts = useMemo(() => {
-    const c = { all: courses.length, theory: 0, lab: 0, hybrid: 0 };
+    const c = { all: courses.length, theory: 0, lab: 0, hybrid: 0, self_study: 0 };
     courses.forEach((x) => {
       const t = (x.courseType || "theory").toLowerCase();
       if (t === "lab") c.lab += 1;
       else if (t === "hybrid") c.hybrid += 1;
+      else if (t === "self_study") c.self_study += 1;
       else c.theory += 1;
     });
     return c;
@@ -517,6 +530,7 @@ export default function TeacherCoursesPage() {
               <option value="theory">Theory</option>
               <option value="lab">Lab</option>
               <option value="hybrid">Hybrid</option>
+              <option value="self_study">Self Study</option>
             </select>
 
             {viewMode === "archived" && (
@@ -701,6 +715,7 @@ function getInitialCourseForm() {
     semester: "Spring",
     year: new Date().getFullYear(),
     courseType: "theory",
+    creditHours: "",
     shift: "Day",
     department: getProgramsForShift("Day")[0]?.label || "",
   };
@@ -854,8 +869,25 @@ function CreateCourseModal({
                     <option value="theory">Theory Course</option>
                     <option value="lab">Lab Course</option>
                     <option value="hybrid">Hybrid Course</option>
+                    <option value="self_study">Self Study Course</option>
                   </select>
                 </ModalField>
+
+                {form.courseType === "self_study" && (
+                  <ModalField label="Credit Hour" hint="Example: 3">
+                    <input
+                      type="number"
+                      name="creditHours"
+                      min="0.5"
+                      step="0.5"
+                      value={form.creditHours || ""}
+                      onChange={onChange}
+                      placeholder="3"
+                      className={modalInputClass}
+                      required
+                    />
+                  </ModalField>
+                )}
 
                 <ModalField label="Section" hint="Example: 54/5">
                   <input
@@ -869,7 +901,7 @@ function CreateCourseModal({
                   />
                 </ModalField>
 
-                <ModalField label="Intake" hint="Example: 54">
+                <ModalField label="Intake" hint={form.courseType === "self_study" ? "Required. Multiple intakes: 47, 51" : "Example: 54"}>
                   <input
                     type="text"
                     name="intake"
@@ -877,6 +909,7 @@ function CreateCourseModal({
                     onChange={onChange}
                     placeholder="54"
                     className={modalInputClass}
+                    required={form.courseType === "self_study"}
                   />
                 </ModalField>
 
@@ -1310,6 +1343,14 @@ function getCourseTypeMeta(courseType) {
       label: "Hybrid",
       badgeClass:
         "border border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900/50 dark:bg-violet-950/30 dark:text-violet-300",
+    };
+  }
+
+  if (type === "self_study") {
+    return {
+      label: "Self Study",
+      badgeClass:
+        "border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300",
     };
   }
 

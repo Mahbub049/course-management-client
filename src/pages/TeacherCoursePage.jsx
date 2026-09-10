@@ -11,6 +11,7 @@ import TabMaterials from "./teacherCourse/TabMaterials";
 import TabProjects from "./teacherCourse/TabProjects";
 import TeacherLabSubmissions from "./teacherCourse/TeacherLabSubmissions";
 import TabObe from "./teacherCourse/TabObe";
+import TabSelfStudyBill from "./teacherCourse/TabSelfStudyBill";
 
 import { fetchCourseById } from "../services/courseService";
 
@@ -29,9 +30,12 @@ const BASE_TABS = [
 function getSafeTab(tab, course) {
   const isProjectMode = course?.projectFeature?.mode === "project";
 
-  const allowedTabs = isProjectMode
-    ? [...BASE_TABS, "projects"]
-    : BASE_TABS;
+  const isSelfStudy = String(course?.courseType || "").toLowerCase() === "self_study";
+  const allowedTabs = [
+    ...BASE_TABS,
+    ...(isProjectMode ? ["projects"] : []),
+    ...(isSelfStudy ? ["bill"] : []),
+  ];
 
   if (!tab || !allowedTabs.includes(tab)) {
     return DEFAULT_TAB;
@@ -142,6 +146,10 @@ export default function TeacherCoursePage() {
       )}
 
       {activeTab === "projects" && <TabProjects course={course} />}
+
+      {activeTab === "bill" && (
+        <TabSelfStudyBill courseId={courseId} course={course} />
+      )}
 
       {activeTab === "settings" && (
         <TabSettings
