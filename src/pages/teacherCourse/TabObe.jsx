@@ -1192,61 +1192,135 @@ const saveSetup = async () => {
     );
 
   const getNormalTotal = (studentId) => {
-    const studentMarks = getStudentNormalMarks(studentId);
-    if (!studentMarks.length) return null;
+    if (!(markBlueprints || []).length) return null;
 
     const markMap = getStudentNormalMarkMap(studentId);
-    const byType = (type) =>
-      normalAssessments
-        .filter((assessment) => getNormalAssessmentCategory(assessment) === type)
-        .map((assessment) => {
-          const mark = markMap.get(String(assessment._id));
-          return {
-            assessment,
-            mark,
-            pct:
-              Number(assessment.fullMarks || 0) > 0
-                ? Number(mark?.obtainedMarks || 0) / Number(assessment.fullMarks)
-                : 0,
-          };
-        });
 
-    const ctRows = byType("ct");
-    const ctPolicy = normalizeObeCtPolicy(course);
-    const ctCount =
-      ctPolicy.mode === "best_one_scaled"
-        ? 1
-        : Math.max(1, ctPolicy.bestCount || 2);
-    let selectedCt = ctRows;
-    if (
-      ctPolicy.mode === "manual_average_scaled" &&
-      ctPolicy.manualSelectedAssessmentIds.length
-    ) {
-      selectedCt = ctRows.filter((row) =>
-        ctPolicy.manualSelectedAssessmentIds.includes(String(row.assessment._id))
-      );
-    } else {
-      selectedCt = [...ctRows]
-        .sort((a, b) => b.pct - a.pct)
-        .slice(0, ctCount);
+    // IMPORTANT: the overall OBE comparison must only use assessments that
+    // are actually present in the current OBE marksheet. For example, if the
+    // OBE sheet currently contains only Mid + Final, Attendance/CT/Assignment
+    // from the normal marksheet must not be silently added to the comparison.
+    // Each OBE blueprint is therefore matched back to its corresponding normal
+    // assessment and converted to the OBE blueprint's scale before totaling.
+    const comparableRowsForType = (type) => {
+      const blueprints = getBlueprintTypeRows(type);
+      if (!blueprints.length) return [];
+
+      const rows = [];
+      for (const blueprint of blueprints) {
+        const sourceAssessment = findNormalAssessmentForBlueprint(blueprint);
+
+        if (type === "attendance" && !sourceAssessment) {
+          const attendanceValue = getAttendanceSource(studentId);
+          if (attendanceValue === null) return null;
+          const targetFull = Number(blueprint.totalMarks || 5);
+          const raw = round2((attendanceValue / 5) * targetFull);
+          rows.push({
+            blueprint,
+            assessment: null,
+            mark: null,
+            raw,
+            pct: targetFull > 0 ? raw / targetFull : 0,
+          });
+          continue;
+        }
+
+        if (!sourceAssessment) return null;
+
+        const sourceMark = markMap.get(String(sourceAssessment._id));
+        if (!sourceMark) {
+          if (type === "attendance") {
+            const attendanceValue = getAttendanceSource(studentId);
+            if (attendanceValue === null) return null;
+            const targetFull = Number(blueprint.totalMarks || 5);
+            const raw = round2((attendanceValue / 5) * targetFull);
+            rows.push({
+              blueprint,
+              assessment: sourceAssessment,
+              mark: null,
+              raw,
+              pct: targetFull > 0 ? raw / targetFull : 0,
+            });
+            continue;
+          }
+          return null;
+        }
+
+        const sourceStatus = String(sourceMark.status || "present").toLowerCase();
+        const sourceFull = Number(sourceAssessment.fullMarks || 0);
+        const targetFull = Number(blueprint.totalMarks || 0);
+        const sourceObtained = ["absent", "incomplete"].includes(sourceStatus)
+          ? 0
+          : Number(sourceMark.obtainedMarks || 0);
+        const raw =
+          sourceFull > 0 && targetFull > 0
+            ? round2((sourceObtained / sourceFull) * targetFull)
+            : round2(sourceObtained);
+
+        rows.push({
+          blueprint,
+          assessment: sourceAssessment,
+          mark: sourceMark,
+          raw,
+          pct: targetFull > 0 ? raw / targetFull : 0,
+        });
+      }
+
+      return rows;
+    };
+
+    const ctRows = comparableRowsForType("ct");
+    if (ctRows === null) return null;
+    let ct = 0;
+    if (ctRows.length) {
+      const ctPolicy = normalizeObeCtPolicy(course);
+      const ctCount =
+        ctPolicy.mode === "best_one_scaled"
+          ? 1
+          : Math.max(1, ctPolicy.bestCount || 2);
+      let selectedCt = ctRows;
+
+      if (
+        ctPolicy.mode === "manual_average_scaled" &&
+        ctPolicy.manualSelectedAssessmentIds.length
+      ) {
+        selectedCt = ctRows.filter((row) =>
+          ctPolicy.manualSelectedAssessmentIds.includes(
+            String(row.assessment?._id || "")
+          )
+        );
+      } else {
+        selectedCt = [...ctRows]
+          .sort((a, b) => b.pct - a.pct)
+          .slice(0, ctCount);
+      }
+
+      if (selectedCt.length) {
+        if (ctPolicy.mode === "best_n_individual_scaled") {
+          const each = ctPolicy.totalWeight / selectedCt.length;
+          ct = round2(
+            selectedCt.reduce((sum, row) => sum + row.pct * each, 0)
+          );
+        } else {
+          ct = round2(
+            (selectedCt.reduce((sum, row) => sum + row.pct, 0) /
+              selectedCt.length) *
+              ctPolicy.totalWeight
+          );
+        }
+      }
     }
 
-    const ct = selectedCt.length
-      ? round2(
-          (selectedCt.reduce((sum, row) => sum + row.pct, 0) /
-            selectedCt.length) *
-            ctPolicy.totalWeight
-        )
-      : 0;
-
-    const assignmentRows = byType("assignment");
-    const assignmentPolicy = getObeAssignmentPolicy(course);
-    const assignmentWeight = assignmentPolicy.totalWeight;
+    const assignmentRows = comparableRowsForType("assignment");
+    if (assignmentRows === null) return null;
     let assignment = 0;
     if (assignmentRows.length) {
+      const assignmentPolicy = getObeAssignmentPolicy(course);
+      const assignmentWeight = assignmentPolicy.totalWeight;
+
       if (assignmentPolicy.mode === "proportional_full_marks") {
         const full = assignmentRows.reduce(
-          (sum, row) => sum + Number(row.assessment.fullMarks || 0),
+          (sum, row) => sum + Number(row.blueprint.totalMarks || 0),
           0
         );
         assignment =
@@ -1257,7 +1331,7 @@ const saveSetup = async () => {
                     sum +
                     row.pct *
                       assignmentWeight *
-                      Number(row.assessment.fullMarks || 0) /
+                      Number(row.blueprint.totalMarks || 0) /
                       full,
                   0
                 )
@@ -1274,25 +1348,19 @@ const saveSetup = async () => {
       }
     }
 
-    const mid = round2(
-      byType("mid").reduce(
-        (sum, row) => sum + Number(row.mark?.obtainedMarks || 0),
-        0
-      )
-    );
-    const final = round2(
-      byType("final").reduce(
-        (sum, row) => sum + Number(row.mark?.obtainedMarks || 0),
-        0
-      )
-    );
-    const attRow = attendanceSummary.find(
-      (row) =>
-        String(row.student || row.studentId || row._id) === String(studentId)
-    );
+    const midRows = comparableRowsForType("mid");
+    if (midRows === null) return null;
+    const mid = round2(midRows.reduce((sum, row) => sum + row.raw, 0));
+
+    const finalRows = comparableRowsForType("final");
+    if (finalRows === null) return null;
+    const final = round2(finalRows.reduce((sum, row) => sum + row.raw, 0));
+
+    const attendanceRows = comparableRowsForType("attendance");
+    if (attendanceRows === null) return null;
     const attendance = Math.min(
       5,
-      Number(attRow?.marks ?? attRow?.attendanceMarks ?? attRow?.obtainedMarks ?? 0)
+      round2(attendanceRows.reduce((sum, row) => sum + row.raw, 0))
     );
 
     return round2(ct + assignment + mid + final + attendance);
