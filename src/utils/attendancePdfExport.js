@@ -186,8 +186,9 @@ export const createAttendancePdf = ({
       normalizeDepartment(data.teacher?.department || teacherFallback.department),
   };
 
-  const tableX = 0.5;
-  const tableWidth = pageWidth - 1;
+  const sideMargin = 26;
+  const tableX = sideMargin;
+  const tableWidth = pageWidth - sideMargin * 2;
   const tableTop = hasFilter ? 139 : 120;
   const headerHeight = 45;
   const notesHeight = isLandscape ? 72 : 90;
@@ -247,8 +248,8 @@ export const createAttendancePdf = ({
     const courseY = hasFilter ? 132 : 113;
     doc.setFontSize(9.5);
     doc.setFont("times", "bold");
-    doc.text("Course: ", 2, courseY);
-    const courseLabelStart = 2 + doc.getTextWidth("Course: ");
+    doc.text("Course: ", sideMargin, courseY);
+    const courseLabelStart = sideMargin + doc.getTextWidth("Course: ");
 
     const intakeSection = [safeText(course.intake), safeText(course.section)]
       .filter(Boolean)
@@ -256,7 +257,7 @@ export const createAttendancePdf = ({
     const rightLabel = `Intake-Section: ${intakeSection || safeText(course.section, "-")}`;
     doc.setFont("times", "bold");
     const rightWidth = doc.getTextWidth(rightLabel);
-    doc.text(rightLabel, pageWidth - 2, courseY, { align: "right" });
+    doc.text(rightLabel, pageWidth - sideMargin, courseY, { align: "right" });
 
     doc.setFont("times", "normal");
     const label = `${safeText(course.title)} (${safeText(course.code)})`;
@@ -388,11 +389,11 @@ export const createAttendancePdf = ({
   doc.setTextColor(0, 0, 0);
   doc.setFont("times", "bold");
   doc.setFontSize(10);
-  doc.text(signatureName, 1, signatureY);
+  doc.text(signatureName, sideMargin, signatureY);
   doc.setFont("times", "normal");
   doc.setFontSize(9.5);
-  doc.text(teacher.designation, 1, signatureY + 14);
-  doc.text(teacher.department, 1, signatureY + 28);
+  doc.text(teacher.designation, sideMargin, signatureY + 14);
+  doc.text(teacher.department, sideMargin, signatureY + 28);
 
   return {
     doc,
