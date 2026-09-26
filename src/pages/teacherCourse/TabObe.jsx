@@ -14,6 +14,8 @@ import {
   saveObeMarks,
   getObeOutput,
   getObeExportPayload,
+  getObeClp,
+  saveObeClpMarks,
   reuseObeData,
 } from "../../services/obeService";
 import { fetchTeacherCourses } from "../../services/courseService";
@@ -39,6 +41,7 @@ import {
 import { getAuthItem } from "../../utils/authStorage";
 import { premiumSwal } from "../../utils/premiumDialog";
 import CourseAssessmentPolicyModal from "./CourseAssessmentPolicyModal";
+import ObeClpPanel from "./ObeClpPanel";
 
 const defaultLevels = [
   { min: 70, max: 100, level: 4 },
@@ -48,7 +51,7 @@ const defaultLevels = [
   { min: 0, max: 39.99, level: 0 },
 ];
 
-const OBE_SUBTAB_IDS = ["setup", "blueprint", "marks", "output"];
+const OBE_SUBTAB_IDS = ["setup", "blueprint", "clp", "marks", "output"];
 
 const emptySetup = {
   thresholdPercent: 40,
@@ -156,6 +159,14 @@ const getExpectedLabAssessmentMarks = (type) => {
   if (type === "mid") return 30;
   if (type === "final") return 40;
   return 0;
+};
+
+const getPreferredCoCode = (coOptions = [], preferred = "CO1") => {
+  const normalizedPreferred = String(preferred || "").trim().toUpperCase();
+  const matched = (coOptions || []).find(
+    (row) => String(row?.code || "").trim().toUpperCase() === normalizedPreferred
+  );
+  return matched?.code || coOptions?.[0]?.code || "";
 };
 
 const createEmptyBlueprintForm = (isLabCourse, coCode = "") => {
@@ -354,9 +365,10 @@ export default function TabObe({ courseId, course, onCourseUpdated }) {
 
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedSubtab = searchParams.get("obeSubtab");
-  const activeSubtab = OBE_SUBTAB_IDS.includes(requestedSubtab)
-    ? requestedSubtab
-    : "setup";
+  const activeSubtab =
+    OBE_SUBTAB_IDS.includes(requestedSubtab) && (requestedSubtab !== "clp" || isLabCourse)
+      ? requestedSubtab
+      : "setup";
 
   const setActiveSubtab = (nextSubtab) => {
     const safeSubtab = OBE_SUBTAB_IDS.includes(nextSubtab) ? nextSubtab : "setup";
@@ -391,6 +403,9 @@ export default function TabObe({ courseId, course, onCourseUpdated }) {
   const [normalAssessments, setNormalAssessments] = useState([]);
   const [normalMarks, setNormalMarks] = useState([]);
   const [attendanceSummary, setAttendanceSummary] = useState([]);
+  const [labClpData, setLabClpData] = useState(null);
+  const [labContinuousDraft, setLabContinuousDraft] = useState({});
+  const [labContinuousDirty, setLabContinuousDirty] = useState({});
   const [policyModalOpen, setPolicyModalOpen] = useState(false);
 
   const obeInputRefs = useRef([]);
@@ -533,13 +548,31 @@ export default function TabObe({ courseId, course, onCourseUpdated }) {
   const loadMarks = async () => {
     try {
       setMarkLoading(true);
-      const [data, assessmentsData, normalMarksData, attendanceData] = await Promise.all([
+      const [data, assessmentsData, normalMarksData, attendanceData, clpData] = await Promise.all([
         getObeMarks(courseId),
         fetchAssessmentsForCourse(courseId),
         fetchMarksForCourse(courseId),
         fetchAttendanceSummary(courseId),
+        isLabCourse ? getObeClp(courseId) : Promise.resolve(null),
       ]);
       const { students, blueprints: loadedBlueprints, draft } = buildMarkEntryState(data);
+
+      const nextContinuousDraft = {};
+      if (isLabCourse && clpData) {
+        (clpData.students || []).forEach((student) => {
+          nextContinuousDraft[String(student.studentId)] = {
+            attendance:
+              student.attendance === null || student.attendance === undefined
+                ? ""
+                : String(student.attendance),
+            ...(clpData.items || []).reduce((acc, item) => {
+              const value = student?.values?.[item.key];
+              acc[item.key] = value === null || value === undefined ? "" : String(value);
+              return acc;
+            }, {}),
+          };
+        });
+      }
 
       setMarkStudents(students);
       setMarkBlueprints(loadedBlueprints);
@@ -547,7 +580,10 @@ export default function TabObe({ courseId, course, onCourseUpdated }) {
       setNormalAssessments(Array.isArray(assessmentsData) ? assessmentsData : []);
       setNormalMarks(Array.isArray(normalMarksData) ? normalMarksData : []);
       setAttendanceSummary(Array.isArray(attendanceData) ? attendanceData : attendanceData?.records || []);
-      return { students, blueprints: loadedBlueprints, draft };
+      setLabClpData(clpData);
+      setLabContinuousDraft(nextContinuousDraft);
+      setLabContinuousDirty({});
+      return { students, blueprints: loadedBlueprints, draft, clpData };
     } catch (error) {
       console.error(error);
       toast("error", error?.response?.data?.message || "Failed to load OBE marks.");
@@ -1108,6 +1144,93 @@ const saveSetup = async () => {
     return markDraft[key]?.[itemKey] ?? "";
   };
 
+  const getLabContinuousStudent = (studentId) =>
+    (labClpData?.students || []).find(
+      (student) => String(student.studentId) === String(studentId)
+    ) || null;
+
+  const getLabContinuousValue = (studentId, key) =>
+    labContinuousDraft?.[String(studentId)]?.[key] ?? "";
+
+  const setLabContinuousValue = (studentId, key, value) => {
+    const studentKey = String(studentId);
+    setLabContinuousDraft((prev) => ({
+      ...prev,
+      [studentKey]: {
+        ...(prev[studentKey] || {}),
+        [key]: value,
+      },
+    }));
+    setLabContinuousDirty((prev) => ({
+      ...prev,
+      [`${studentKey}__${key}`]: true,
+    }));
+  };
+
+  const handleLabContinuousChange = (studentId, key, rawValue, maxMarks) => {
+    let nextValue = String(rawValue ?? "").replace(",", ".");
+    if (nextValue === "") {
+      setLabContinuousValue(studentId, key, "");
+      return;
+    }
+    if (nextValue === ".") nextValue = "0.";
+    if (!/^\d*(?:\.\d?)?$/.test(nextValue)) return;
+    if (nextValue.endsWith(".")) {
+      setLabContinuousValue(studentId, key, nextValue);
+      return;
+    }
+    const numeric = Number(nextValue);
+    if (!Number.isFinite(numeric)) return;
+    const max = Number(maxMarks || 0);
+    if (numeric > max) {
+      setLabContinuousValue(studentId, key, round2(max));
+      return;
+    }
+    setLabContinuousValue(studentId, key, nextValue);
+  };
+
+  const handleLabContinuousBlur = (studentId, key, maxMarks) => {
+    const currentValue = getLabContinuousValue(studentId, key);
+    if (currentValue === "") return;
+    const numeric = Number(currentValue);
+    if (!Number.isFinite(numeric)) {
+      setLabContinuousValue(studentId, key, "");
+      return;
+    }
+    const max = Number(maxMarks || 0);
+    const clamped = round2(Math.max(0, Math.min(numeric, max)));
+    if (!isHalfStepValue(clamped)) {
+      toast("warning", "Only whole or .5 marks are allowed.");
+      setLabContinuousValue(studentId, key, Math.round(clamped * 2) / 2);
+      return;
+    }
+    setLabContinuousValue(studentId, key, clamped);
+  };
+
+  const getLabClpDraftTotal = (studentId) => {
+    const items = labClpData?.items || [];
+    if (!items.length) {
+      const continuousStudent = getLabContinuousStudent(studentId);
+      return round2(Number(continuousStudent?.normalLabEvaluation || 0));
+    }
+
+    return round2(
+      items.reduce((sum, item) => {
+        const numeric = Number(getLabContinuousValue(studentId, item.key));
+        return sum + (Number.isFinite(numeric) ? numeric : 0);
+      }, 0)
+    );
+  };
+
+  const getLabContinuousTotal = (studentId) => {
+    if (!isLabCourse) return 0;
+    const attendance = Number(getLabContinuousValue(studentId, "attendance"));
+    return round2(
+      (Number.isFinite(attendance) ? attendance : 0) +
+        getLabClpDraftTotal(studentId)
+    );
+  };
+
   const getAssessmentDraftTotal = (studentId, blueprint) => {
     return round2(
       (blueprint.items || []).reduce((sum, item) => {
@@ -1159,13 +1282,23 @@ const saveSetup = async () => {
     return round2(scored.reduce((sum, row) => sum + row.raw, 0));
   };
 
-  const getObeGrandTotal = (studentId) => round2(
-    getCategoryDraftTotal(studentId, "ct") +
-    getCategoryDraftTotal(studentId, "assignment") +
-    getCategoryDraftTotal(studentId, "mid") +
-    getCategoryDraftTotal(studentId, "final") +
-    Math.min(5, getCategoryDraftTotal(studentId, "attendance"))
-  );
+  const getObeGrandTotal = (studentId) => {
+    if (isLabCourse) {
+      return round2(
+        getLabContinuousTotal(studentId) +
+          getCategoryDraftTotal(studentId, "mid") +
+          getCategoryDraftTotal(studentId, "final")
+      );
+    }
+
+    return round2(
+      getCategoryDraftTotal(studentId, "ct") +
+        getCategoryDraftTotal(studentId, "assignment") +
+        getCategoryDraftTotal(studentId, "mid") +
+        getCategoryDraftTotal(studentId, "final") +
+        Math.min(5, getCategoryDraftTotal(studentId, "attendance"))
+    );
+  };
 
   const getNormalAssessmentCategory = (assessment) => {
     const n = String(assessment?.name || "").toLowerCase();
@@ -1363,6 +1496,17 @@ const saveSetup = async () => {
       round2(attendanceRows.reduce((sum, row) => sum + row.raw, 0))
     );
 
+    if (isLabCourse) {
+      const continuousStudent = getLabContinuousStudent(studentId);
+      if (!continuousStudent) return null;
+      const normalAttendance = Number(continuousStudent.normalAttendance);
+      const normalLabEvaluation = Number(continuousStudent.normalLabEvaluation);
+      if (!Number.isFinite(normalAttendance) || !Number.isFinite(normalLabEvaluation)) {
+        return null;
+      }
+      return round2(normalAttendance + normalLabEvaluation + mid + final);
+    }
+
     return round2(ct + assignment + mid + final + attendance);
   };
 
@@ -1525,6 +1669,40 @@ const saveSetup = async () => {
       }
     }
 
+    if (isLabCourse) {
+      const continuousStudent = getLabContinuousStudent(studentId);
+      if (continuousStudent) {
+        const attendanceRaw = getLabContinuousValue(studentId, "attendance");
+        const attendanceNumeric = Number(attendanceRaw);
+        const normalAttendance = Number(continuousStudent.normalAttendance);
+        if (
+          String(attendanceRaw ?? "").trim() !== "" &&
+          Number.isFinite(attendanceNumeric) &&
+          Number.isFinite(normalAttendance) &&
+          Math.abs(round2(attendanceNumeric) - round2(normalAttendance)) > 1e-9
+        ) {
+          notices.push({
+            type: "assessment-mismatch",
+            message: `Attendance mismatch: Marks ${round2(normalAttendance)}/5, OBE ${round2(attendanceNumeric)}/5.`,
+          });
+        }
+
+        if ((labClpData?.items || []).length) {
+          const clpObtained = getLabClpDraftTotal(studentId);
+          const normalClp = Number(continuousStudent.normalLabEvaluation);
+          if (
+            Number.isFinite(normalClp) &&
+            Math.abs(clpObtained - round2(normalClp)) > 1e-9
+          ) {
+            notices.push({
+              type: "assessment-mismatch",
+              message: `CLP mismatch: Marks ${round2(normalClp)}/25, OBE ${clpObtained}/25.`,
+            });
+          }
+        }
+      }
+    }
+
     return notices;
   };
 
@@ -1532,7 +1710,10 @@ const saveSetup = async () => {
     const allItems = (markBlueprints || []).flatMap((blueprint) =>
       (blueprint.items || []).map((item) => ({ blueprint, item }))
     );
-    if (!allItems.length) return null;
+    const continuousKeys = isLabCourse
+      ? ["attendance", ...(labClpData?.items || []).map((item) => item.key)]
+      : [];
+    if (!allItems.length && !continuousKeys.length) return null;
 
     const statusBlueprintIds = new Set(
       markBlueprints
@@ -1548,13 +1729,16 @@ const saveSetup = async () => {
         .map((blueprint) => String(blueprint._id))
     );
 
-    const allFilled = allItems.every(
+    const allBlueprintsFilled = allItems.every(
       ({ blueprint, item }) =>
         statusBlueprintIds.has(String(blueprint._id)) ||
         String(getDraftValue(studentId, blueprint._id, item.key) ?? "").trim() !==
           ""
     );
-    if (!allFilled) return null;
+    const allContinuousFilled = continuousKeys.every(
+      (key) => String(getLabContinuousValue(studentId, key) ?? "").trim() !== ""
+    );
+    if (!allBlueprintsFilled || !allContinuousFilled) return null;
 
     const totalObtained = getObeGrandTotal(studentId);
     if (Math.abs(totalObtained - Math.round(totalObtained)) > 1e-9) {
@@ -1972,9 +2156,38 @@ const saveSetup = async () => {
         }
       }
 
-      await saveObeMarks(courseId, { records });
+      const continuousByStudent = new Map();
+      if (isLabCourse) {
+        Object.keys(labContinuousDirty).forEach((compoundKey) => {
+          if (!labContinuousDirty[compoundKey]) return;
+          const splitAt = compoundKey.indexOf("__");
+          const studentId = compoundKey.slice(0, splitAt);
+          const key = compoundKey.slice(splitAt + 2);
+          if (!continuousByStudent.has(studentId)) {
+            continuousByStudent.set(studentId, { studentId, entries: [] });
+          }
+          const record = continuousByStudent.get(studentId);
+          const raw = getLabContinuousValue(studentId, key);
+          const obtainedMarks =
+            String(raw ?? "").trim() === "" ? null : Number(raw);
+          if (key === "attendance") {
+            record.attendanceObtainedMarks = obtainedMarks;
+          } else {
+            record.entries.push({ clpKey: key, obtainedMarks });
+          }
+        });
+      }
+      const continuousRecords = [...continuousByStudent.values()];
+
+      if (records.length) {
+        await saveObeMarks(courseId, { records });
+      }
+      if (continuousRecords.length) {
+        await saveObeClpMarks(courseId, { records: continuousRecords });
+      }
+
       toast("success", "OBE marks saved successfully.");
-      await loadOutput();
+      await Promise.all([loadMarks(), loadOutput()]);
     } catch (error) {
       console.error(error);
       toast("error", error?.response?.data?.message || "Failed to save OBE marks.");
@@ -2506,7 +2719,7 @@ const saveSetup = async () => {
       if (!supportedGroups.length) {
         throw new Error(
           isLabCourse
-            ? "No Lab Mid or Lab Final mark columns could be detected. Lab Evaluation/Attendance are not entered through Lab OBE Mark Entry."
+            ? "No Lab Mid or Lab Final mark columns could be detected. CLP and Attendance are loaded automatically from CLP Mapping and shown directly in Lab OBE Mark Entry; this importer only detects Lab Mid/Lab Final columns."
             : "No supported OBE assessment columns could be detected in this worksheet."
         );
       }
@@ -3659,6 +3872,7 @@ const saveSetup = async () => {
             {[
               ["setup", "Setup", "setup"],
               ["blueprint", "Assessment Blueprint", "blueprint"],
+              ...(isLabCourse ? [["clp", "CLP Mapping", "marks"]] : []),
               ["marks", "OBE Mark Entry", "marks"],
               ["output", "Output & Excel", "chart"],
             ].map(([id, label, icon]) => (
@@ -4164,7 +4378,7 @@ const saveSetup = async () => {
             title={isLabCourse ? "Lab Mid and Lab Final Blueprint" : "Assessment Blueprint"}
             subtitle={
               isLabCourse
-                ? "Create CO-mapped question/item breakdowns for Lab Mid and Lab Final. Attendance and Lab Evaluation are fetched automatically."
+                ? "Create CO-mapped question/item breakdowns for Lab Mid and Lab Final. CLP and Attendance are configured separately but appear automatically in Lab OBE Mark Entry."
                 : "Create assessment-wise question/item mapping with Course Outcomes."
             }
             actions={
@@ -4194,7 +4408,7 @@ const saveSetup = async () => {
           >
             {isLabCourse && (
               <div className="mb-5 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200">
-                <strong>Automatic Continuous Evaluation:</strong> AT (5) is taken from this lab course attendance, and Lab E (25) is taken from the normal marksheet’s Lab Assessment (Main). Only Lab Mid (30) and Lab Final (40) need CO–PO blueprints and mark entry here.
+                <strong>Lab continuous assessment:</strong> Attendance (5) and CLP (25) are configured in the CLP Mapping tab and then appear automatically as editable columns in Lab OBE Mark Entry. Only Lab Mid (30) and Lab Final (40) need question-wise blueprints here.
               </div>
             )}
 
@@ -4204,6 +4418,10 @@ const saveSetup = async () => {
                   value={blueprintForm.assessmentType}
                   onChange={(e) => {
                     const assessmentType = e.target.value;
+                    if (isLabCourse && ["attendance_link", "clp_link"].includes(assessmentType)) {
+                      setActiveSubtab("clp");
+                      return;
+                    }
                     const expectedMarks = isLabCourse
                       ? getExpectedLabAssessmentMarks(assessmentType)
                       : 0;
@@ -4219,18 +4437,33 @@ const saveSetup = async () => {
                         assessmentName: editingBlueprintId ? prev.assessmentName : suggestedName,
                         totalMarks: suggestedMarks,
                         items: prev.items.length === 1
-                          ? [{ ...prev.items[0], marks: suggestedMarks }]
+                          ? [{
+                              ...prev.items[0],
+                              marks: suggestedMarks,
+                              coCode:
+                                !editingBlueprintId && assessmentType === "attendance"
+                                  ? getPreferredCoCode(coOptions, "CO3")
+                                  : prev.items[0].coCode,
+                            }]
                           : prev.items,
                       };
                     });
                   }}
                   className={inputClass}
                 >
-                  {availableAssessmentTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {getAssessmentTypeLabel(type, isLabCourse)}
-                    </option>
-                  ))}
+                  {isLabCourse && (
+                    <optgroup label="Continuous assessment · configure in CLP Mapping">
+                      <option value="attendance_link">Attendance (5) · CO-mapped</option>
+                      <option value="clp_link">CLP (25) · one/multiple source assessments</option>
+                    </optgroup>
+                  )}
+                  <optgroup label={isLabCourse ? "Question-wise blueprint" : "Assessment type"}>
+                    {availableAssessmentTypes.map((type) => (
+                      <option key={type} value={type}>
+                        {getAssessmentTypeLabel(type, isLabCourse)}
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
               </FormField>
 
@@ -4525,6 +4758,10 @@ const saveSetup = async () => {
         </div>
       )}
 
+      {isLabCourse && activeSubtab === "clp" && (
+        <ObeClpPanel courseId={courseId} onSaved={loadMarks} />
+      )}
+
       {activeSubtab === "marks" && (
         <div className="space-y-6">
           <SectionCard
@@ -4560,7 +4797,11 @@ const saveSetup = async () => {
                 <button
                   type="button"
                   onClick={saveMarks}
-                  disabled={markSaving || markLoading || !markBlueprints.length}
+                  disabled={
+                    markSaving ||
+                    markLoading ||
+                    (!markBlueprints.length && !(isLabCourse && labClpData))
+                  }
                   className={`${primaryButtonClass} inline-flex items-center gap-2`}
                 >
                   <ObeIcon name="save" className="h-4 w-4" />
@@ -4575,7 +4816,7 @@ const saveSetup = async () => {
               <div className="text-sm text-slate-500">
                 No students found in this course.
               </div>
-            ) : !markBlueprints.length ? (
+            ) : !markBlueprints.length && !(isLabCourse && labClpData) ? (
               <div className="text-sm text-slate-500">
                 No OBE blueprints created yet. Use <strong>Import Excel</strong> to create the required setup/assessment mapping from a compatible sheet, or create a blueprint manually first.
               </div>
@@ -4633,6 +4874,177 @@ const saveSetup = async () => {
                   </div>
                 </div>
 
+                {isLabCourse && labClpData && (
+                  <div className="mb-4 overflow-hidden rounded-3xl border border-slate-300 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.06)] dark:border-slate-700 dark:bg-slate-950">
+                    <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/80 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h4 className="text-sm font-black text-slate-900 dark:text-slate-100">
+                          Lab Continuous Assessment (30)
+                        </h4>
+                        <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                          Attendance (5) and CLP (25) are included directly in Lab OBE Mark Entry. Auto-fetched CLP cells remain editable; edited values are saved as faculty overrides.
+                        </p>
+                      </div>
+                      <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                        AT CO: {labClpData.attendanceCoCode || "CO3"} · CLP: {labClpData.totalMarks || 0}/25
+                      </div>
+                    </div>
+
+                    {!(labClpData.items || []).length && (
+                      <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-semibold text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
+                        Attendance is available now. Save the CLP setup from <strong>CLP Mapping</strong> to show individual CLP columns here.
+                      </div>
+                    )}
+
+                    <div className="max-h-[52vh] overflow-auto">
+                      <table className="w-full min-w-[900px] border-separate border-spacing-0 text-xs sm:text-sm">
+                        <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-950">
+                          <tr>
+                            <th className="sticky left-0 z-30 min-w-[180px] border-b border-r border-slate-300 bg-slate-900 px-3 py-3 text-left text-[11px] font-black uppercase tracking-wide text-white dark:border-slate-700">
+                              Roll / Name
+                            </th>
+                            <th className="min-w-[90px] border-b border-r border-slate-300 px-2 py-3 text-center text-[11px] font-black uppercase tracking-wide text-slate-700 dark:border-slate-700 dark:text-slate-200">
+                              AT
+                              <div className="mt-1 text-[10px] font-medium normal-case text-slate-500">
+                                {labClpData.attendanceCoCode || "CO3"} · 5
+                              </div>
+                            </th>
+                            {(labClpData.items || []).map((item) => (
+                              <th
+                                key={`continuous-head-${item.key}`}
+                                className="min-w-[92px] border-b border-r border-slate-300 px-2 py-3 text-center text-[11px] font-black uppercase tracking-wide text-slate-700 dark:border-slate-700 dark:text-slate-200"
+                              >
+                                {item.label}
+                                <div className="mt-1 text-[10px] font-medium normal-case text-slate-500">
+                                  {item.coCode} · {item.marks}
+                                </div>
+                              </th>
+                            ))}
+                            <th className="min-w-[82px] border-b border-r border-indigo-200 bg-indigo-50 px-2 py-3 text-center text-[11px] font-black uppercase text-indigo-800 dark:border-indigo-500/20 dark:bg-indigo-950 dark:text-indigo-200">
+                              CLP Total
+                            </th>
+                            <th className="min-w-[92px] border-b border-r border-emerald-200 bg-emerald-50 px-2 py-3 text-center text-[11px] font-black uppercase text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-950 dark:text-emerald-200">
+                              Continuous Total
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {visibleMarkStudents.map((student, rowIndex) => {
+                            const continuousStudent = getLabContinuousStudent(student.studentId);
+                            const continuousNotices = getAssessmentMismatchNotices(student.studentId).filter(
+                              (notice) =>
+                                String(notice.message || "").startsWith("CLP mismatch") ||
+                                String(notice.message || "").startsWith("Attendance mismatch")
+                            );
+                            const attendanceDirty = Boolean(
+                              labContinuousDirty[`${student.studentId}__attendance`]
+                            );
+                            return (
+                              <tr
+                                key={`continuous-${student.studentId}`}
+                                className={rowIndex % 2 === 0 ? "bg-white dark:bg-slate-950" : "bg-slate-50/70 dark:bg-slate-900/60"}
+                              >
+                                <td className={`sticky left-0 z-10 border-b border-r border-slate-200 px-3 py-2.5 dark:border-slate-800 ${rowIndex % 2 === 0 ? "bg-white dark:bg-slate-950" : "bg-slate-50 dark:bg-slate-900"}`}>
+                                  <div className="font-bold text-slate-900 dark:text-slate-100">{student.roll}</div>
+                                  <div className="text-xs text-slate-500">{student.name}</div>
+                                  {continuousNotices.map((notice, index) => (
+                                    <div
+                                      key={`continuous-notice-${student.studentId}-${index}`}
+                                      className="mt-1.5 max-w-[210px] rounded-lg border border-orange-200 bg-orange-50 px-2 py-1 text-[10px] font-bold leading-[1.35] text-orange-800 dark:border-orange-500/25 dark:bg-orange-500/10 dark:text-orange-200"
+                                    >
+                                      ⚠ {notice.message}
+                                    </div>
+                                  ))}
+                                </td>
+                                <td className="border-b border-r border-slate-200 px-2 py-2 text-center dark:border-slate-800">
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={getLabContinuousValue(student.studentId, "attendance")}
+                                    onChange={(event) =>
+                                      handleLabContinuousChange(student.studentId, "attendance", event.target.value, 5)
+                                    }
+                                    onBlur={() =>
+                                      handleLabContinuousBlur(student.studentId, "attendance", 5)
+                                    }
+                                    className={`h-9 w-[68px] rounded-lg border px-1.5 text-center text-sm font-bold tabular-nums outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:focus:border-indigo-400 dark:focus:ring-indigo-500/25 ${
+                                      continuousStudent?.attendanceMode === "mapped" && !attendanceDirty
+                                        ? "border-emerald-200 bg-emerald-50/60 text-slate-900 dark:border-emerald-500/20 dark:bg-emerald-500/5 dark:text-slate-100"
+                                        : "border-slate-300 bg-white text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                                    }`}
+                                    title={
+                                      attendanceDirty
+                                        ? "Faculty override pending"
+                                        : continuousStudent?.attendanceMode === "manual"
+                                          ? "Faculty override"
+                                          : "Fetched from normal marksheet / attendance"
+                                    }
+                                  />
+                                </td>
+                                {(labClpData.items || []).map((item) => {
+                                  const mode = continuousStudent?.modes?.[item.key] || "unmapped";
+                                  const dirty = Boolean(
+                                    labContinuousDirty[`${student.studentId}__${item.key}`]
+                                  );
+                                  return (
+                                    <td
+                                      key={`continuous-${student.studentId}-${item.key}`}
+                                      className="border-b border-r border-slate-200 px-2 py-2 text-center dark:border-slate-800"
+                                    >
+                                      <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        value={getLabContinuousValue(student.studentId, item.key)}
+                                        onChange={(event) =>
+                                          handleLabContinuousChange(student.studentId, item.key, event.target.value, item.marks)
+                                        }
+                                        onBlur={() =>
+                                          handleLabContinuousBlur(student.studentId, item.key, item.marks)
+                                        }
+                                        className={`h-9 w-[68px] rounded-lg border px-1.5 text-center text-sm font-bold tabular-nums outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:focus:border-indigo-400 dark:focus:ring-indigo-500/25 ${
+                                          mode === "mapped" && !dirty
+                                            ? "border-emerald-200 bg-emerald-50/60 text-slate-900 dark:border-emerald-500/20 dark:bg-emerald-500/5 dark:text-slate-100"
+                                            : mode === "missing-source-mark" && !dirty
+                                              ? "border-amber-200 bg-amber-50/60 text-slate-900 dark:border-amber-500/20 dark:bg-amber-500/5 dark:text-slate-100"
+                                              : "border-slate-300 bg-white text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                                        }`}
+                                        title={
+                                          dirty
+                                            ? "Faculty override pending"
+                                            : mode === "mapped"
+                                              ? "Auto-fetched and editable"
+                                              : mode === "manual"
+                                                ? "Faculty override"
+                                                : mode === "missing-source-mark"
+                                                  ? "One or more mapped source marks are missing"
+                                                  : "Manual CLP entry"
+                                        }
+                                      />
+                                    </td>
+                                  );
+                                })}
+                                <td className="border-b border-r border-indigo-100 bg-indigo-50 px-2 py-2 text-center font-black tabular-nums text-indigo-800 dark:border-indigo-500/15 dark:bg-indigo-950 dark:text-indigo-200">
+                                  {getLabClpDraftTotal(student.studentId)} / 25
+                                </td>
+                                <td className="border-b border-r border-emerald-100 bg-emerald-50 px-2 py-2 text-center font-black tabular-nums text-emerald-800 dark:border-emerald-500/15 dark:bg-emerald-950 dark:text-emerald-200">
+                                  {getLabContinuousTotal(student.studentId)} / 30
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {!markBlueprints.length && isLabCourse && (
+                  <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200">
+                    Continuous assessment can be entered above. Create the <strong>Lab Mid</strong> and <strong>Lab Final</strong> blueprints to add their question-wise OBE columns below.
+                  </div>
+                )}
+
+                {!!markBlueprints.length && (
                 <div className="overflow-hidden rounded-3xl border border-slate-300 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.08)] dark:border-slate-700 dark:bg-slate-950 dark:shadow-[0_12px_34px_rgba(0,0,0,0.32)]">
                   <div className="max-h-[68vh] overflow-auto">
                     <table className="w-full min-w-[980px] border-separate border-spacing-0 text-xs sm:text-sm">
@@ -4758,6 +5170,7 @@ const saveSetup = async () => {
                     </table>
                   </div>
                 </div>
+                )}
               </>
             )}
           </SectionCard>

@@ -11,6 +11,10 @@ export default function TeacherCourseLayout({
   const type = (course?.courseType || "theory").toLowerCase();
   const isProjectMode = course?.projectFeature?.mode === "project";
   const isSelfStudy = type === "self_study";
+  const isCourseFileEligible =
+    String(course?.shift || "").toLowerCase() === "day" &&
+    !String(course?.department || "").toUpperCase().includes("(DH)") &&
+    !isSelfStudy;
 
   const typeBadge =
     type === "lab"
@@ -34,6 +38,9 @@ export default function TeacherCourseLayout({
     { id: "obe", label: "OBE / CO-PO", icon: <TargetIcon /> },
     { id: "students", label: "Students", icon: <UsersIcon /> },
     ...(isSelfStudy ? [{ id: "bill", label: "Bill Generate", icon: <BillIcon /> }] : []),
+    ...(isCourseFileEligible
+      ? [{ id: "course-file", label: "Course File", icon: <FolderIcon /> }]
+      : []),
     { id: "settings", label: "Settings", icon: <SettingsIcon /> },
   ];
 

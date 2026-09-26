@@ -65,3 +65,20 @@ export const reuseObeData = async (courseId, payload) => {
   const { data } = await api.post(`/courses/${courseId}/obe/reuse`, payload);
   return data;
 };
+
+export const getObeClp = async (courseId) => {
+  const { data } = await api.get(`/courses/${courseId}/obe/clp`, {
+    params: { _: Date.now() },
+  });
+  return data;
+};
+
+export const saveObeClpSetup = async (courseId, payload) => {
+  const { data } = await api.put(`/courses/${courseId}/obe/clp`, payload);
+  return data;
+};
+
+export const saveObeClpMarks = async (courseId, payload) => {
+  const { data } = await api.post(`/courses/${courseId}/obe/clp/marks`, payload);
+  return data;
+};

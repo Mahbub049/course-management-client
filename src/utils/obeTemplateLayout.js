@@ -13,17 +13,6 @@ export const OBE_TEMPLATE_COLUMNS = {
   final: ["P", "Q", "R", "S", "T", "U"],
 };
 
-export const OBE_FIXED_CONTINUOUS_ASSESSMENT = [
-  { continuousKey: "attendance", label: "AT", marks: 5 },
-  // The official workbook keeps the second CA column reserved for QT.
-  // It stays visually blank when the course has no separate quiz total.
-  { continuousKey: "quiz", label: "QT", marks: 0, isPlaceholder: true },
-  { continuousKey: "ct", label: "CT", marks: 15 },
-  { continuousKey: "assignment", label: "ASM", marks: 10 },
-  // The fifth CA column is an unused/reserved slot in the supplied template.
-  { continuousKey: "reserved", label: "", marks: 0, isPlaceholder: true },
-];
-
 const toNumber = (value) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -55,29 +44,6 @@ const normalizeLabel = (value, fallback) =>
     .replace(/\s+/g, " ")
     .slice(0, 12);
 
-const normalizeFixedContinuousAssessmentSlots = (headers = []) => {
-  const normalized = (Array.isArray(headers) ? headers : [])
-    .filter((header) => header && header.key)
-    .slice(0, OBE_TEMPLATE_LIMITS.continuousAssessmentSlots)
-    .map((header) => ({
-      continuousKey: safeText(header.key, ""),
-      label: normalizeLabel(header.label, safeText(header.key, "")),
-      marks: toNumber(header.maxMarks ?? header.marks),
-      isPlaceholder: false,
-    }));
-
-  while (normalized.length < OBE_TEMPLATE_LIMITS.continuousAssessmentSlots) {
-    normalized.push({
-      continuousKey: `reserved_${normalized.length + 1}`,
-      label: "",
-      marks: 0,
-      isPlaceholder: true,
-    });
-  }
-
-  return normalized;
-};
-
 const isQuizBlueprint = (blueprintName = "") => {
   const normalized = safeText(blueprintName).toLowerCase();
   return /(^|\s)(quiz|qt)(\s|$)/.test(normalized);
@@ -97,43 +63,13 @@ const getSortOrder = (blueprint = {}) => {
   const name = getBlueprintName(blueprint);
 
   if (type === "attendance") return 1;
-  if (type === "quiz" || isQuizBlueprint(name)) return 2;
-  if (type === "ct" || type === "class_test") return 3;
+  if (type === "ct" || type === "class_test") return 2;
+  if (type === "quiz" || isQuizBlueprint(name)) return 3;
   if (type === "assignment") return 4;
   if (type === "presentation") return 5;
   if (type === "mid" || type === "midterm") return 6;
   if (type === "final") return 7;
   return 999;
-};
-
-const buildItemLabel = ({
-  type,
-  blueprintName,
-  item,
-  itemIndex,
-  blueprintIndex,
-  itemCount,
-  blueprintCount,
-}) => {
-  if (type === "mid" || type === "midterm" || type === "final") {
-    return normalizeLabel(item.label || item.name, `Q${itemIndex + 1}`);
-  }
-
-  const base = baseLabelForType(type, blueprintName);
-
-  if (itemCount > 1) {
-    const explicit = safeText(item.label || item.name, "");
-    if (explicit && !/^q(?:uestion)?\s*\d+$/i.test(explicit)) {
-      return normalizeLabel(explicit, `${base}${itemIndex + 1}`);
-    }
-    return `${base}${itemIndex + 1}`.slice(0, 12);
-  }
-
-  if (blueprintCount > 1) {
-    return `${base}${blueprintIndex + 1}`.slice(0, 12);
-  }
-
-  return base;
 };
 
 export const sortObeBlueprints = (blueprints = []) =>
@@ -171,114 +107,172 @@ const groupKeyForType = (type) => {
   return "unsupported";
 };
 
-export const buildObeTemplateLayout = (blueprints = [], options = {}) => {
-  const useFixedContinuousAssessment =
-    options?.useFixedContinuousAssessment === true;
-  const sorted = sortObeBlueprints(blueprints);
+const normalizeBlueprintItems = (blueprint = {}) => {
+  const items = [...(Array.isArray(blueprint.items) ? blueprint.items : [])].sort(
+    (a, b) => toNumber(a.order) - toNumber(b.order)
+  );
 
-  const semanticCounts = sorted.reduce((acc, blueprint) => {
+  if (items.length) return items;
+  return [
+    {
+      key: "default",
+      label: getBlueprintName(blueprint),
+      marks: blueprint.totalMarks,
+      coCode: "",
+      order: 0,
+    },
+  ];
+};
+
+const normalizeCoCode = (value) => safeText(value, "").toUpperCase();
+
+const buildTheoryContinuousSlots = (sortedBlueprints = []) => {
+  const groups = [];
+  const groupMap = new Map();
+
+  sortedBlueprints.forEach((blueprint) => {
     const type = getBlueprintType(blueprint);
-    if (groupKeyForType(type) !== "ca") return acc;
-    const base = baseLabelForType(type, getBlueprintName(blueprint));
-    acc[base] = (acc[base] || 0) + 1;
-    return acc;
-  }, {});
+    if (groupKeyForType(type) !== "ca") return;
 
-  const slots = { ca: [], mid: [], final: [] };
-  const unsupported = [];
-  const semanticCounters = {};
+    const blueprintId = getBlueprintId(blueprint);
+    const blueprintName = getBlueprintName(blueprint);
+    const baseLabel = baseLabelForType(type, blueprintName);
 
-  sorted.forEach((blueprint) => {
+    normalizeBlueprintItems(blueprint).forEach((item, itemIndex) => {
+      const itemKey = safeText(
+        item.key || item.itemKey || item._id || item.id,
+        `item_${itemIndex + 1}`
+      );
+      const coCode = normalizeCoCode(
+        item.coCode || item.co || item.courseOutcome
+      );
+      const groupKey = `${baseLabel}__${coCode || "UNMAPPED"}`;
+
+      if (!groupMap.has(groupKey)) {
+        const slot = {
+          group: "ca",
+          source: "blueprintAggregate",
+          slotKey: `ca:${groupKey}`,
+          continuousKey: "",
+          blueprint: null,
+          blueprintId: "",
+          blueprintName: baseLabel,
+          type,
+          item: null,
+          itemKey: groupKey,
+          itemLabel: baseLabel,
+          label: baseLabel,
+          marks: 0,
+          coCode,
+          sources: [],
+        };
+        groupMap.set(groupKey, slot);
+        groups.push(slot);
+      }
+
+      const slot = groupMap.get(groupKey);
+      slot.marks += toNumber(item.marks ?? item.maxMarks ?? blueprint.totalMarks);
+      slot.sources.push({
+        blueprintId,
+        itemKey,
+      });
+    });
+  });
+
+  return groups.map((slot) => ({ ...slot, marks: toNumber(slot.marks) }));
+};
+
+const buildLabContinuousSlots = (continuousAssessment = null) => {
+  const headers = Array.isArray(continuousAssessment?.headers)
+    ? continuousAssessment.headers
+    : [];
+
+  return headers
+    .filter((header) => header && header.key)
+    .map((header, index) => {
+      const key = safeText(header.key, `ca_${index + 1}`);
+      return {
+        group: "ca",
+        source: "labContinuous",
+        slotKey: `lab-ca:${key}`,
+        continuousKey: key,
+        blueprint: null,
+        blueprintId: "",
+        blueprintName: safeText(header.assessmentName || header.label, "CLP"),
+        type: key,
+        item: null,
+        itemKey: key,
+        itemLabel: safeText(header.label, key),
+        label: normalizeLabel(header.label, key),
+        marks: toNumber(header.maxMarks ?? header.marks),
+        coCode: normalizeCoCode(header.coCode),
+        sources: [],
+      };
+    });
+};
+
+const buildExamSlots = (sortedBlueprints = [], targetGroup) => {
+  const slots = [];
+
+  sortedBlueprints.forEach((blueprint) => {
     const type = getBlueprintType(blueprint);
     const group = groupKeyForType(type);
-    const blueprintName = getBlueprintName(blueprint);
+    if (group !== targetGroup) return;
+
     const blueprintId = getBlueprintId(blueprint);
+    const blueprintName = getBlueprintName(blueprint);
+    const items = normalizeBlueprintItems(blueprint);
 
-    if (useFixedContinuousAssessment && group === "ca") {
-      return;
-    }
-
-    if (group === "unsupported") {
-      unsupported.push(blueprintName);
-      return;
-    }
-
-    const items = [...(Array.isArray(blueprint.items) ? blueprint.items : [])].sort(
-      (a, b) => toNumber(a.order) - toNumber(b.order)
-    );
-
-    const normalizedItems = items.length
-      ? items
-      : [
-          {
-            key: "default",
-            label: blueprintName,
-            marks: blueprint.totalMarks,
-            coCode: "",
-            order: 0,
-          },
-        ];
-
-    const semanticBase = baseLabelForType(type, blueprintName);
-    const blueprintIndex = semanticCounters[semanticBase] || 0;
-    semanticCounters[semanticBase] = blueprintIndex + 1;
-
-    normalizedItems.forEach((item, itemIndex) => {
-      slots[group].push({
+    items.forEach((item, itemIndex) => {
+      const itemKey = safeText(
+        item.key || item.itemKey || item._id || item.id,
+        `item_${itemIndex + 1}`
+      );
+      slots.push({
         group,
+        source: "blueprintItem",
+        slotKey: `bp:${blueprintId}:${itemKey}`,
         blueprint,
         blueprintId,
         blueprintName,
         type,
         item,
-        itemKey: safeText(
-          item.key || item.itemKey || item._id || item.id,
-          `item_${itemIndex + 1}`
-        ),
+        itemKey,
         itemLabel: safeText(item.label || item.name, `Q${itemIndex + 1}`),
-        label: buildItemLabel({
-          type,
-          blueprintName,
-          item,
-          itemIndex,
-          blueprintIndex,
-          itemCount: normalizedItems.length,
-          blueprintCount: semanticCounts[semanticBase] || 1,
-        }),
+        label: normalizeLabel(item.label || item.name, `Q${itemIndex + 1}`),
         marks: toNumber(item.marks ?? item.maxMarks ?? blueprint.totalMarks),
-        coCode: safeText(
-          item.coCode || item.co || item.courseOutcome,
-          ""
-        ).toUpperCase(),
+        coCode: normalizeCoCode(
+          item.coCode || item.co || item.courseOutcome
+        ),
+        sources: [{ blueprintId, itemKey }],
       });
     });
   });
 
-  if (useFixedContinuousAssessment) {
-    const fixedContinuousAssessmentSlots =
-      Array.isArray(options?.fixedContinuousAssessmentSlots) &&
-      options.fixedContinuousAssessmentSlots.length
-        ? normalizeFixedContinuousAssessmentSlots(
-            options.fixedContinuousAssessmentSlots
-          )
-        : OBE_FIXED_CONTINUOUS_ASSESSMENT;
+  return slots;
+};
 
-    slots.ca = fixedContinuousAssessmentSlots.map((slot) => ({
-      ...slot,
-      group: "ca",
-      source: slot.isPlaceholder
-        ? "placeholder"
-        : "courseContinuousAssessment",
-      blueprint: null,
-      blueprintId: "",
-      blueprintName: slot.label,
-      type: slot.continuousKey,
-      item: null,
-      itemKey: slot.continuousKey,
-      itemLabel: slot.label,
-      coCode: "",
-    }));
-  }
+export const buildObeTemplateLayout = (blueprints = [], options = {}) => {
+  const sorted = sortObeBlueprints(blueprints);
+  const courseType = safeText(options?.courseType, "theory").toLowerCase();
+  const isLabCourse = courseType.includes("lab");
+  const continuousAssessment =
+    options?.continuousAssessment ||
+    (Array.isArray(options?.fixedContinuousAssessmentSlots)
+      ? { headers: options.fixedContinuousAssessmentSlots }
+      : null);
+
+  const unsupported = sorted
+    .filter((blueprint) => groupKeyForType(getBlueprintType(blueprint)) === "unsupported")
+    .map(getBlueprintName);
+
+  const slots = {
+    ca: isLabCourse
+      ? buildLabContinuousSlots(continuousAssessment)
+      : buildTheoryContinuousSlots(sorted),
+    mid: buildExamSlots(sorted, "mid"),
+    final: buildExamSlots(sorted, "final"),
+  };
 
   Object.entries(OBE_TEMPLATE_COLUMNS).forEach(([group, columns]) => {
     slots[group] = slots[group].map((slot, index) => ({
@@ -304,15 +298,15 @@ export const buildObeTemplateLayout = (blueprints = [], options = {}) => {
   capacityChecks.forEach(([group, limit, label]) => {
     if (slots[group].length > limit) {
       errors.push(
-        `The official BUBT workbook has ${limit} ${label} item columns, but ${slots[group].length} items are configured.`
+        `The official BUBT workbook has ${limit} ${label} item columns, but ${slots[group].length} columns are required after CO grouping.`
       );
     }
   });
 
   const totals = {
-    ca: slots.ca.reduce((sum, slot) => sum + slot.marks, 0),
-    mid: slots.mid.reduce((sum, slot) => sum + slot.marks, 0),
-    final: slots.final.reduce((sum, slot) => sum + slot.marks, 0),
+    ca: slots.ca.reduce((sum, slot) => sum + toNumber(slot.marks), 0),
+    mid: slots.mid.reduce((sum, slot) => sum + toNumber(slot.marks), 0),
+    final: slots.final.reduce((sum, slot) => sum + toNumber(slot.marks), 0),
   };
 
   const expected = { ca: 30, mid: 30, final: 40 };
@@ -325,12 +319,13 @@ export const buildObeTemplateLayout = (blueprints = [], options = {}) => {
             : group === "mid"
               ? "Mid term"
               : "Final exam"
-        } items total ${totals[group]} instead of ${expectedTotal}. The official workbook will show its built-in Error indicator until the blueprint is corrected.`
+        } items total ${totals[group]} instead of ${expectedTotal}. The official workbook will show its built-in Error indicator until the configuration is corrected.`
       );
     }
   });
 
   return {
+    courseType,
     slots,
     totals,
     expectedTotals: expected,

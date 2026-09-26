@@ -12,6 +12,7 @@ import TabProjects from "./teacherCourse/TabProjects";
 import TeacherLabSubmissions from "./teacherCourse/TeacherLabSubmissions";
 import TabObe from "./teacherCourse/TabObe";
 import TabSelfStudyBill from "./teacherCourse/TabSelfStudyBill";
+import TabCourseFile from "./teacherCourse/TabCourseFile";
 
 import { fetchCourseById } from "../services/courseService";
 
@@ -27,6 +28,13 @@ const BASE_TABS = [
   "settings",
 ];
 
+function isCourseFileEligible(course) {
+  const shift = String(course?.shift || "").toLowerCase();
+  const department = String(course?.department || "").toUpperCase();
+  const type = String(course?.courseType || "").toLowerCase();
+  return shift === "day" && !department.includes("(DH)") && type !== "self_study";
+}
+
 function getSafeTab(tab, course) {
   const isProjectMode = course?.projectFeature?.mode === "project";
 
@@ -35,6 +43,7 @@ function getSafeTab(tab, course) {
     ...BASE_TABS,
     ...(isProjectMode ? ["projects"] : []),
     ...(isSelfStudy ? ["bill"] : []),
+    ...(isCourseFileEligible(course) ? ["course-file"] : []),
   ];
 
   if (!tab || !allowedTabs.includes(tab)) {
@@ -149,6 +158,10 @@ export default function TeacherCoursePage() {
 
       {activeTab === "bill" && (
         <TabSelfStudyBill courseId={courseId} course={course} />
+      )}
+
+      {activeTab === "course-file" && (
+        <TabCourseFile courseId={courseId} course={course} />
       )}
 
       {activeTab === "settings" && (

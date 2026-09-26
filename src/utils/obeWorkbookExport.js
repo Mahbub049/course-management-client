@@ -14,7 +14,8 @@ const PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relations
 const CORE_NS = "http://purl.org/dc/terms/";
 const XML_NS = "http://www.w3.org/XML/1998/namespace";
 
-const TEMPLATE_FILE = "OBE_BUBT_Template.xlsm";
+const THEORY_TEMPLATE_FILE = "OBE_BUBT_Theory_Template.xlsm";
+const LAB_TEMPLATE_FILE = "OBE_BUBT_Lab_Template.xlsm";
 const STUDENT_START_ROW = 30;
 const STUDENT_END_ROW = 100;
 
@@ -36,6 +37,17 @@ const columnNumber = (letters) => {
   let result = 0;
   for (const char of String(letters || "").toUpperCase()) {
     result = result * 26 + char.charCodeAt(0) - 64;
+  }
+  return result;
+};
+
+const columnLetters = (number) => {
+  let value = Math.max(1, Number(number) || 1);
+  let result = "";
+  while (value > 0) {
+    const remainder = (value - 1) % 26;
+    result = String.fromCharCode(65 + remainder) + result;
+    value = Math.floor((value - 1) / 26);
   }
   return result;
 };
@@ -181,10 +193,89 @@ const writeCellValue = (document, cellMap, ref, value, { preserveFormula = true 
 const clearInputCell = (document, cellMap, ref) =>
   writeCellValue(document, cellMap, ref, "", { preserveFormula: false });
 
-const getTemplateUrl = () => {
+const wrapCourseReportText = (value, maxChars = 88) => {
+  const text = safeText(value, "");
+  if (!text) return "";
+  return text
+    .split(/\r?\n/)
+    .map((paragraph) => {
+      const words = paragraph.trim().split(/\s+/).filter(Boolean);
+      if (!words.length) return "";
+      const lines = [];
+      let line = "";
+      words.forEach((word) => {
+        if (!line) {
+          line = word;
+          return;
+        }
+        if (`${line} ${word}`.length <= maxChars) {
+          line += ` ${word}`;
+        } else {
+          lines.push(line);
+          line = word;
+        }
+      });
+      if (line) lines.push(line);
+      return lines.join("\n");
+    })
+    .join("\n");
+};
+
+const ensureWrappedCellStyles = async (zip, worksheetDocument, refs = []) => {
+  const stylesPath = "xl/styles.xml";
+  const stylesText = await zip.file(stylesPath)?.async("text");
+  if (!stylesText || !worksheetDocument || !refs.length) return;
+
+  const stylesDocument = parseXml(stylesText, stylesPath);
+  const cellXfs = stylesDocument.getElementsByTagNameNS(MAIN_NS, "cellXfs")[0];
+  if (!cellXfs) return;
+
+  const cells = getSheetCellMap(worksheetDocument);
+  const clonedStyleMap = new Map();
+  const directXfs = () => Array.from(cellXfs.childNodes || []).filter(
+    (node) => node.nodeType === 1 && node.localName === "xf"
+  );
+
+  refs.forEach((ref) => {
+    const cell = cells.get(String(ref || "").toUpperCase());
+    if (!cell) return;
+    const currentStyle = Number(cell.getAttribute("s") || 0);
+    if (!Number.isFinite(currentStyle)) return;
+
+    if (!clonedStyleMap.has(currentStyle)) {
+      const source = directXfs()[currentStyle];
+      if (!source) return;
+      const clone = source.cloneNode(true);
+      let alignment = childByLocalName(clone, "alignment");
+      if (!alignment) {
+        alignment = stylesDocument.createElementNS(MAIN_NS, "alignment");
+        clone.appendChild(alignment);
+      }
+      alignment.setAttribute("wrapText", "1");
+      if (!alignment.getAttribute("vertical")) alignment.setAttribute("vertical", "center");
+      clone.setAttribute("applyAlignment", "1");
+      const newIndex = directXfs().length;
+      cellXfs.appendChild(clone);
+      clonedStyleMap.set(currentStyle, newIndex);
+    }
+
+    const wrappedStyle = clonedStyleMap.get(currentStyle);
+    if (wrappedStyle !== undefined) cell.setAttribute("s", String(wrappedStyle));
+  });
+
+  cellXfs.setAttribute("count", String(directXfs().length));
+  zip.file(stylesPath, serializeXml(stylesDocument));
+};
+
+const getTemplateFile = (courseType = "theory") =>
+  String(courseType || "").toLowerCase().includes("lab")
+    ? LAB_TEMPLATE_FILE
+    : THEORY_TEMPLATE_FILE;
+
+const getTemplateUrl = (courseType = "theory") => {
   const base = safeText(import.meta.env.BASE_URL, "/");
   const normalizedBase = base.endsWith("/") ? base : `${base}/`;
-  return `${normalizedBase}templates/${TEMPLATE_FILE}`;
+  return `${normalizedBase}templates/${getTemplateFile(courseType)}`;
 };
 
 const resolveWorksheetPaths = async (zip) => {
@@ -490,7 +581,7 @@ const addFacultySignatureToCourseReport = async (
   );
   appendTextElement(drawingDocument, to, SPREADSHEET_DRAWING_NS, "xdr:col", 4);
   appendTextElement(drawingDocument, to, SPREADSHEET_DRAWING_NS, "xdr:colOff", 0);
-  appendTextElement(drawingDocument, to, SPREADSHEET_DRAWING_NS, "xdr:row", 74);
+  appendTextElement(drawingDocument, to, SPREADSHEET_DRAWING_NS, "xdr:row", 73);
   appendTextElement(drawingDocument, to, SPREADSHEET_DRAWING_NS, "xdr:rowOff", 0);
   anchor.appendChild(to);
 
@@ -548,7 +639,7 @@ const addFacultySignatureToCourseReport = async (
   transform.appendChild(offset);
   const extent = drawingDocument.createElementNS(DRAWING_NS, "a:ext");
   extent.setAttribute("cx", "1828800");
-  extent.setAttribute("cy", "685800");
+  extent.setAttribute("cy", "514350");
   transform.appendChild(extent);
   shapeProperties.appendChild(transform);
   const geometry = drawingDocument.createElementNS(DRAWING_NS, "a:prstGeom");
@@ -672,10 +763,21 @@ const buildContinuousMarkMap = (continuousAssessment) => {
   return map;
 };
 
+const getSlotKey = (slot = {}) =>
+  safeText(slot.slotKey, `${safeText(slot.blueprintId, "slot")}__${safeText(slot.itemKey, "item")}`);
+
+const getBlueprintItemMark = (markMap, student, blueprintId, itemKey) => {
+  for (const studentId of getStudentIdKeys(student)) {
+    const entries = markMap.get(`${studentId}__${blueprintId}`);
+    if (entries?.has(itemKey)) return round2(entries.get(itemKey));
+  }
+  return 0;
+};
+
 const getSlotMark = (markMap, continuousMarkMap, student, slot) => {
   if (slot?.isPlaceholder || slot?.source === "placeholder") return null;
 
-  if (slot?.source === "courseContinuousAssessment") {
+  if (["courseContinuousAssessment", "labContinuous"].includes(slot?.source)) {
     for (const studentId of getStudentIdKeys(student)) {
       const row = continuousMarkMap.get(studentId);
       if (row) return round2(row[slot.continuousKey]);
@@ -683,11 +785,23 @@ const getSlotMark = (markMap, continuousMarkMap, student, slot) => {
     return 0;
   }
 
-  for (const studentId of getStudentIdKeys(student)) {
-    const entries = markMap.get(`${studentId}__${slot.blueprintId}`);
-    if (entries?.has(slot.itemKey)) return round2(entries.get(slot.itemKey));
+  if (Array.isArray(slot?.sources) && slot.sources.length) {
+    return round2(
+      slot.sources.reduce(
+        (sum, source) =>
+          sum +
+          getBlueprintItemMark(
+            markMap,
+            student,
+            safeText(source.blueprintId, ""),
+            safeText(source.itemKey, "")
+          ),
+        0
+      )
+    );
   }
-  return 0;
+
+  return getBlueprintItemMark(markMap, student, slot.blueprintId, slot.itemKey);
 };
 
 const gradeCode = (mark) => {
@@ -843,7 +957,7 @@ const getAbbreviationCode = (...values) => {
   const normalized = normalizeAbbreviation(values.filter(Boolean).join(" "));
   if (!normalized) return "";
 
-  if (/\b(LAB\s*E|LAB\s*EVALUATION|LAB\s*TEST|LABORATORY\s*EVALUATION)\b/.test(normalized)) return "LAB";
+  if (/\b(CLP|CONTINUOUS\s*LAB\s*PERFORMANCE|LAB\s*E|LAB\s*EVALUATION|LAB\s*TEST|LABORATORY\s*EVALUATION)\b/.test(normalized)) return "LAB";
   if (/\b(ATTENDANCE|AT)\b/.test(normalized)) return "AT";
   if (/\b(CLASS\s*TEST|CT)\b/.test(normalized)) return "CT";
   if (/\b(ASSIGNMENT|ASM)\b/.test(normalized)) return "ASM";
@@ -946,7 +1060,7 @@ const calculateWorkbookData = (payload, layout, courseOutcomes, programOutcomes)
     const slotMarks = new Map();
     layout.allSlots.forEach((slot) => {
       slotMarks.set(
-        `${slot.blueprintId}__${slot.itemKey}`,
+        getSlotKey(slot),
         getSlotMark(markMap, continuousMarkMap, student, slot)
       );
     });
@@ -954,7 +1068,7 @@ const calculateWorkbookData = (payload, layout, courseOutcomes, programOutcomes)
     const sumGroup = (slots) =>
       round2(
         slots.reduce(
-          (sum, slot) => sum + numberValue(slotMarks.get(`${slot.blueprintId}__${slot.itemKey}`)),
+          (sum, slot) => sum + numberValue(slotMarks.get(getSlotKey(slot))),
           0
         )
       );
@@ -969,7 +1083,7 @@ const calculateWorkbookData = (payload, layout, courseOutcomes, programOutcomes)
       const obtained = round2(
         layout.allSlots.reduce((sum, slot) => {
           if (slot.coCode !== co.code) return sum;
-          return sum + numberValue(slotMarks.get(`${slot.blueprintId}__${slot.itemKey}`));
+          return sum + numberValue(slotMarks.get(getSlotKey(slot)));
         }, 0)
       );
       const maxMarks = round2(coMax.get(co.code));
@@ -1080,6 +1194,183 @@ const calculateWorkbookData = (payload, layout, courseOutcomes, programOutcomes)
     gradeCounts,
     summaryLabels,
   };
+};
+
+const getLabClpData = (payload = {}) =>
+  payload.labClp || payload.output?.labClp || null;
+
+const populateClpSheet = (document, payload) => {
+  const labClp = getLabClpData(payload) || {};
+  const items = [...(Array.isArray(labClp.items) ? labClp.items : [])]
+    .filter((item) => item && safeText(item.key, ""))
+    .sort((a, b) => numberValue(a.order) - numberValue(b.order));
+
+  if (!items.length) {
+    throw new Error("The lab CLP sheet cannot be filled because no CLP configuration or fallback CLP item is available.");
+  }
+
+  const studentStartRow = 8;
+  const templateStudentEndRow = 65;
+  const startColumnNumber = columnNumber("E");
+  const lastClpColumnNumber = startColumnNumber + items.length - 1;
+  const totalColumnNumber = lastClpColumnNumber + 1;
+  const lastClpColumn = columnLetters(lastClpColumnNumber);
+  const totalColumn = columnLetters(totalColumnNumber);
+
+  // Remove the sample CLP/total cells first. We keep the official ID/Name
+  // columns and row formatting, then rebuild the variable CLP area from E onward.
+  Array.from(document.getElementsByTagNameNS(MAIN_NS, "row")).forEach((rowNode) => {
+    const rowNumber = Number(rowNode.getAttribute("r"));
+    if (rowNumber < 4) return;
+    Array.from(rowNode.getElementsByTagNameNS(MAIN_NS, "c")).forEach((cell) => {
+      const ref = cell.getAttribute("r");
+      if (!ref) return;
+      const { column } = splitCellRef(ref);
+      if (columnNumber(column) >= startColumnNumber) rowNode.removeChild(cell);
+    });
+  });
+
+  if (items.length !== 5) {
+    Array.from(document.getElementsByTagNameNS(MAIN_NS, "conditionalFormatting")).forEach(
+      (node) => node.parentNode?.removeChild(node)
+    );
+  }
+
+  const cells = getSheetCellMap(document);
+  const writeStyled = (ref, value, style, options = {}) => {
+    const cell = ensureCell(document, cells, ref);
+    if (style !== null && style !== undefined) cell.setAttribute("s", String(style));
+    writeCellValue(document, cells, ref, value, options);
+  };
+
+  // Rebuild the two variable merged regions while preserving the ID/Name merges.
+  const mergeCells = document.getElementsByTagNameNS(MAIN_NS, "mergeCells")[0];
+  if (mergeCells) {
+    Array.from(mergeCells.getElementsByTagNameNS(MAIN_NS, "mergeCell")).forEach((merge) => {
+      const ref = merge.getAttribute("ref") || "";
+      if (ref === "E4:I4" || ref === "J4:J5") mergeCells.removeChild(merge);
+    });
+
+    if (items.length > 1) {
+      const clpMerge = document.createElementNS(MAIN_NS, "mergeCell");
+      clpMerge.setAttribute("ref", `E4:${lastClpColumn}4`);
+      mergeCells.appendChild(clpMerge);
+    }
+    const totalMerge = document.createElementNS(MAIN_NS, "mergeCell");
+    totalMerge.setAttribute("ref", `${totalColumn}4:${totalColumn}5`);
+    mergeCells.appendChild(totalMerge);
+    mergeCells.setAttribute(
+      "count",
+      String(mergeCells.getElementsByTagNameNS(MAIN_NS, "mergeCell").length)
+    );
+  }
+
+  const dimension = document.getElementsByTagNameNS(MAIN_NS, "dimension")[0];
+  const rawStudents = Array.isArray(payload.students)
+    ? payload.students
+    : payload.output?.students || [];
+  const students = [...rawStudents].sort(naturalStudentSort);
+  const studentEndRow = Math.max(templateStudentEndRow, studentStartRow + students.length - 1);
+  if (dimension) dimension.setAttribute("ref", `C4:${totalColumn}${studentEndRow}`);
+
+  for (let rowNumber = 4; rowNumber <= studentEndRow; rowNumber += 1) {
+    const rowNode = ensureRow(document, rowNumber);
+    rowNode.setAttribute("spans", `3:${totalColumnNumber}`);
+  }
+
+  writeStyled("E4", "Continuous Lab Performance", 249, { preserveFormula: false });
+  for (let index = 1; index < items.length; index += 1) {
+    writeStyled(`${columnLetters(startColumnNumber + index)}4`, "", 250, {
+      preserveFormula: false,
+    });
+  }
+  writeStyled(`${totalColumn}4`, "CLP", 244, { preserveFormula: false });
+  writeStyled(`${totalColumn}5`, "", 245, { preserveFormula: false });
+
+  const totalMarks = round2(items.reduce((sum, item) => sum + numberValue(item.marks), 0));
+  items.forEach((item, index) => {
+    const column = columnLetters(startColumnNumber + index);
+    const isLast = index === items.length - 1;
+    writeStyled(`${column}5`, safeText(item.label, `CLP${index + 1}`), index === 0 ? 107 : 61, {
+      preserveFormula: false,
+    });
+    writeStyled(`${column}6`, safeText(item.coCode, ""), isLast ? 61 : 66, {
+      preserveFormula: false,
+    });
+    writeStyled(`${column}7`, round2(item.marks), 62, { preserveFormula: false });
+  });
+  writeStyled(`${totalColumn}6`, totalMarks, 121, { preserveFormula: false });
+  writeStyled(`${totalColumn}7`, totalMarks, 122, { preserveFormula: false });
+
+  const labStudentMap = new Map(
+    (Array.isArray(labClp.students) ? labClp.students : []).map((row) => [
+      String(row.studentId || row.student || row._id || ""),
+      row,
+    ])
+  );
+  const continuousAssessment = getContinuousAssessmentData(payload) || {};
+  const continuousStudentMap = buildContinuousMarkMap(continuousAssessment);
+  const continuousHeaders = Array.isArray(continuousAssessment.headers)
+    ? continuousAssessment.headers
+    : [];
+
+  const getFallbackContinuousKey = (item) => {
+    const coCode = safeText(item.coCode, "").toUpperCase();
+    const matched = continuousHeaders.find(
+      (header) =>
+        normalizeAbbreviation(header?.label) === "CLP" &&
+        safeText(header?.coCode, "").toUpperCase() === coCode
+    );
+    return safeText(matched?.key, coCode ? `clp_${coCode.toLowerCase()}` : "");
+  };
+
+  for (let rowNumber = studentStartRow; rowNumber <= studentEndRow; rowNumber += 1) {
+    const student = students[rowNumber - studentStartRow];
+    if (!student) {
+      writeStyled(`C${rowNumber}`, "", 123, { preserveFormula: false });
+      writeStyled(`D${rowNumber}`, "", 124, { preserveFormula: false });
+      items.forEach((item, index) => {
+        const column = columnLetters(startColumnNumber + index);
+        writeStyled(`${column}${rowNumber}`, "", 128, { preserveFormula: false });
+      });
+      writeStyled(`${totalColumn}${rowNumber}`, "", 122, { preserveFormula: false });
+      continue;
+    }
+
+    const studentIds = getStudentIdKeys(student);
+    const labRow = studentIds.map((id) => labStudentMap.get(id)).find(Boolean) || null;
+    const continuousRow = studentIds
+      .map((id) => continuousStudentMap.get(id))
+      .find(Boolean) || null;
+
+    writeStyled(
+      `C${rowNumber}`,
+      safeText(student.roll || student.username || student.studentId, ""),
+      123,
+      { preserveFormula: false }
+    );
+    writeStyled(`D${rowNumber}`, safeText(student.name, ""), 124, {
+      preserveFormula: false,
+    });
+
+    let rowTotal = 0;
+    items.forEach((item, index) => {
+      const column = columnLetters(startColumnNumber + index);
+      let value = labRow?.values?.[item.key];
+      if (item.isAggregateFallback) {
+        const fallbackKey = getFallbackContinuousKey(item);
+        value = fallbackKey && continuousRow ? continuousRow[fallbackKey] : value;
+      }
+
+      const isBlank = value === null || value === undefined || value === "";
+      const numericValue = isBlank ? null : round2(value);
+      if (numericValue !== null) rowTotal = round2(rowTotal + numericValue);
+      writeStyled(`${column}${rowNumber}`, numericValue === null ? "" : numericValue, 128, {
+        preserveFormula: false,
+      });
+    });
+    writeStyled(`${totalColumn}${rowNumber}`, rowTotal, 122, { preserveFormula: false });
+  }
 };
 
 const populateGradeSheet = (document, payload, layout, workbookData, courseOutcomes, programOutcomes) => {
@@ -1203,7 +1494,7 @@ const populateGradeSheet = (document, payload, layout, workbookData, courseOutco
       columns.forEach((column, index) => {
         const slot = layout.slots[group][index];
         const mark = slot
-          ? studentData.slotMarks.get(`${slot.blueprintId}__${slot.itemKey}`)
+          ? studentData.slotMarks.get(getSlotKey(slot))
           : null;
         writeCellValue(
           document,
@@ -1402,6 +1693,12 @@ const populateCourseReport = (document, payload, workbookData, courseOutcomes, p
   writeCellValue(document, cells, "B8", safeText(course.section, ""));
   writeCellValue(document, cells, "B9", course.shift ?? setup.shift ?? 0);
 
+  // The new Lab template was supplied with a demonstration faculty name in the
+  // signature area (C74). The portal uses the uploaded signature image there, so
+  // the demo text must never survive into a generated Course Report. Clearing it
+  // for both Theory and Lab templates is harmless when the cell is already blank.
+  writeCellValue(document, cells, "C74", "", { preserveFormula: false });
+
   const coColumns = ["C", "D", "E", "F", "G", "H"];
   coColumns.forEach((column, index) => {
     writeCellValue(document, cells, `${column}13`, courseOutcomes[index]?.code || `CO${index + 1}`);
@@ -1446,21 +1743,21 @@ const populateCourseReport = (document, payload, workbookData, courseOutcomes, p
     document,
     cells,
     "B56",
-    safeText(setup.courseReportComment1, ""),
+    wrapCourseReportText(setup.courseReportComment1),
     { preserveFormula: false }
   );
   writeCellValue(
     document,
     cells,
     "B62",
-    safeText(setup.courseReportComment2, ""),
+    wrapCourseReportText(setup.courseReportComment2),
     { preserveFormula: false }
   );
   writeCellValue(
     document,
     cells,
     "B67",
-    safeText(setup.courseReportGeneralComment, ""),
+    wrapCourseReportText(setup.courseReportGeneralComment),
     { preserveFormula: false }
   );
 };
@@ -1633,6 +1930,46 @@ const setWorkbookRecalculation = (workbookDocument) => {
   calcProperties.setAttribute("calcOnSave", "1");
 };
 
+const removeCalculationChain = async (zip) => {
+  const calcChainPath = "xl/calcChain.xml";
+  if (!zip.file(calcChainPath)) return;
+
+  const workbookRelationshipsPath = "xl/_rels/workbook.xml.rels";
+  const relationshipsText = await zip.file(workbookRelationshipsPath)?.async("text");
+  if (relationshipsText) {
+    const document = parseXml(relationshipsText, workbookRelationshipsPath);
+    Array.from(
+      document.getElementsByTagNameNS(PACKAGE_REL_NS, "Relationship")
+    ).forEach((relationship) => {
+      const type = safeText(relationship.getAttribute("Type"), "");
+      const target = safeText(relationship.getAttribute("Target"), "");
+      if (type.endsWith("/calcChain") || /calcChain\.xml$/i.test(target)) {
+        relationship.parentNode?.removeChild(relationship);
+      }
+    });
+    zip.file(workbookRelationshipsPath, serializeXml(document));
+  }
+
+  const contentTypesPath = "[Content_Types].xml";
+  const contentTypesText = await zip.file(contentTypesPath)?.async("text");
+  if (contentTypesText) {
+    const document = parseXml(contentTypesText, contentTypesPath);
+    Array.from(document.documentElement.childNodes || []).forEach((node) => {
+      if (
+        node.nodeType === 1 &&
+        node.localName === "Override" &&
+        safeText(node.getAttribute("PartName"), "").toLowerCase() ===
+          "/xl/calcchain.xml"
+      ) {
+        node.parentNode?.removeChild(node);
+      }
+    });
+    zip.file(contentTypesPath, serializeXml(document));
+  }
+
+  zip.remove(calcChainPath);
+};
+
 const updateModifiedDate = async (zip) => {
   const path = "docProps/core.xml";
   const text = await zip.file(path)?.async("text");
@@ -1653,14 +1990,10 @@ export const exportObeWorkbook = async (payload = {}) => {
     payload.course?.courseType || payload.course?.type,
     "theory"
   ).toLowerCase();
-  const needsFixedContinuousAssessment = ["theory", "hybrid", "lab"].includes(
-    courseType
-  );
-  const useFixedContinuousAssessment =
-    continuousAssessment?.enabled === true;
+  const isLabCourse = courseType.includes("lab");
   const layout = buildObeTemplateLayout(blueprints, {
-    useFixedContinuousAssessment,
-    fixedContinuousAssessmentSlots: continuousAssessment?.headers || [],
+    courseType,
+    continuousAssessment,
   });
 
   const errors = [...layout.errors];
@@ -1669,11 +2002,9 @@ export const exportObeWorkbook = async (payload = {}) => {
     ? payload.students
     : payload.output?.students || [];
 
-  if (needsFixedContinuousAssessment && !useFixedContinuousAssessment) {
+  if (isLabCourse && continuousAssessment?.enabled !== true) {
     errors.push(
-      courseType === "lab"
-        ? "Continuous-assessment data is missing from the export response. Update the supplied server files so AT (5) and Lab E (25) can be fetched from the lab attendance and normal marksheet."
-        : "Continuous-assessment data is missing from the export response. Update the supplied server files so AT (5), CT (15), and ASM (10) can be fetched from the course marks."
+      "Lab continuous-assessment data is missing from the export response. The lab workbook requires Attendance and CLP data."
     );
   }
 
@@ -1699,17 +2030,23 @@ export const exportObeWorkbook = async (payload = {}) => {
     throw new Error(errors.join("\n"));
   }
 
-  const response = await fetch(getTemplateUrl(), { cache: "no-store" });
+  const templateFile = getTemplateFile(courseType);
+  const response = await fetch(getTemplateUrl(courseType), { cache: "no-store" });
   if (!response.ok) {
     throw new Error(
-      `Could not load the BUBT Excel template (${response.status}). Make sure public/templates/${TEMPLATE_FILE} is deployed.`
+      `Could not load the BUBT Excel template (${response.status}). Make sure public/templates/${templateFile} is deployed.`
     );
   }
 
   const zip = await JSZip.loadAsync(await response.arrayBuffer());
   const { workbookDocument, workbookPath, sheetMap } = await resolveWorksheetPaths(zip);
 
-  const requiredSheets = ["GradeSheet", "Course Report", "CO-PO Mapping"];
+  const requiredSheets = [
+    "GradeSheet",
+    "Course Report",
+    "CO-PO Mapping",
+    ...(isLabCourse ? ["CLP"] : []),
+  ];
   requiredSheets.forEach((name) => {
     if (!sheetMap.has(name)) throw new Error(`The template sheet “${name}” is missing.`);
   });
@@ -1721,19 +2058,21 @@ export const exportObeWorkbook = async (payload = {}) => {
     programOutcomes.slice(0, OBE_TEMPLATE_LIMITS.programOutcomes)
   );
 
-  const [gradeText, reportText, mappingText] = await Promise.all([
+  const [gradeText, reportText, mappingText, clpText] = await Promise.all([
     zip.file(sheetMap.get("GradeSheet"))?.async("text"),
     zip.file(sheetMap.get("Course Report"))?.async("text"),
     zip.file(sheetMap.get("CO-PO Mapping"))?.async("text"),
+    isLabCourse ? zip.file(sheetMap.get("CLP"))?.async("text") : Promise.resolve(null),
   ]);
 
-  if (!gradeText || !reportText || !mappingText) {
+  if (!gradeText || !reportText || !mappingText || (isLabCourse && !clpText)) {
     throw new Error("One or more BUBT template worksheets could not be read.");
   }
 
   const gradeDocument = parseXml(gradeText, sheetMap.get("GradeSheet"));
   const reportDocument = parseXml(reportText, sheetMap.get("Course Report"));
   const mappingDocument = parseXml(mappingText, sheetMap.get("CO-PO Mapping"));
+  const clpDocument = isLabCourse ? parseXml(clpText, sheetMap.get("CLP")) : null;
 
   populateGradeSheet(
     gradeDocument,
@@ -1750,6 +2089,7 @@ export const exportObeWorkbook = async (payload = {}) => {
     courseOutcomes.slice(0, OBE_TEMPLATE_LIMITS.courseOutcomes),
     programOutcomes.slice(0, OBE_TEMPLATE_LIMITS.programOutcomes)
   );
+  await ensureWrappedCellStyles(zip, reportDocument, ["B56", "B62", "B67"]);
   populateMappingSheet(
     mappingDocument,
     payload,
@@ -1757,6 +2097,7 @@ export const exportObeWorkbook = async (payload = {}) => {
     programOutcomes.slice(0, OBE_TEMPLATE_LIMITS.programOutcomes)
   );
   removeCheckboxMacroAssignments(mappingDocument);
+  if (clpDocument) populateClpSheet(clpDocument, payload);
 
   const teacherSignature = getTeacherSignature(payload);
   if (teacherSignature) {
@@ -1783,6 +2124,7 @@ export const exportObeWorkbook = async (payload = {}) => {
   zip.file(sheetMap.get("GradeSheet"), serializeXml(gradeDocument));
   zip.file(sheetMap.get("Course Report"), serializeXml(reportDocument));
   zip.file(sheetMap.get("CO-PO Mapping"), serializeXml(mappingDocument));
+  if (clpDocument) zip.file(sheetMap.get("CLP"), serializeXml(clpDocument));
   zip.file(workbookPath, serializeXml(workbookDocument));
   await removeCheckboxVmlMacros(zip);
   await refreshChartCaches(
@@ -1791,6 +2133,7 @@ export const exportObeWorkbook = async (payload = {}) => {
     courseOutcomes.slice(0, OBE_TEMPLATE_LIMITS.courseOutcomes),
     programOutcomes.slice(0, OBE_TEMPLATE_LIMITS.programOutcomes)
   );
+  await removeCalculationChain(zip);
   await updateModifiedDate(zip);
 
   const blob = await zip.generateAsync({
