@@ -71,14 +71,15 @@ const readWorkbook = async (file) => {
   });
 };
 
-const parseNumericMark = ({ rawValue, maxMarks, roll, label }) => {
+const parseNumericMark = ({ rawValue, maxMarks, roll, label, allowAbsent = false }) => {
   const text = safeText(rawValue);
-  if (!text) return 0;
+  if (!text) return { obtainedMarks: 0, status: "present" };
 
   if (text.toUpperCase() === "A") {
-    throw new Error(
-      `Roll ${roll}: “A” was entered for ${label}. The portal currently stores numeric OBE marks only; use 0 or enter the mark from the portal.`
-    );
+    if (!allowAbsent) {
+      throw new Error(`Roll ${roll}: Absent (A) is allowed only for Mid or Final, not ${label}.`);
+    }
+    return { obtainedMarks: 0, status: "absent" };
   }
 
   const numeric = Number(rawValue);
@@ -94,7 +95,7 @@ const parseNumericMark = ({ rawValue, maxMarks, roll, label }) => {
     );
   }
 
-  return Math.round(numeric * 100) / 100;
+  return { obtainedMarks: Math.round(numeric * 100) / 100, status: "present" };
 };
 
 const parseOfficialBubtWorkbook = (workbook, students, blueprints) => {
@@ -131,11 +132,12 @@ const parseOfficialBubtWorkbook = (workbook, students, blueprints) => {
 
     layout.allSlots.forEach((slot) => {
       const rawValue = readCellValue(sheet, `${slot.column}${row}`);
-      const obtainedMarks = parseNumericMark({
+      const parsedMark = parseNumericMark({
         rawValue,
         maxMarks: slot.marks,
         roll,
         label: `${slot.blueprintName} - ${slot.itemLabel}`,
+        allowAbsent: ["mid", "final"].includes(slot.group),
       });
 
       const recordKey = `${studentId}__${slot.blueprintId}`;
@@ -143,13 +145,16 @@ const parseOfficialBubtWorkbook = (workbook, students, blueprints) => {
         recordMap.set(recordKey, {
           studentId,
           blueprintId: slot.blueprintId,
+          status: "present",
           entries: [],
         });
       }
 
-      recordMap.get(recordKey).entries.push({
+      const record = recordMap.get(recordKey);
+      if (parsedMark.status === "absent") record.status = "absent";
+      record.entries.push({
         itemKey: slot.itemKey,
-        obtainedMarks,
+        obtainedMarks: parsedMark.obtainedMarks,
       });
     });
   }
@@ -212,6 +217,7 @@ const parseLegacyMarkEntryWorkbook = (workbook, students, blueprints) => {
         blueprintId: safeText(blueprint._id || blueprint.id),
         itemKey: item.key,
         maxMarks: Number(item.marks || 0),
+        assessmentType: String(blueprint.assessmentType || "").toLowerCase(),
         label: `${assessmentName} - ${itemLabel}`,
       });
     }
@@ -234,11 +240,12 @@ const parseLegacyMarkEntryWorkbook = (workbook, students, blueprints) => {
     if (!studentId) return;
 
     headerMeta.forEach((meta) => {
-      const obtainedMarks = parseNumericMark({
+      const parsedMark = parseNumericMark({
         rawValue: row[meta.colIndex],
         maxMarks: meta.maxMarks,
         roll: workbookStudentKey,
         label: meta.label,
+        allowAbsent: ["mid", "final"].includes(meta.assessmentType),
       });
       const recordKey = `${studentId}__${meta.blueprintId}`;
 
@@ -246,13 +253,16 @@ const parseLegacyMarkEntryWorkbook = (workbook, students, blueprints) => {
         recordMap.set(recordKey, {
           studentId,
           blueprintId: meta.blueprintId,
+          status: "present",
           entries: [],
         });
       }
 
-      recordMap.get(recordKey).entries.push({
+      const record = recordMap.get(recordKey);
+      if (parsedMark.status === "absent") record.status = "absent";
+      record.entries.push({
         itemKey: meta.itemKey,
-        obtainedMarks,
+        obtainedMarks: parsedMark.obtainedMarks,
       });
     });
   });

@@ -736,9 +736,12 @@ const buildMarkMap = (marks = []) => {
       if (key) entries.set(key, round2(entry.obtainedMarks ?? entry.marks ?? entry.value));
     });
 
+    const status = safeText(record.status, "present").toLowerCase();
+    const markRecord = { entries, status };
+
     studentIds.forEach((studentId) => {
       blueprintIds.forEach((blueprintId) => {
-        map.set(`${studentId}__${blueprintId}`, entries);
+        map.set(`${studentId}__${blueprintId}`, markRecord);
       });
     });
   });
@@ -768,8 +771,10 @@ const getSlotKey = (slot = {}) =>
 
 const getBlueprintItemMark = (markMap, student, blueprintId, itemKey) => {
   for (const studentId of getStudentIdKeys(student)) {
-    const entries = markMap.get(`${studentId}__${blueprintId}`);
-    if (entries?.has(itemKey)) return round2(entries.get(itemKey));
+    const record = markMap.get(`${studentId}__${blueprintId}`);
+    if (record?.status === "absent") return "A";
+    if (record?.status === "incomplete") return "I";
+    if (record?.entries?.has(itemKey)) return round2(record.entries.get(itemKey));
   }
   return 0;
 };
@@ -830,6 +835,7 @@ const gradeLabel = (grade) =>
     C: "C",
     D: "D",
     F: "F (Fail)",
+    I: "I",
   }[grade] || "F (Fail)");
 
 const naturalStudentSort = (a, b) =>
@@ -1077,7 +1083,10 @@ const calculateWorkbookData = (payload, layout, courseOutcomes, programOutcomes)
     const midTotal = sumGroup(layout.slots.mid);
     const finalTotal = sumGroup(layout.slots.final);
     const total = round2(caTotal + midTotal + finalTotal);
-    const grade = gradeCode(total);
+    const hasIncompleteExam = [...layout.slots.mid, ...layout.slots.final].some((slot) =>
+      ["A", "I"].includes(String(slotMarks.get(getSlotKey(slot)) || "").trim().toUpperCase())
+    );
+    const grade = hasIncompleteExam ? "I" : gradeCode(total);
 
     const coRows = courseOutcomes.map((co) => {
       const obtained = round2(
@@ -1177,7 +1186,7 @@ const calculateWorkbookData = (payload, layout, courseOutcomes, programOutcomes)
     "C",
     "D",
     "F (Fail)",
-    "Error",
+    "I",
   ];
   const gradeCounts = Object.fromEntries(summaryLabels.map((label) => [label, 0]));
   studentRows.forEach((row) => {
@@ -1500,7 +1509,9 @@ const populateGradeSheet = (document, payload, layout, workbookData, courseOutco
           document,
           cells,
           `${column}${row}`,
-          slot && !slot.isPlaceholder ? round2(mark) : ""
+          slot && !slot.isPlaceholder
+            ? (["A", "I"].includes(String(mark || "").trim().toUpperCase()) ? String(mark).trim().toUpperCase() : round2(mark))
+            : ""
         );
       });
     });
@@ -1545,6 +1556,7 @@ const populateGradeSheet = (document, payload, layout, workbookData, courseOutco
   workbookData.summaryLabels.forEach((label, index) => {
     const row = 108 + index;
     const count = workbookData.gradeCounts[label] || 0;
+    writeCellValue(document, cells, `B${row}`, label === "I" ? "I (Incomplete)" : label);
     writeCellValue(document, cells, `D${row}`, count);
     writeCellValue(
       document,

@@ -339,8 +339,8 @@ const buildMarkEntryState = (data = {}) => {
     if (!draft[key]) draft[key] = {};
     const blueprint = loadedBlueprints.find((bp) => String(bp._id) === String(mark.blueprint));
     if (mark.status === "absent" || mark.status === "incomplete") {
-      const firstItem = blueprint?.items?.[0];
-      if (firstItem) draft[key][firstItem.key] = mark.status === "absent" ? "A" : "I";
+      const statusToken = mark.status === "absent" ? "A" : "I";
+      for (const item of blueprint?.items || []) draft[key][item.key] = statusToken;
       continue;
     }
     for (const entry of mark.entries || []) draft[key][entry.itemKey] = entry.obtainedMarks;
@@ -1081,17 +1081,56 @@ const saveSetup = async () => {
     let nextValue = String(rawValue ?? "").replace(",", ".");
     const blueprint = markBlueprints.find((bp) => String(bp._id) === String(blueprintId));
     const statusValue = nextValue.trim().toUpperCase();
-    if (["mid", "final"].includes(blueprint?.assessmentType) && ["A", "I"].includes(statusValue)) {
-      const key = `${studentId}__${blueprintId}`;
+    const blueprintType = String(blueprint?.assessmentType || "").toLowerCase();
+    const key = `${studentId}__${blueprintId}`;
+
+    if (["mid", "final"].includes(blueprintType) && statusValue === "A") {
+      const oppositeType = blueprintType === "mid" ? "final" : "mid";
+      const oppositeAbsent = markBlueprints.some((row) => {
+        if (String(row?.assessmentType || "").toLowerCase() !== oppositeType) return false;
+        return (row.items || []).some((item) =>
+          ["A", "I"].includes(
+            String(markDraft[`${studentId}__${row._id}`]?.[item.key] ?? "")
+              .trim()
+              .toUpperCase()
+          )
+        );
+      });
+
+      if (oppositeAbsent) {
+        toast(
+          "warning",
+          `Absent can be set for either ${blueprintType === "mid" ? "Mid" : "Final"} or ${oppositeType === "mid" ? "Mid" : "Final"}, not both.`
+        );
+        return;
+      }
+
       setMarkDraft((prev) => ({
         ...prev,
-        [key]: Object.fromEntries((blueprint.items || []).map((item) => [item.key, item.key === itemKey ? statusValue : ""])),
+        [key]: Object.fromEntries((blueprint.items || []).map((item) => [item.key, "A"])),
       }));
       return;
     }
 
+    const currentHasStatus = (blueprint?.items || []).some((item) =>
+      ["A", "I"].includes(
+        String(markDraft[key]?.[item.key] ?? "")
+          .trim()
+          .toUpperCase()
+      )
+    );
+    const setCurrentValue = (value) => {
+      if (!currentHasStatus) {
+        setDraftValue(studentId, blueprintId, itemKey, value);
+        return;
+      }
+      const cleared = Object.fromEntries((blueprint?.items || []).map((item) => [item.key, ""]));
+      cleared[itemKey] = value;
+      setMarkDraft((prev) => ({ ...prev, [key]: cleared }));
+    };
+
     if (nextValue === "") {
-      setDraftValue(studentId, blueprintId, itemKey, "");
+      setCurrentValue("");
       return;
     }
 
@@ -1102,7 +1141,7 @@ const saveSetup = async () => {
     if (!/^\d*(?:\.\d?)?$/.test(nextValue)) return;
 
     if (nextValue.endsWith(".")) {
-      setDraftValue(studentId, blueprintId, itemKey, nextValue);
+      setCurrentValue(nextValue);
       return;
     }
 
@@ -1111,11 +1150,11 @@ const saveSetup = async () => {
 
     const max = Number(maxMarks || 0);
     if (numeric > max) {
-      setDraftValue(studentId, blueprintId, itemKey, round2(max));
+      setCurrentValue(round2(max));
       return;
     }
 
-    setDraftValue(studentId, blueprintId, itemKey, nextValue);
+    setCurrentValue(nextValue);
   };
 
   const handleDraftBlur = (studentId, blueprintId, itemKey, maxMarks) => {
@@ -2104,7 +2143,8 @@ const saveSetup = async () => {
         const targetItems = target.items || [];
         const subMarks = Array.isArray(mark.subMarks) ? mark.subMarks : [];
         if (["mid", "final"].includes(target.assessmentType) && ["absent", "incomplete"].includes(mark.status)) {
-          targetItems.forEach((item, index) => { nextDraft[key][item.key] = index === 0 ? (mark.status === "absent" ? "A" : "I") : ""; });
+          const statusToken = mark.status === "absent" ? "A" : "I";
+          targetItems.forEach((item) => { nextDraft[key][item.key] = statusToken; });
           copied++;
         } else if (targetItems.length === 1) {
           const scaled = Number(sourceAssessment?.fullMarks || 0) > 0 ? (Number(mark.obtainedMarks || 0) / Number(sourceAssessment.fullMarks)) * Number(targetItems[0].marks || target.totalMarks || 0) : 0;
@@ -2123,6 +2163,29 @@ const saveSetup = async () => {
   const saveMarks = async () => {
     try {
       setMarkSaving(true);
+
+      const dualAbsentStudent = markStudents.find((student) => {
+        const hasMidAbsent = markBlueprints.some(
+          (blueprint) =>
+            String(blueprint.assessmentType || "").toLowerCase() === "mid" &&
+            getBlueprintStatusToken(student.studentId, blueprint)
+        );
+        const hasFinalAbsent = markBlueprints.some(
+          (blueprint) =>
+            String(blueprint.assessmentType || "").toLowerCase() === "final" &&
+            getBlueprintStatusToken(student.studentId, blueprint)
+        );
+        return hasMidAbsent && hasFinalAbsent;
+      });
+
+      if (dualAbsentStudent) {
+        await Swal.fire({
+          icon: "warning",
+          title: "Absent cannot be used in both exams",
+          text: `${dualAbsentStudent.roll || dualAbsentStudent.name || "A student"} has Absent in both Mid and Final. Keep A in only one exam and enter 0 or numeric marks in the other.`,
+        });
+        return;
+      }
 
       const fractionalRows = markStudents.filter(
         (student) => getObeRowCompletionNotice(student.studentId)?.type === "error"
@@ -3762,12 +3825,36 @@ const saveSetup = async () => {
 
           const recordKey = `${student.studentId}__${target.blueprintId}`;
           if (!nextDraft[recordKey]) nextDraft[recordKey] = {};
+          const blueprint = blueprintById.get(String(target.blueprintId));
+          const assessmentType = String(blueprint?.assessmentType || "").toLowerCase();
           const currentValue = nextDraft[recordKey][target.itemKey];
           const hasExistingValue = currentValue !== "" && currentValue !== null && currentValue !== undefined;
           if (!overwrite && hasExistingValue) {
             skippedExisting += 1;
             return;
           }
+
+          if (normalized.absent) {
+            if (!["mid", "final"].includes(assessmentType)) {
+              skippedInvalid += 1;
+              return;
+            }
+            nextDraft[recordKey] = Object.fromEntries(
+              (blueprint?.items || []).map((item) => [item.key, "A"])
+            );
+            touchedRecordKeys.add(recordKey);
+            importedCells += Math.max(1, (blueprint?.items || []).length);
+            return;
+          }
+
+          const recordHasStatus = (blueprint?.items || []).some((item) =>
+            ["A", "I"].includes(
+              String(nextDraft[recordKey]?.[item.key] ?? "")
+                .trim()
+                .toUpperCase()
+            )
+          );
+          if (recordHasStatus) return;
 
           nextDraft[recordKey] = {
             ...nextDraft[recordKey],
@@ -3786,12 +3873,46 @@ const saveSetup = async () => {
         );
       }
 
+      for (const student of latestState.students) {
+        const hasMidAbsent = latestState.blueprints.some(
+          (blueprint) =>
+            String(blueprint.assessmentType || "").toLowerCase() === "mid" &&
+            (blueprint.items || []).some((item) =>
+              ["A", "I"].includes(
+                String(nextDraft[`${student.studentId}__${blueprint._id}`]?.[item.key] ?? "")
+                  .trim()
+                  .toUpperCase()
+              )
+            )
+        );
+        const hasFinalAbsent = latestState.blueprints.some(
+          (blueprint) =>
+            String(blueprint.assessmentType || "").toLowerCase() === "final" &&
+            (blueprint.items || []).some((item) =>
+              ["A", "I"].includes(
+                String(nextDraft[`${student.studentId}__${blueprint._id}`]?.[item.key] ?? "")
+                  .trim()
+                  .toUpperCase()
+              )
+            )
+        );
+        if (hasMidAbsent && hasFinalAbsent) {
+          throw new Error(
+            `${student.roll || student.name || "A student"} is marked Absent in both Mid and Final. Keep A in only one exam and use 0 or numeric marks in the other.`
+          );
+        }
+      }
+
       const records = [...touchedRecordKeys].map((recordKey) => {
         const [studentId, blueprintId] = recordKey.split("__");
         const blueprint = blueprintById.get(String(blueprintId));
+        const statusToken = (blueprint?.items || [])
+          .map((item) => String(nextDraft[recordKey]?.[item.key] ?? "").trim().toUpperCase())
+          .find((value) => ["A", "I"].includes(value));
         return {
           studentId,
           blueprintId,
+          status: statusToken === "A" ? "absent" : statusToken === "I" ? "incomplete" : "present",
           entries: (blueprint?.items || []).map((item) => ({
             itemKey: item.key,
             obtainedMarks: Number(nextDraft[recordKey]?.[item.key] || 0),
@@ -4766,7 +4887,7 @@ const saveSetup = async () => {
         <div className="space-y-6">
           <SectionCard
             title="Mark Entry Grid"
-            subtitle="Use Tab, Enter, or arrow keys to move between cells. Only whole/.5 marks are accepted; Mid/Final also accept A or I status."
+            subtitle="Use Tab, Enter, or arrow keys to move between cells. Only whole/.5 marks are accepted. Mid/Final accept A for Absent; entering A in one question fills the whole assessment, and A can be used in only one of Mid or Final."
             actions={
               <div className="flex flex-wrap items-center gap-2">
                 <input
