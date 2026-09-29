@@ -772,8 +772,7 @@ const getSlotKey = (slot = {}) =>
 const getBlueprintItemMark = (markMap, student, blueprintId, itemKey) => {
   for (const studentId of getStudentIdKeys(student)) {
     const record = markMap.get(`${studentId}__${blueprintId}`);
-    if (record?.status === "absent") return "A";
-    if (record?.status === "incomplete") return "I";
+    if (["absent", "incomplete"].includes(record?.status)) return "A";
     if (record?.entries?.has(itemKey)) return round2(record.entries.get(itemKey));
   }
   return 0;
@@ -835,7 +834,7 @@ const gradeLabel = (grade) =>
     C: "C",
     D: "D",
     F: "F (Fail)",
-    I: "I",
+    I: "Incomplete",
   }[grade] || "F (Fail)");
 
 const naturalStudentSort = (a, b) =>
@@ -1083,9 +1082,13 @@ const calculateWorkbookData = (payload, layout, courseOutcomes, programOutcomes)
     const midTotal = sumGroup(layout.slots.mid);
     const finalTotal = sumGroup(layout.slots.final);
     const total = round2(caTotal + midTotal + finalTotal);
-    const hasIncompleteExam = [...layout.slots.mid, ...layout.slots.final].some((slot) =>
-      ["A", "I"].includes(String(slotMarks.get(getSlotKey(slot)) || "").trim().toUpperCase())
-    );
+    const getExamStatus = (slots) =>
+      slots
+        .map((slot) => String(slotMarks.get(getSlotKey(slot)) || "").trim().toUpperCase())
+        .find((value) => ["A", "I"].includes(value)) || "";
+    const midStatus = getExamStatus(layout.slots.mid);
+    const finalStatus = getExamStatus(layout.slots.final);
+    const hasIncompleteExam = Boolean(midStatus || finalStatus);
     const grade = hasIncompleteExam ? "I" : gradeCode(total);
 
     const coRows = courseOutcomes.map((co) => {
@@ -1139,6 +1142,8 @@ const calculateWorkbookData = (payload, layout, courseOutcomes, programOutcomes)
       caTotal,
       midTotal,
       finalTotal,
+      midStatus,
+      finalStatus,
       total,
       grade,
       gradeLabel: gradeLabel(grade),
@@ -1411,19 +1416,32 @@ const populateGradeSheet = (document, payload, layout, workbookData, courseOutco
       writeCellValue(document, cells, `I${row}`, "", { preserveFormula: false });
     });
 
+    const labCaSlots = Array.isArray(layout?.slots?.ca) ? layout.slots.ca : [];
+    const clpCount = Math.min(
+      3,
+      labCaSlots.filter((slot) => String(slot?.continuousKey || slot?.type || "").toLowerCase() !== "attendance").length
+    );
+    const attendanceCount = labCaSlots.some(
+      (slot) => String(slot?.continuousKey || slot?.type || "").toLowerCase() === "attendance"
+    )
+      ? 1
+      : 0;
+
+    // Lab marksheet legend must read in the faculty workflow order, not in the
+    // old template's generic order: CLP -> Mid -> Final -> Attendance.
     const labSequence = [
-      { code: "CLP", name: "Continuous Lab Performance", countKey: "LAB" },
-      { code: "MT", name: "Mid Term", countKey: "MT" },
-      { code: "FE", name: "Final Exam", countKey: "FE" },
-      { code: "AT", name: "Attendance", countKey: "AT" },
-    ].filter((entry) => Number(abbreviationCounts[entry.countKey] || 0) > 0);
+      { code: "CLP", name: "Continuous Lab Performance", count: clpCount || abbreviationCounts.LAB },
+      { code: "MT", name: "Mid Term", count: abbreviationCounts.MT },
+      { code: "FE", name: "Final Exam", count: abbreviationCounts.FE },
+      { code: "AT", name: "Attendance", count: attendanceCount || abbreviationCounts.AT },
+    ].filter((entry) => Number(entry.count || 0) > 0);
 
     labSequence.forEach((entry, index) => {
       const row = abbreviationRows[index];
       if (!row) return;
       writeCellValue(document, cells, `E${row}`, entry.code, { preserveFormula: false });
       writeCellValue(document, cells, `F${row}`, entry.name, { preserveFormula: false });
-      writeCellValue(document, cells, `I${row}`, abbreviationCounts[entry.countKey], {
+      writeCellValue(document, cells, `I${row}`, entry.count, {
         preserveFormula: false,
       });
     });
@@ -1547,10 +1565,26 @@ const populateGradeSheet = (document, payload, layout, workbookData, courseOutco
     });
 
     writeCellValue(document, cells, `H${row}`, studentData.caTotal);
-    writeCellValue(document, cells, `O${row}`, studentData.midTotal);
-    writeCellValue(document, cells, `V${row}`, studentData.finalTotal);
-    writeCellValue(document, cells, `W${row}`, studentData.total);
-    writeCellValue(document, cells, `X${row}`, studentData.gradeLabel);
+    writeCellValue(document, cells, `O${row}`, studentData.midStatus ? "A" : studentData.midTotal);
+    writeCellValue(document, cells, `V${row}`, studentData.finalStatus ? "A" : studentData.finalTotal);
+    writeCellValue(document, cells, `W${row}`, (studentData.midStatus || studentData.finalStatus) ? "Absent" : studentData.total);
+    writeCellValue(document, cells, `X${row}`, (studentData.midStatus || studentData.finalStatus) ? "Incomplete" : studentData.gradeLabel);
+
+    // The official template previously hard-coded Mid absence as F while Final
+    // absence became Incomplete. Portal policy allows A in either Mid OR Final,
+    // so both must produce Incomplete after Excel recalculates its formulas.
+    const gradeCell = ensureCell(document, cells, `X${row}`);
+    const gradeFormula = childByLocalName(gradeCell, "f");
+    if (gradeFormula) {
+      const oldMidFinalBranch = `IF(O${row}="A","F (Fail)",IF(V${row}="A","Incomplete","Error"))`;
+      const correctedBranch = `IF(OR(O${row}="A",V${row}="A"),"Incomplete","Error")`;
+      if (String(gradeFormula.textContent || "").includes(oldMidFinalBranch)) {
+        gradeFormula.textContent = String(gradeFormula.textContent || "").replace(
+          oldMidFinalBranch,
+          correctedBranch
+        );
+      }
+    }
     writeCellValue(document, cells, `Z${row}`, roll);
     writeCellValue(document, cells, `AA${row}`, name);
 

@@ -2267,10 +2267,42 @@ const saveSetup = async () => {
 
   const handleDownloadExcel = async () => {
     try {
-      // Export must always reflect the marks currently visible in the OBE grid.
-      // Save the current draft first so a newly entered Mid/Final `A` (and any
-      // unsaved CLP/Attendance edits) cannot be replaced by older server values
-      // when the export payload is fetched.
+      // Take an immutable snapshot of exactly what is visible in the OBE grid
+      // BEFORE any await. The downloaded workbook is built from this snapshot,
+      // not from a second server read that could still contain older values.
+      const exportMarksSnapshot = markStudents.flatMap((student) =>
+        markBlueprints.map((blueprint) => {
+          const recordKey = `${student.studentId}__${blueprint._id}`;
+          const rowDraft = markDraft[recordKey] || {};
+          const statusToken = (blueprint.items || [])
+            .map((item) => String(rowDraft[item.key] ?? "").trim().toUpperCase())
+            .find((value) => ["A", "I"].includes(value));
+
+          return {
+            student: student.studentId,
+            studentId: student.studentId,
+            blueprint: blueprint._id,
+            blueprintId: blueprint._id,
+            status:
+              statusToken === "A"
+                ? "absent"
+                : statusToken === "I"
+                  ? "incomplete"
+                  : "present",
+            entries: (blueprint.items || []).map((item) => {
+              const raw = rowDraft[item.key];
+              const numeric = Number(raw);
+              return {
+                itemKey: item.key,
+                obtainedMarks: Number.isFinite(numeric) ? numeric : 0,
+              };
+            }),
+          };
+        })
+      );
+
+      // Persist the same visible state, but do not use the subsequent GET as
+      // the source of truth for question marks during this export.
       const saved = await saveMarks({ silent: true, reloadAfterSave: false });
       if (!saved) return;
 
@@ -2297,6 +2329,9 @@ const saveSetup = async () => {
 
       const normalizedPayload = {
         ...payload,
+        // Critical: use the UI snapshot so a just-entered A can never be lost
+        // during export even if the export-payload request returns stale marks.
+        marks: exportMarksSnapshot,
         blueprints: (payload.blueprints || []).map(normalizeBlueprintLabels),
       };
 
