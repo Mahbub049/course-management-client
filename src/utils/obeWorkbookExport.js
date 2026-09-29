@@ -1397,15 +1397,45 @@ const populateGradeSheet = (document, payload, layout, workbookData, courseOutco
   writeCellValue(document, cells, "B19", safeText(course.section, ""));
   writeCellValue(document, cells, "B20", course.shift ?? setup.shift ?? 0);
 
-  // Keep the official abbreviation sequence and wording exactly as supplied
-  // by the template. Only update the "Best (Max. 3)" value in column I.
   const abbreviationCounts = buildAbbreviationCounts(payload, layout);
-  Object.entries(ABBREVIATION_ROWS).forEach(([code, row]) => {
-    const count = abbreviationCounts[code] || 0;
-    writeCellValue(document, cells, `I${row}`, count > 0 ? count : "", {
-      preserveFormula: false,
+
+  if (String(layout?.courseType || "").toLowerCase().includes("lab")) {
+    // For lab courses, show only the assessments actually used by this
+    // marksheet and keep them together in the working sequence requested by
+    // faculty: CLP -> Mid -> Final -> Attendance. This avoids separating CLP
+    // and Attendance near the top while Mid/Final appear much farther below.
+    const abbreviationRows = Object.values(ABBREVIATION_ROWS).sort((a, b) => a - b);
+    abbreviationRows.forEach((row) => {
+      writeCellValue(document, cells, `E${row}`, "", { preserveFormula: false });
+      writeCellValue(document, cells, `F${row}`, "", { preserveFormula: false });
+      writeCellValue(document, cells, `I${row}`, "", { preserveFormula: false });
     });
-  });
+
+    const labSequence = [
+      { code: "CLP", name: "Continuous Lab Performance", countKey: "LAB" },
+      { code: "MT", name: "Mid Term", countKey: "MT" },
+      { code: "FE", name: "Final Exam", countKey: "FE" },
+      { code: "AT", name: "Attendance", countKey: "AT" },
+    ].filter((entry) => Number(abbreviationCounts[entry.countKey] || 0) > 0);
+
+    labSequence.forEach((entry, index) => {
+      const row = abbreviationRows[index];
+      if (!row) return;
+      writeCellValue(document, cells, `E${row}`, entry.code, { preserveFormula: false });
+      writeCellValue(document, cells, `F${row}`, entry.name, { preserveFormula: false });
+      writeCellValue(document, cells, `I${row}`, abbreviationCounts[entry.countKey], {
+        preserveFormula: false,
+      });
+    });
+  } else {
+    // Theory workbooks retain the official template abbreviation order.
+    Object.entries(ABBREVIATION_ROWS).forEach(([code, row]) => {
+      const count = abbreviationCounts[code] || 0;
+      writeCellValue(document, cells, `I${row}`, count > 0 ? count : "", {
+        preserveFormula: false,
+      });
+    });
+  }
 
   const groups = [
     ["ca", OBE_TEMPLATE_COLUMNS.ca],

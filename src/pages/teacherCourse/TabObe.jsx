@@ -2160,7 +2160,10 @@ const saveSetup = async () => {
     await Swal.fire({ icon: copied ? "success" : "info", title: copied ? "Marks fetched" : "Nothing fetched", text: `Updated ${copied} student-assessment entries.${skipped ? ` Skipped ${skipped} entries where question-wise source marks were unavailable.` : ""} Review and click Save OBE Marks.` });
   };
 
-  const saveMarks = async () => {
+  const saveMarks = async (options = {}) => {
+    const silent = Boolean(options?.silent);
+    const reloadAfterSave = options?.reloadAfterSave !== false;
+
     try {
       setMarkSaving(true);
 
@@ -2184,7 +2187,7 @@ const saveSetup = async () => {
           title: "Absent cannot be used in both exams",
           text: `${dualAbsentStudent.roll || dualAbsentStudent.name || "A student"} has Absent in both Mid and Final. Keep A in only one exam and enter 0 or numeric marks in the other.`,
         });
-        return;
+        return false;
       }
 
       const fractionalRows = markStudents.filter(
@@ -2198,7 +2201,7 @@ const saveSetup = async () => {
           title: "Fraction not allowed",
           text: `${firstStudent.roll || firstStudent.name || "A student"} has a fractional final total after all assessments are filled. Final total must be a whole number.`,
         });
-        return;
+        return false;
       }
 
       const records = [];
@@ -2249,11 +2252,14 @@ const saveSetup = async () => {
         await saveObeClpMarks(courseId, { records: continuousRecords });
       }
 
-      toast("success", "OBE marks saved successfully.");
-      await Promise.all([loadMarks(), loadOutput()]);
+      if (!silent) toast("success", "OBE marks saved successfully.");
+      if (reloadAfterSave) await Promise.all([loadMarks(), loadOutput()]);
+      return true;
     } catch (error) {
       console.error(error);
+      if (silent) throw error;
       toast("error", error?.response?.data?.message || "Failed to save OBE marks.");
+      return false;
     } finally {
       setMarkSaving(false);
     }
@@ -2261,6 +2267,13 @@ const saveSetup = async () => {
 
   const handleDownloadExcel = async () => {
     try {
+      // Export must always reflect the marks currently visible in the OBE grid.
+      // Save the current draft first so a newly entered Mid/Final `A` (and any
+      // unsaved CLP/Attendance edits) cannot be replaced by older server values
+      // when the export payload is fetched.
+      const saved = await saveMarks({ silent: true, reloadAfterSave: false });
+      if (!saved) return;
+
       const payload = await getObeExportPayload(courseId);
       const safePart = (value, fallback) =>
         String(value || fallback)
