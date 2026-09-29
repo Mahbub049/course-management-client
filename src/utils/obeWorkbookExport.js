@@ -1195,7 +1195,8 @@ const calculateWorkbookData = (payload, layout, courseOutcomes, programOutcomes)
   ];
   const gradeCounts = Object.fromEntries(summaryLabels.map((label) => [label, 0]));
   studentRows.forEach((row) => {
-    gradeCounts[row.gradeLabel] = (gradeCounts[row.gradeLabel] || 0) + 1;
+    const bucket = row.grade === "I" ? "I" : row.gradeLabel;
+    gradeCounts[bucket] = (gradeCounts[bucket] || 0) + 1;
   });
 
   return {
