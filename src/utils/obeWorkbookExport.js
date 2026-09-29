@@ -790,18 +790,27 @@ const getSlotMark = (markMap, continuousMarkMap, student, slot) => {
   }
 
   if (Array.isArray(slot?.sources) && slot.sources.length) {
-    return round2(
-      slot.sources.reduce(
-        (sum, source) =>
-          sum +
-          getBlueprintItemMark(
-            markMap,
-            student,
-            safeText(source.blueprintId, ""),
-            safeText(source.itemKey, "")
-          ),
-        0
+    // Preserve exam status tokens. Exam slots also contain a `sources` array,
+    // so summing them numerically used to coerce an Absent value ("A") to 0
+    // before the workbook was written. That is why the portal could show
+    // Incomplete while the exported Mid/Final question cells still contained 0.
+    const sourceValues = slot.sources.map((source) =>
+      getBlueprintItemMark(
+        markMap,
+        student,
+        safeText(source.blueprintId, ""),
+        safeText(source.itemKey, "")
       )
+    );
+
+    const statusToken = sourceValues
+      .map((value) => String(value ?? "").trim().toUpperCase())
+      .find((value) => ["A", "I"].includes(value));
+
+    if (statusToken) return statusToken;
+
+    return round2(
+      sourceValues.reduce((sum, value) => sum + numberValue(value), 0)
     );
   }
 
