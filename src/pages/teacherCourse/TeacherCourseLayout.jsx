@@ -11,6 +11,7 @@ export default function TeacherCourseLayout({
   const type = (course?.courseType || "theory").toLowerCase();
   const isProjectMode = course?.projectFeature?.mode === "project";
   const isSelfStudy = type === "self_study";
+  const isEveningCourse = String(course?.shift || "").trim().toLowerCase() === "evening";
   const isCourseFileEligible =
     String(course?.shift || "").toLowerCase() === "day" &&
     !String(course?.department || "").toUpperCase().includes("(DH)") &&
@@ -35,7 +36,9 @@ export default function TeacherCourseLayout({
       ? [{ id: "projects", label: "Projects", icon: <ProjectIcon /> }]
       : []),
     { id: "submissions", label: "Submissions", icon: <UploadIcon /> },
-    { id: "obe", label: "OBE / CO-PO", icon: <TargetIcon /> },
+    ...(!isEveningCourse
+      ? [{ id: "obe", label: "OBE / CO-PO", icon: <TargetIcon /> }]
+      : []),
     { id: "students", label: "Students", icon: <UsersIcon /> },
     ...(isSelfStudy ? [{ id: "bill", label: "Bill Generate", icon: <BillIcon /> }] : []),
     ...(isCourseFileEligible

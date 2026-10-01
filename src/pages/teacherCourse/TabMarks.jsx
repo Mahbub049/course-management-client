@@ -2177,6 +2177,7 @@ export default function TabMarks({ courseId, course }) {
   const [topScrollbarWidth, setTopScrollbarWidth] = useState(1400);
 
   const courseType = getCourseType(course);
+  const isEveningCourse = String(course?.shift || "").trim().toLowerCase() === "evening";
 
   useEffect(() => {
     const topEl = topScrollbarRef.current;
@@ -3122,6 +3123,8 @@ export default function TabMarks({ courseId, course }) {
 
 
   const handleFetchFromObe = async () => {
+    if (isEveningCourse) return;
+
     try {
       setSyncingObeMarks(true);
       setMarksError("");
@@ -4885,7 +4888,11 @@ export default function TabMarks({ courseId, course }) {
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div>
               <h4 className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">Marks Table</h4>
-              <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">Import a workbook, prepare missing assessment fields from OBE, or enter marks manually in the table below.</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                {isEveningCourse
+                  ? "Import a workbook or enter marks manually in the table below."
+                  : "Import a workbook, prepare missing assessment fields from OBE, or enter marks manually in the table below."}
+              </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -4926,7 +4933,7 @@ export default function TabMarks({ courseId, course }) {
                 {syncingAttendanceMarks ? "Fetching Attendance..." : "Fetch Attendance"}
               </button>
 
-              {["theory", "lab"].includes(courseType) && (
+              {!isEveningCourse && ["theory", "lab"].includes(courseType) && (
                 <button
                   type="button"
                   onClick={handleFetchFromObe}

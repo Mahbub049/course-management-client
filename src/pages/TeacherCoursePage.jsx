@@ -28,6 +28,11 @@ const BASE_TABS = [
   "settings",
 ];
 
+
+function isObeEligible(course) {
+  return String(course?.shift || "").trim().toLowerCase() !== "evening";
+}
+
 function isCourseFileEligible(course) {
   const shift = String(course?.shift || "").toLowerCase();
   const department = String(course?.department || "").toUpperCase();
@@ -40,7 +45,7 @@ function getSafeTab(tab, course) {
 
   const isSelfStudy = String(course?.courseType || "").toLowerCase() === "self_study";
   const allowedTabs = [
-    ...BASE_TABS,
+    ...BASE_TABS.filter((tab) => tab !== "obe" || isObeEligible(course)),
     ...(isProjectMode ? ["projects"] : []),
     ...(isSelfStudy ? ["bill"] : []),
     ...(isCourseFileEligible(course) ? ["course-file"] : []),
@@ -146,7 +151,7 @@ export default function TeacherCoursePage() {
 
       {activeTab === "materials" && <TabMaterials courseId={courseId} />}
 
-      {activeTab === "obe" && (
+      {activeTab === "obe" && isObeEligible(course) && (
         <TabObe courseId={courseId} course={course} onCourseUpdated={setCourse} />
       )}
 
