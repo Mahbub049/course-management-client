@@ -21,6 +21,7 @@ import GroupPresentationEditor from "../components/notebook/GroupPresentationEdi
 const TYPE_LABELS = {
   evaluation: "Evaluation Sheet",
   simple: "Simple Note",
+  checklist: "Checklist",
 };
 
 const DEFAULT_MCQ_FIELD = { id: "mcq_1", label: "Marking Category", options: ["High", "Medium", "Low"], entryMode: "group" };
@@ -185,6 +186,47 @@ const timeInput = () => {
   const d = new Date();
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 };
+const normalizeChecklistViewMode = (value) => ["serial", "date", "month"].includes(String(value || "").toLowerCase()) ? String(value).toLowerCase() : "serial";
+const normalizeChecklistItems = (items = []) => Array.isArray(items) ? items.map((item, index) => ({
+  id: String(item?.id || `item_${index + 1}`),
+  title: String(item?.title || "Checklist item"),
+  details: String(item?.details || ""),
+  date: String(item?.date || ""),
+  time: String(item?.time || ""),
+  completed: Boolean(item?.completed),
+  completedAt: item?.completedAt || null,
+  sortOrder: Number.isFinite(Number(item?.sortOrder)) ? Number(item.sortOrder) : index + 1,
+})) : [];
+const checklistItemId = () => `check_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const checklistSerialSort = (a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || String(a.title || "").localeCompare(String(b.title || ""));
+const checklistDateSort = (a, b) => {
+  const aHasDate = Boolean(a.date);
+  const bHasDate = Boolean(b.date);
+  if (aHasDate !== bHasDate) return aHasDate ? -1 : 1;
+  if (a.date !== b.date) return String(a.date || "").localeCompare(String(b.date || ""));
+  const aTime = a.time || "23:59";
+  const bTime = b.time || "23:59";
+  if (aTime !== bTime) return aTime.localeCompare(bTime);
+  return checklistSerialSort(a, b);
+};
+const formatChecklistDate = (value) => {
+  if (!value) return "No date";
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
+};
+const formatChecklistTime = (value) => {
+  if (!value) return "";
+  const [hours, minutes] = String(value).split(":").map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return value;
+  const date = new Date(2000, 0, 1, hours, minutes);
+  return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+};
+const checklistMonthKey = (item) => item?.date ? String(item.date).slice(0, 7) : "undated";
+const checklistMonthLabel = (key) => {
+  if (key === "undated") return "No Date";
+  const date = new Date(`${key}-01T00:00:00`);
+  return Number.isNaN(date.getTime()) ? key : date.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+};
 const getNoteId = (note) => note?._id || note?.id;
 const getCourseId = (course) => !course ? "" : typeof course === "string" ? course : String(course._id || course.id || "");
 const formatCourseLabel = (course) => {
@@ -194,7 +236,7 @@ const formatCourseLabel = (course) => {
 const semesterKey = (semester, year) => String(semester || "").trim() && String(year || "").trim() ? `${String(semester).trim()}::${String(year).trim()}` : "";
 const semesterLabelFromKey = (key) => String(key || "").split("::").filter(Boolean).join(" ");
 const getNoteSemesterKey = (note) => semesterKey(note?.courseScope === "all" ? note?.scopeSemester : note?.course?.semester, note?.courseScope === "all" ? note?.scopeYear : note?.course?.year);
-const formatNoteCourseLabel = (note) => note?.courseScope === "all" ? `All Courses${getNoteSemesterKey(note) ? ` - ${semesterLabelFromKey(getNoteSemesterKey(note))}` : ""}` : formatCourseLabel(note?.course);
+const formatNoteCourseLabel = (note) => note?.type === "checklist" ? "Independent checklist" : note?.courseScope === "all" ? `All Courses${getNoteSemesterKey(note) ? ` - ${semesterLabelFromKey(getNoteSemesterKey(note))}` : ""}` : formatCourseLabel(note?.course);
 const pickCurrentSemesterKey = (courses = []) => {
   const ranks = { spring: 1, summer: 2, fall: 3 };
   return [...new Set(courses.map((c) => semesterKey(c?.semester, c?.year)).filter(Boolean))].sort((a, b) => {
@@ -217,6 +259,8 @@ const buildSavePayload = (note) => ({
   courseScope: note?.courseScope || (note?.course ? "single" : undefined),
   scopeSemester: note?.scopeSemester || "",
   scopeYear: note?.scopeYear || "",
+  checklistViewMode: normalizeChecklistViewMode(note?.checklistViewMode),
+  checklistItems: normalizeChecklistItems(note?.checklistItems),
 });
 const serializeNote = (note) => JSON.stringify(buildSavePayload(note));
 
@@ -232,6 +276,7 @@ export default function TeacherNotebookPage() {
   const [semesterFilter, setSemesterFilter] = useState("");
   const [courseFilter, setCourseFilter] = useState("all");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showChecklistModal, setShowChecklistModal] = useState(false);
   const [saveStatus, setSaveStatus] = useState("Saved");
   const [refreshingStudents, setRefreshingStudents] = useState(false);
   const saveTimerRef = useRef(null);
@@ -363,9 +408,10 @@ export default function TeacherNotebookPage() {
       const type = note.type || "simple";
       const matchesType = typeFilter === "all" || type === typeFilter;
       const sem = getNoteSemesterKey(note);
-      const matchesSemester = semesterFilter === "all" || !semesterFilter || sem === semesterFilter;
+      const isChecklist = type === "checklist";
+      const matchesSemester = isChecklist || semesterFilter === "all" || !semesterFilter || sem === semesterFilter;
       const noteCourse = getCourseId(note.course || note.courseId);
-      const matchesCourse = courseFilter === "all" || noteCourse === courseFilter;
+      const matchesCourse = courseFilter === "all" ? true : !isChecklist && noteCourse === courseFilter;
       const haystack = `${note.title || ""} ${TYPE_LABELS[type] || type} ${formatNoteCourseLabel(note)} ${note.date || ""} ${normalizeSettings(note.settings).groupWise ? "group presentation" : ""}`.toLowerCase();
       return matchesType && matchesSemester && matchesCourse && (!term || haystack.includes(term));
     });
@@ -442,10 +488,13 @@ export default function TeacherNotebookPage() {
         <div className="relative flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-violet-200 bg-white/80 px-3 py-1 text-xs font-semibold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">Teacher Notebook</div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-950 dark:text-white sm:text-3xl">Notebook & Evaluation Sheets</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">Create student-wise evaluations, group presentation marksheets, and class notes. Export individual or group reports whenever needed.</p>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-950 dark:text-white sm:text-3xl">Notebook, Evaluation Sheets & Checklists</h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">Keep course evaluations and notes together, while personal checklists stay independent from courses and semesters.</p>
           </div>
-          <button type="button" onClick={() => setShowCreateModal(true)} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-violet-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-violet-600/20 transition hover:bg-violet-700">+ Create Note</button>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => setShowChecklistModal(true)} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-violet-200 bg-white px-4 py-3 text-sm font-bold text-violet-700 shadow-sm transition hover:border-violet-300 hover:bg-violet-50 dark:border-violet-500/30 dark:bg-slate-950 dark:text-violet-300">✓ Create Checklist</button>
+            <button type="button" onClick={() => setShowCreateModal(true)} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-violet-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-violet-600/20 transition hover:bg-violet-700">+ Create Note</button>
+          </div>
         </div>
       </section>
 
@@ -455,13 +504,13 @@ export default function TeacherNotebookPage() {
         <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
           <div className="border-b border-slate-200 p-4 dark:border-slate-800 sm:p-5">
             <div className="grid gap-3 lg:grid-cols-[1fr_180px_190px_260px]">
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search title, course, group presentation..." className="input-soft" />
-              <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="input-soft"><option value="all">All Templates</option><option value="evaluation">Evaluation</option><option value="simple">Simple Notes</option></select>
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search title, course, checklist..." className="input-soft" />
+              <select value={typeFilter} onChange={(e) => { const value = e.target.value; setTypeFilter(value); if (value === "checklist") { setCourseFilter("all"); } }} className="input-soft"><option value="all">All Templates</option><option value="evaluation">Evaluation</option><option value="simple">Simple Notes</option><option value="checklist">Checklists</option></select>
               <select value={semesterFilter || "all"} onChange={(e) => setSemesterFilter(e.target.value)} className="input-soft"><option value="all">All Semesters</option>{semesterOptions.map((key) => <option key={key} value={key}>{semesterLabelFromKey(key)}</option>)}</select>
               <select value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)} className="input-soft"><option value="all">All Courses</option>{courseOptions.map((course) => <option key={getCourseId(course)} value={getCourseId(course)}>{formatCourseLabel(course)}</option>)}</select>
             </div>
           </div>
-          {loading ? <div className="p-10 text-center text-sm text-slate-500">Loading notebook...</div> : error ? <div className="p-10 text-center text-red-600">{error}</div> : filteredNotes.length === 0 ? <EmptyNotebook onCreate={() => setShowCreateModal(true)} /> : (
+          {loading ? <div className="p-10 text-center text-sm text-slate-500">Loading notebook...</div> : error ? <div className="p-10 text-center text-red-600">{error}</div> : filteredNotes.length === 0 ? <EmptyNotebook onCreate={() => setShowCreateModal(true)} onCreateChecklist={() => setShowChecklistModal(true)} /> : (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
                 <thead className="bg-slate-50 dark:bg-slate-900/70"><tr className="text-left text-[11px] uppercase tracking-wide text-slate-500"><th className="px-4 py-3">Title</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Course</th><th className="px-4 py-3">Date</th><th className="px-4 py-3 text-right">Actions</th></tr></thead>
@@ -473,6 +522,7 @@ export default function TeacherNotebookPage() {
       )}
 
       {showCreateModal && <CreateNotebookModal courses={courses} onClose={() => setShowCreateModal(false)} onCreate={handleCreate} />}
+      {showChecklistModal && <CreateChecklistModal onClose={() => setShowChecklistModal(false)} onCreate={async (payload) => { await handleCreate(payload); setShowChecklistModal(false); }} />}
     </div>
   );
 }
@@ -482,8 +532,67 @@ function NoteRow({ note, openingId, onOpen, onDelete }) {
   return <tr onClick={onOpen} className="cursor-pointer text-sm transition hover:bg-slate-50 dark:hover:bg-slate-900/60"><td className="px-4 py-4"><div className="font-semibold text-slate-900 dark:text-white">{note.title || "Untitled"}</div><div className="mt-1 text-xs text-slate-500">{note.time || "--:--"}</div></td><td className="px-4 py-4"><TypeBadge type={note.type} groupWise={isGroup} /></td><td className="px-4 py-4 text-slate-600 dark:text-slate-300">{formatNoteCourseLabel(note)}</td><td className="px-4 py-4 text-slate-600 dark:text-slate-300">{note.date || "-"}</td><td className="px-4 py-4"><div className="flex justify-end gap-2"><button type="button" onClick={(e) => { e.stopPropagation(); onOpen(); }} className="rounded-xl border border-violet-200 px-3 py-2 text-xs font-bold text-violet-700 dark:border-violet-500/30 dark:text-violet-300">{openingId === getNoteId(note) ? "Opening..." : "Open"}</button><button type="button" onClick={(e) => { e.stopPropagation(); onDelete(); }} className="rounded-xl border border-red-200 px-3 py-2 text-xs font-bold text-red-600 dark:border-red-500/30 dark:text-red-300">Delete</button></div></td></tr>;
 }
 
-function EmptyNotebook({ onCreate }) {
-  return <div className="p-10 text-center"><h3 className="text-lg font-black text-slate-950 dark:text-white">No notes yet</h3><p className="mx-auto mt-2 max-w-md text-sm text-slate-500">Create an evaluation sheet, group presentation sheet, or simple note.</p><button type="button" onClick={onCreate} className="mt-5 rounded-2xl bg-violet-600 px-4 py-3 text-sm font-bold text-white">Create First Note</button></div>;
+function EmptyNotebook({ onCreate, onCreateChecklist }) {
+  return <div className="p-10 text-center"><h3 className="text-lg font-black text-slate-950 dark:text-white">Nothing here yet</h3><p className="mx-auto mt-2 max-w-md text-sm text-slate-500">Create a course note or start an independent checklist for your own tasks.</p><div className="mt-5 flex flex-wrap justify-center gap-2"><button type="button" onClick={onCreateChecklist} className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-bold text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300">✓ Create Checklist</button><button type="button" onClick={onCreate} className="rounded-2xl bg-violet-600 px-4 py-3 text-sm font-bold text-white">Create Note</button></div></div>;
+}
+
+function CreateChecklistModal({ onClose, onCreate }) {
+  const [title, setTitle] = useState("My Checklist");
+  const [viewMode, setViewMode] = useState("serial");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setError("");
+    if (!title.trim()) {
+      setError("Please give the checklist a name.");
+      return;
+    }
+    try {
+      setCreating(true);
+      await onCreate({
+        type: "checklist",
+        title: title.trim(),
+        date: todayInput(),
+        time: timeInput(),
+        checklistViewMode: viewMode,
+        checklistItems: [],
+      });
+    } catch (err) {
+      setError(err?.response?.data?.message || "Failed to create checklist.");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+        <div className="flex items-center justify-between border-b border-slate-200 p-5 dark:border-slate-800">
+          <div>
+            <div className="mb-2 inline-flex rounded-full bg-violet-50 px-3 py-1 text-[11px] font-black uppercase tracking-wide text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">Independent from courses</div>
+            <h2 className="text-lg font-black text-slate-950 dark:text-white">Create Checklist</h2>
+            <p className="mt-1 text-xs text-slate-500">Organize tasks by serial, date, or month. You can change the view later.</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-2xl border border-slate-200 px-3 py-2 text-sm font-black dark:border-slate-800">Close</button>
+        </div>
+        <form onSubmit={submit} className="space-y-5 p-5">
+          <Field label="Checklist Name"><input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} className="input-soft" placeholder="e.g. October Tasks" /></Field>
+          <div>
+            <div className="mb-2 text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Default View</div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <ChecklistViewButton active={viewMode === "serial"} title="Serial" subtitle="Keep your original order" onClick={() => setViewMode("serial")} />
+              <ChecklistViewButton active={viewMode === "date"} title="Date-wise" subtitle="Sort by date and time" onClick={() => setViewMode("date")} />
+              <ChecklistViewButton active={viewMode === "month"} title="Month-wise" subtitle="Group tasks by month" onClick={() => setViewMode("month")} />
+            </div>
+          </div>
+          {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">{error}</div>}
+          <div className="flex justify-end gap-3"><button type="button" onClick={onClose} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-black dark:border-slate-800">Cancel</button><button type="submit" disabled={creating} className="rounded-2xl bg-violet-600 px-5 py-3 text-sm font-black text-white disabled:opacity-60">{creating ? "Creating..." : "Create & Open"}</button></div>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 function CreateNotebookModal({ courses, onClose, onCreate }) {
@@ -628,29 +737,237 @@ function NotebookEditor({ note, courses, saveStatus, onBack, onChange, onDelete,
   const type = note.type || "simple";
   const settings = normalizeSettings(note.settings || {});
   const groupWise = type === "evaluation" && settings.groupWise;
+  const isChecklist = type === "checklist";
   const selectedCourse = note.course || courses.find((c) => getCourseId(c) === getCourseId(note.courseId || note.course));
+  const checklistItems = normalizeChecklistItems(note.checklistItems);
   return (
     <section className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
       <div className="border-b border-slate-200 p-4 dark:border-slate-800 sm:p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="min-w-0 flex-1"><button type="button" onClick={onBack} className="mb-3 rounded-2xl border border-slate-200 px-3 py-2 text-xs font-black dark:border-slate-800">← Back to list</button><div className="flex flex-wrap gap-2"><TypeBadge type={type} groupWise={groupWise} /><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600 dark:bg-slate-900 dark:text-slate-300">{saveStatus}</span></div><input value={note.title || ""} onChange={(e) => onChange({ title: e.target.value })} className="mt-3 w-full rounded-2xl border border-transparent bg-transparent text-2xl font-semibold tracking-tight text-slate-950 outline-none focus:border-violet-300 focus:px-3 dark:text-white sm:text-3xl" /><p className="mt-1 text-sm text-slate-500">{note.courseScope === "all" ? formatNoteCourseLabel(note) : formatCourseLabel(selectedCourse)}</p></div>
-          <div className="space-y-2"><div className="flex gap-2"><input type="date" value={note.date || todayInput()} onChange={(e) => onChange({ date: e.target.value })} className="input-soft w-40" /><input type="time" value={note.time || timeInput()} onChange={(e) => onChange({ time: e.target.value })} className="input-soft w-32" /></div><div className="flex flex-wrap justify-end gap-2">{type === "evaluation" && <button type="button" onClick={onRefreshStudents} disabled={refreshingStudents} className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-black text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">{refreshingStudents ? "Refreshing..." : groupWise ? "Refresh Member List" : "Refresh Students"}</button>}{type === "evaluation" && !groupWise && <><button type="button" onClick={() => exportEvaluationExcel(note)} className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">Excel</button><button type="button" onClick={() => exportEvaluationPdf(note)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-black text-rose-700 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">PDF</button><button type="button" onClick={() => printEvaluationPdf(note)} className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-black text-violet-700 hover:bg-violet-100 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300">Print</button></>}{type === "simple" && <button type="button" onClick={() => exportSimplePdf(note)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-black text-rose-700 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">Export PDF</button>}<button type="button" onClick={onDelete} className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-black text-red-700 hover:bg-red-100 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">Delete</button></div></div>
+          <div className="min-w-0 flex-1">
+            <button type="button" onClick={onBack} className="mb-3 rounded-2xl border border-slate-200 px-3 py-2 text-xs font-black dark:border-slate-800">← Back to list</button>
+            <div className="flex flex-wrap gap-2"><TypeBadge type={type} groupWise={groupWise} /><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600 dark:bg-slate-900 dark:text-slate-300">{saveStatus}</span></div>
+            <input value={note.title || ""} onChange={(e) => onChange({ title: e.target.value })} className="mt-3 w-full rounded-2xl border border-transparent bg-transparent text-2xl font-semibold tracking-tight text-slate-950 outline-none focus:border-violet-300 focus:px-3 dark:text-white sm:text-3xl" />
+            <p className="mt-1 text-sm text-slate-500">{isChecklist ? `${checklistItems.length} item${checklistItems.length === 1 ? "" : "s"} • Independent from courses` : note.courseScope === "all" ? formatNoteCourseLabel(note) : formatCourseLabel(selectedCourse)}</p>
+          </div>
+          <div className="space-y-2">
+            {!isChecklist && <div className="flex gap-2"><input type="date" value={note.date || todayInput()} onChange={(e) => onChange({ date: e.target.value })} className="input-soft w-40" /><input type="time" value={note.time || timeInput()} onChange={(e) => onChange({ time: e.target.value })} className="input-soft w-32" /></div>}
+            <div className="flex flex-wrap justify-end gap-2">
+              {type === "evaluation" && <button type="button" onClick={onRefreshStudents} disabled={refreshingStudents} className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-black text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">{refreshingStudents ? "Refreshing..." : groupWise ? "Refresh Member List" : "Refresh Students"}</button>}
+              {type === "evaluation" && !groupWise && <><button type="button" onClick={() => exportEvaluationExcel(note)} className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">Excel</button><button type="button" onClick={() => exportEvaluationPdf(note)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-black text-rose-700 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">PDF</button><button type="button" onClick={() => printEvaluationPdf(note)} className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-black text-violet-700 hover:bg-violet-100 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300">Print</button></>}
+              {type === "simple" && <button type="button" onClick={() => exportSimplePdf(note)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-black text-rose-700 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">Export PDF</button>}
+              <button type="button" onClick={onDelete} className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-black text-red-700 hover:bg-red-100 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">Delete</button>
+            </div>
+          </div>
         </div>
       </div>
       {type === "evaluation" ? (
         groupWise ? (
-          <GroupPresentationEditor
-            note={note}
-            onChange={onChange}
-            marksSyncPanel={<NotebookMarksSyncPanel note={note} embedded />}
-          />
+          <GroupPresentationEditor note={note} onChange={onChange} marksSyncPanel={<NotebookMarksSyncPanel note={note} embedded />} />
         ) : (
           <EvaluationEditor note={note} onChange={onChange} />
         )
+      ) : type === "checklist" ? (
+        <ChecklistEditor note={note} onChange={onChange} />
       ) : (
         <SimpleNoteEditor note={note} onChange={onChange} />
       )}
     </section>
+  );
+}
+
+function ChecklistEditor({ note, onChange }) {
+  const items = normalizeChecklistItems(note.checklistItems);
+  const viewMode = normalizeChecklistViewMode(note.checklistViewMode);
+  const [draft, setDraft] = useState({ title: "", details: "", date: "", time: "" });
+  const [editingId, setEditingId] = useState("");
+  const [editDraft, setEditDraft] = useState({ title: "", details: "", date: "", time: "" });
+
+  const completedCount = items.filter((item) => item.completed).length;
+  const remainingCount = items.length - completedCount;
+  const progress = items.length ? Math.round((completedCount / items.length) * 100) : 0;
+
+  const activeItems = items
+    .filter((item) => !item.completed)
+    .sort(viewMode === "serial" ? checklistSerialSort : checklistDateSort);
+  const completedItems = items
+    .filter((item) => item.completed)
+    .sort(viewMode === "serial" ? checklistSerialSort : checklistDateSort);
+
+  const updateItems = (nextItems) => onChange({ checklistItems: nextItems });
+
+  const addItem = (event) => {
+    event.preventDefault();
+    const title = draft.title.trim();
+    if (!title) return;
+    const nextOrder = items.reduce((max, item) => Math.max(max, Number(item.sortOrder) || 0), 0) + 1;
+    updateItems([...items, {
+      id: checklistItemId(),
+      title,
+      details: draft.details.trim(),
+      date: draft.date,
+      time: draft.time,
+      completed: false,
+      completedAt: null,
+      sortOrder: nextOrder,
+    }]);
+    setDraft({ title: "", details: "", date: "", time: "" });
+  };
+
+  const toggleItem = (itemId) => {
+    updateItems(items.map((item) => item.id === itemId ? {
+      ...item,
+      completed: !item.completed,
+      completedAt: !item.completed ? new Date().toISOString() : null,
+    } : item));
+  };
+
+  const deleteItem = async (item) => {
+    const result = await Swal.fire({
+      title: "Delete checklist item?",
+      text: item.title,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Delete",
+      confirmButtonColor: "#dc2626",
+    });
+    if (result.isConfirmed) updateItems(items.filter((entry) => entry.id !== item.id));
+  };
+
+  const startEdit = (item) => {
+    setEditingId(item.id);
+    setEditDraft({ title: item.title || "", details: item.details || "", date: item.date || "", time: item.time || "" });
+  };
+
+  const saveEdit = (itemId) => {
+    if (!editDraft.title.trim()) return;
+    updateItems(items.map((item) => item.id === itemId ? { ...item, ...editDraft, title: editDraft.title.trim(), details: editDraft.details.trim() } : item));
+    setEditingId("");
+  };
+
+  const moveItem = (itemId, direction) => {
+    const ordered = items.filter((item) => !item.completed).sort(checklistSerialSort);
+    const index = ordered.findIndex((item) => item.id === itemId);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= ordered.length) return;
+    const currentOrder = ordered[index].sortOrder;
+    const targetOrder = ordered[target].sortOrder;
+    updateItems(items.map((item) => item.id === ordered[index].id ? { ...item, sortOrder: targetOrder } : item.id === ordered[target].id ? { ...item, sortOrder: currentOrder } : item));
+  };
+
+  const renderItem = (item) => (
+    <ChecklistItemCard
+      key={item.id}
+      item={item}
+      editing={editingId === item.id}
+      editDraft={editDraft}
+      setEditDraft={setEditDraft}
+      onToggle={() => toggleItem(item.id)}
+      onEdit={() => startEdit(item)}
+      onSave={() => saveEdit(item.id)}
+      onCancel={() => setEditingId("")}
+      onDelete={() => deleteItem(item)}
+      onMoveUp={() => moveItem(item.id, -1)}
+      onMoveDown={() => moveItem(item.id, 1)}
+      showMove={viewMode === "serial" && !item.completed}
+    />
+  );
+
+  const monthGroups = activeItems.reduce((groups, item) => {
+    const key = checklistMonthKey(item);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(item);
+    return groups;
+  }, {});
+  const monthKeys = Object.keys(monthGroups).sort((a, b) => {
+    if (a === "undated") return 1;
+    if (b === "undated") return -1;
+    return a.localeCompare(b);
+  });
+
+  return (
+    <div className="space-y-5 p-4 sm:p-5">
+      <div className="overflow-hidden rounded-3xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-slate-50 p-4 dark:border-violet-500/20 dark:from-violet-500/10 dark:via-slate-950 dark:to-slate-900 sm:p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="text-xs font-black uppercase tracking-[0.14em] text-violet-700 dark:text-violet-300">Checklist Progress</div>
+            <div className="mt-1 flex items-end gap-2"><span className="text-3xl font-black text-slate-950 dark:text-white">{progress}%</span><span className="pb-1 text-sm font-semibold text-slate-500">complete</span></div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 sm:min-w-[360px]">
+            <ChecklistStat label="Total" value={items.length} />
+            <ChecklistStat label="Remaining" value={remainingCount} />
+            <ChecklistStat label="Checked" value={completedCount} />
+          </div>
+        </div>
+        <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-slate-200/80 dark:bg-slate-800"><div className="h-full rounded-full bg-violet-600 transition-all duration-300" style={{ width: `${progress}%` }} /></div>
+      </div>
+
+      <form onSubmit={addItem} className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+        <div className="flex items-center justify-between gap-3"><div><h3 className="text-sm font-black text-slate-950 dark:text-white">Add Checklist Item</h3><p className="mt-1 text-xs text-slate-500">Date is optional. Add time only when the task has a specific time.</p></div><span className="rounded-full bg-white px-3 py-1 text-[11px] font-black text-slate-500 shadow-sm dark:bg-slate-950">Next #{items.reduce((max, item) => Math.max(max, Number(item.sortOrder) || 0), 0) + 1}</span></div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_160px_135px_auto]">
+          <input value={draft.title} onChange={(event) => setDraft((prev) => ({ ...prev, title: event.target.value }))} className="input-soft" placeholder="What needs to be done?" />
+          <input type="date" value={draft.date} onChange={(event) => setDraft((prev) => ({ ...prev, date: event.target.value }))} className="input-soft" />
+          <input type="time" value={draft.time} onChange={(event) => setDraft((prev) => ({ ...prev, time: event.target.value }))} className="input-soft" />
+          <button type="submit" disabled={!draft.title.trim()} className="rounded-2xl bg-violet-600 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40">+ Add Item</button>
+        </div>
+        <textarea value={draft.details} onChange={(event) => setDraft((prev) => ({ ...prev, details: event.target.value }))} rows={2} className="input-soft mt-3 resize-y" placeholder="Optional note / details..." />
+      </form>
+
+      <div className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between">
+        <div><div className="text-xs font-black uppercase tracking-wide text-slate-500">View</div><p className="mt-0.5 text-xs text-slate-400">Checked items always move to the completed area below.</p></div>
+        <div className="grid grid-cols-3 gap-2">
+          <ChecklistViewButton compact active={viewMode === "serial"} title="Serial" onClick={() => onChange({ checklistViewMode: "serial" })} />
+          <ChecklistViewButton compact active={viewMode === "date"} title="Date-wise" onClick={() => onChange({ checklistViewMode: "date" })} />
+          <ChecklistViewButton compact active={viewMode === "month"} title="Month-wise" onClick={() => onChange({ checklistViewMode: "month" })} />
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        {activeItems.length === 0 ? (
+          <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center dark:border-slate-700 dark:bg-slate-900/50"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-xl font-black text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">✓</div><h3 className="mt-3 font-black text-slate-900 dark:text-white">{items.length ? "Everything is checked" : "Your checklist is empty"}</h3><p className="mt-1 text-sm text-slate-500">{items.length ? "Uncheck an item below if you need to return it to the active list." : "Add your first item above."}</p></div>
+        ) : viewMode === "month" ? (
+          monthKeys.map((key) => <div key={key} className="space-y-2"><div className="flex items-center gap-3 px-1"><span className="text-sm font-black text-slate-800 dark:text-slate-100">{checklistMonthLabel(key)}</span><span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" /><span className="text-xs font-bold text-slate-400">{monthGroups[key].length}</span></div>{monthGroups[key].map(renderItem)}</div>)
+        ) : activeItems.map(renderItem)}
+      </div>
+
+      {completedItems.length > 0 && (
+        <div className="rounded-3xl border border-emerald-200 bg-emerald-50/50 p-4 dark:border-emerald-500/20 dark:bg-emerald-500/5 sm:p-5">
+          <div className="mb-3 flex items-center justify-between"><div><h3 className="text-sm font-black text-emerald-900 dark:text-emerald-200">Checked Items</h3><p className="mt-1 text-xs text-emerald-700/70 dark:text-emerald-300/70">Uncheck any item to return it to its original serial/date position.</p></div><span className="rounded-full bg-white px-3 py-1 text-xs font-black text-emerald-700 shadow-sm dark:bg-slate-950 dark:text-emerald-300">{completedItems.length}</span></div>
+          <div className="space-y-2">{completedItems.map(renderItem)}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChecklistStat({ label, value }) {
+  return <div className="rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-center shadow-sm dark:border-slate-800 dark:bg-slate-950/70"><div className="text-lg font-black text-slate-950 dark:text-white">{value}</div><div className="text-[10px] font-black uppercase tracking-wide text-slate-400">{label}</div></div>;
+}
+
+function ChecklistItemCard({ item, editing, editDraft, setEditDraft, onToggle, onEdit, onSave, onCancel, onDelete, onMoveUp, onMoveDown, showMove }) {
+  const dateLabel = item.date ? formatChecklistDate(item.date) : "";
+  const timeLabel = item.time ? formatChecklistTime(item.time) : "";
+  return (
+    <div className={`group rounded-3xl border p-3 transition-all sm:p-4 ${item.completed ? "border-emerald-200 bg-white/80 dark:border-emerald-500/20 dark:bg-slate-950/70" : "border-slate-200 bg-white shadow-sm hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800 dark:bg-slate-950"}`}>
+      {editing ? (
+        <div className="space-y-3 pl-0 sm:pl-12">
+          <input value={editDraft.title} onChange={(event) => setEditDraft((prev) => ({ ...prev, title: event.target.value }))} className="input-soft" placeholder="Checklist item" />
+          <textarea value={editDraft.details} onChange={(event) => setEditDraft((prev) => ({ ...prev, details: event.target.value }))} rows={2} className="input-soft resize-y" placeholder="Optional note / details..." />
+          <div className="grid gap-2 sm:grid-cols-[160px_135px_1fr]"><input type="date" value={editDraft.date} onChange={(event) => setEditDraft((prev) => ({ ...prev, date: event.target.value }))} className="input-soft" /><input type="time" value={editDraft.time} onChange={(event) => setEditDraft((prev) => ({ ...prev, time: event.target.value }))} className="input-soft" /><div className="flex justify-end gap-2"><button type="button" onClick={onCancel} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-black dark:border-slate-700">Cancel</button><button type="button" onClick={onSave} disabled={!editDraft.title.trim()} className="rounded-xl bg-violet-600 px-3 py-2 text-xs font-black text-white disabled:opacity-40">Save</button></div></div>
+        </div>
+      ) : (
+        <div className="flex gap-3">
+          <button type="button" onClick={onToggle} aria-label={item.completed ? "Uncheck item" : "Check item"} className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-sm font-black transition ${item.completed ? "border-emerald-500 bg-emerald-500 text-white shadow-sm shadow-emerald-500/20" : "border-slate-300 bg-white text-transparent hover:border-violet-400 dark:border-slate-700 dark:bg-slate-900"}`}>✓</button>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-500 dark:bg-slate-900 dark:text-slate-400">#{item.sortOrder}</span><h4 className={`min-w-0 break-words font-bold text-slate-900 dark:text-white ${item.completed ? "text-slate-400 line-through dark:text-slate-500" : ""}`}>{item.title}</h4>{item.completed && <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">Checked</span>}</div>{item.details && <p className={`mt-1.5 whitespace-pre-wrap text-sm leading-6 ${item.completed ? "text-slate-400 line-through" : "text-slate-500 dark:text-slate-400"}`}>{item.details}</p>}</div>
+              <div className="flex shrink-0 flex-wrap items-center gap-1.5">{showMove && <><button type="button" onClick={onMoveUp} className="rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs font-black text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900" title="Move up">↑</button><button type="button" onClick={onMoveDown} className="rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs font-black text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900" title="Move down">↓</button></>}<button type="button" onClick={onEdit} className="rounded-xl border border-violet-200 px-3 py-1.5 text-xs font-black text-violet-700 hover:bg-violet-50 dark:border-violet-500/30 dark:text-violet-300 dark:hover:bg-violet-500/10">Edit</button><button type="button" onClick={onDelete} className="rounded-xl border border-red-200 px-3 py-1.5 text-xs font-black text-red-600 hover:bg-red-50 dark:border-red-500/30 dark:text-red-300 dark:hover:bg-red-500/10">Delete</button></div>
+            </div>
+            {(dateLabel || timeLabel) && <div className="mt-3 flex flex-wrap gap-2"><span className="rounded-xl bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-600 dark:bg-slate-900 dark:text-slate-300">{dateLabel || "No date"}{timeLabel ? ` • ${timeLabel}` : ""}</span></div>}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1047,6 +1364,7 @@ function printEvaluationPdf(note) { const doc = createEvaluationPdf(note); const
 function exportSimplePdf(note) { const doc = new jsPDF({ unit: "pt", format: "a4" }); const width = doc.internal.pageSize.getWidth(); doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.text(note.title || "Simple Note", 40, 45); doc.setFont("helvetica", "normal"); doc.setFontSize(10); const lines = doc.splitTextToSize(stripHtml(note.content || ""), width - 80); doc.text(lines, 40, 75); doc.save(`${safeFileName(note.title)}.pdf`); }
 
 function TemplateButton({ active, title, subtitle, onClick }) { return <button type="button" onClick={onClick} className={`rounded-3xl border p-4 text-left transition ${active ? "border-violet-400 bg-violet-50 text-violet-950 dark:border-violet-500 dark:bg-violet-500/10 dark:text-violet-100" : "border-slate-200 bg-white hover:border-violet-200 dark:border-slate-800 dark:bg-slate-900"}`}><div className="font-black">{title}</div><div className="mt-1 text-xs opacity-70">{subtitle}</div></button>; }
+function ChecklistViewButton({ active, title, subtitle, onClick, compact = false }) { return <button type="button" onClick={onClick} className={`${compact ? "rounded-xl px-3 py-2" : "rounded-2xl p-3"} border text-left transition ${active ? "border-violet-400 bg-violet-50 text-violet-950 shadow-sm dark:border-violet-500 dark:bg-violet-500/10 dark:text-violet-100" : "border-slate-200 bg-white text-slate-700 hover:border-violet-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"}`}><div className={`${compact ? "text-xs" : "text-sm"} font-black`}>{title}</div>{subtitle && !compact && <div className="mt-1 text-[11px] opacity-65">{subtitle}</div>}</button>; }
 function Field({ label, children }) { return <label className="block"><span className="mb-2 block text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</span>{children}</label>; }
 function Check({ checked, label, onChange }) { return <label className="flex cursor-pointer items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold dark:border-slate-800 dark:bg-slate-950"><input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="h-4 w-4 accent-violet-600" />{label}</label>; }
-function TypeBadge({ type, groupWise = false }) { const label = groupWise ? "Group Presentation" : TYPE_LABELS[type] || "Simple Note"; const cls = type === "evaluation" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" : "bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300"; return <span className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold ${cls}`}>{label}</span>; }
+function TypeBadge({ type, groupWise = false }) { const label = groupWise ? "Group Presentation" : TYPE_LABELS[type] || "Simple Note"; const cls = type === "evaluation" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" : type === "checklist" ? "bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300" : "bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300"; return <span className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold ${cls}`}>{label}</span>; }
