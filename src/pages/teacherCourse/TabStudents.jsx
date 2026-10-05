@@ -193,10 +193,22 @@ export default function TabStudents({ courseId }) {
   const handleStudentFormChange = (e) => {
     const { name, value } = e.target;
     setStudentForm((prev) => ({ ...prev, [name]: value }));
+    if (name === "roll") {
+      setStudentError("");
+      setLastAddedInfo(null);
+    }
   };
 
   const handleAddStudent = async (e) => {
     e.preventDefault();
+
+    if (singleStudentAlreadyEnrolled) {
+      setStudentError(
+        `Roll ${cleanCell(studentForm.roll)} is already enrolled in this course. Remove the student first before adding again.`
+      );
+      return;
+    }
+
     setAddingStudent(true);
     setStudentError("");
     setLastAddedInfo(null);
@@ -245,7 +257,33 @@ export default function TabStudents({ courseId }) {
     }
   };
 
+  const enrolledRollSet = useMemo(
+    () => new Set(students.map((student) => cleanCell(student?.roll)).filter(Boolean)),
+    [students]
+  );
+
+  const singleStudentAlreadyEnrolled = useMemo(() => {
+    const roll = cleanCell(studentForm.roll);
+    if (!roll) return null;
+    return students.find((student) => cleanCell(student?.roll) === roll) || null;
+  }, [students, studentForm.roll]);
+
   const bulkPreview = useMemo(() => parseBulkStudentText(bulkText), [bulkText]);
+
+  const bulkAvailability = useMemo(() => {
+    const available = [];
+    const alreadyEnrolled = [];
+
+    bulkPreview.students.forEach((student) => {
+      if (enrolledRollSet.has(cleanCell(student.roll))) {
+        alreadyEnrolled.push(student);
+      } else {
+        available.push(student);
+      }
+    });
+
+    return { available, alreadyEnrolled };
+  }, [bulkPreview, enrolledRollSet]);
 
   const copySemesterOptions = useMemo(() => {
     return [...new Set(copyCourses.map(semesterLabel).filter(Boolean))].sort(
@@ -378,9 +416,14 @@ export default function TabStudents({ courseId }) {
     setBulkError("");
     setBulkResult(null);
 
-    const parsed = bulkPreview.students;
-    if (parsed.length === 0) {
+    if (bulkPreview.students.length === 0) {
       setBulkError("No valid student rows were detected. Paste rows containing a student roll and name.");
+      return;
+    }
+
+    const parsed = bulkAvailability.available;
+    if (parsed.length === 0) {
+      // Nothing is sent to the server when every detected student is already in this course.
       return;
     }
 
@@ -395,7 +438,8 @@ export default function TabStudents({ courseId }) {
 
       const created = results.filter((item) => item.status === "created").length;
       const enrolled = results.filter((item) => item.status === "existing").length;
-      const already = results.filter((item) => item.status === "already_enrolled").length;
+      const serverAlready = results.filter((item) => item.status === "already_enrolled").length;
+      const already = bulkAvailability.alreadyEnrolled.length + serverAlready;
       const failed = results.filter((item) => item.status === "error").length;
 
       await Swal.fire({
@@ -405,7 +449,7 @@ export default function TabStudents({ courseId }) {
           <div style="text-align:left">
             <p>New accounts created: <b>${created}</b></p>
             <p>Existing accounts enrolled: <b>${enrolled}</b></p>
-            <p>Already enrolled: <b>${already}</b></p>
+            <p>Already in this course (not added again): <b>${already}</b></p>
             ${bulkPreview.duplicateRolls.length ? `<p>Duplicate pasted rolls ignored: <b>${bulkPreview.duplicateRolls.length}</b></p>` : ""}
             ${bulkPreview.invalidLines.length ? `<p>Unreadable pasted rows ignored: <b>${bulkPreview.invalidLines.length}</b></p>` : ""}
             ${failed ? `<p>Rows failed on server: <b>${failed}</b></p>` : ""}
@@ -848,17 +892,32 @@ export default function TabStudents({ courseId }) {
             />
 
             {bulkText.trim() && (
-              <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                <PreviewChip tone="success" label="Detected" value={bulkPreview.students.length} />
-                {bulkPreview.duplicateRolls.length > 0 && (
-                  <PreviewChip tone="warning" label="Duplicate rolls ignored" value={bulkPreview.duplicateRolls.length} />
-                )}
-                {bulkPreview.invalidLines.length > 0 && (
-                  <PreviewChip tone="danger" label="Unreadable rows" value={bulkPreview.invalidLines.length} />
-                )}
-                <span className="self-center text-slate-500 dark:text-slate-400">
-                  Columns such as Regular/Retake are ignored automatically.
-                </span>
+              <div className="mt-3 space-y-2 text-xs">
+                {bulkPreview.students.length > 0 &&
+                  (bulkAvailability.available.length === 0 ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 font-medium text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
+                      All {bulkPreview.students.length} detected student{bulkPreview.students.length === 1 ? "" : "s"} already {bulkPreview.students.length === 1 ? "exists" : "exist"} in this course. Remove the student first if you need to add again.
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 font-medium text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200">
+                      {bulkAvailability.available.length} student{bulkAvailability.available.length === 1 ? " is" : "s are"} available to add
+                      {bulkAvailability.alreadyEnrolled.length > 0
+                        ? ` · ${bulkAvailability.alreadyEnrolled.length} already ${bulkAvailability.alreadyEnrolled.length === 1 ? "exists" : "exist"} in this course`
+                        : ""}.
+                    </div>
+                  ))}
+
+                <div className="flex flex-wrap gap-2">
+                  {bulkPreview.duplicateRolls.length > 0 && (
+                    <PreviewChip tone="warning" label="Duplicate rolls ignored" value={bulkPreview.duplicateRolls.length} />
+                  )}
+                  {bulkPreview.invalidLines.length > 0 && (
+                    <PreviewChip tone="danger" label="Unreadable rows" value={bulkPreview.invalidLines.length} />
+                  )}
+                  <span className="self-center text-slate-500 dark:text-slate-400">
+                    Columns such as Regular/Retake are ignored automatically.
+                  </span>
+                </div>
               </div>
             )}
 
@@ -867,16 +926,23 @@ export default function TabStudents({ courseId }) {
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <button
                 onClick={handleBulkAddStudents}
-                disabled={bulkLoading}
-                className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-60"
+                disabled={bulkLoading || (bulkPreview.students.length > 0 && bulkAvailability.available.length === 0)}
+                className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {bulkLoading ? (
                   <>
                     <SpinnerIcon /> Processing...
                   </>
+                ) : bulkText.trim() && bulkPreview.students.length > 0 && bulkAvailability.available.length === 0 ? (
+                  <>
+                    <UploadIconSmall /> No Students to Add
+                  </>
                 ) : (
                   <>
-                    <UploadIconSmall /> Bulk Add
+                    <UploadIconSmall />
+                    {bulkAvailability.available.length > 0
+                      ? `Bulk Add (${bulkAvailability.available.length})`
+                      : "Bulk Add"}
                   </>
                 )}
               </button>
@@ -1002,11 +1068,21 @@ export default function TabStudents({ courseId }) {
                 <input
                   type="text"
                   name="roll"
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  className={[
+                    "w-full rounded-2xl border bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:bg-white focus:ring-2 dark:bg-slate-950 dark:text-slate-100",
+                    singleStudentAlreadyEnrolled
+                      ? "border-amber-300 focus:border-amber-500 focus:ring-amber-500/20 dark:border-amber-500/40"
+                      : "border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/20 dark:border-slate-700",
+                  ].join(" ")}
                   value={studentForm.roll}
                   onChange={handleStudentFormChange}
                   required
                 />
+                {singleStudentAlreadyEnrolled && (
+                  <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
+                    This student already exists in this course. Remove roll {singleStudentAlreadyEnrolled.roll} from the course first before adding again.
+                  </div>
+                )}
               </Field>
 
               <Field label="Name">
@@ -1032,8 +1108,8 @@ export default function TabStudents({ courseId }) {
 
               <button
                 type="submit"
-                disabled={addingStudent}
-                className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-60"
+                disabled={addingStudent || Boolean(singleStudentAlreadyEnrolled)}
+                className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {addingStudent ? (
                   <>
