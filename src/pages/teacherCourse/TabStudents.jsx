@@ -16,6 +16,7 @@ import {
   updateCourseStudentRequest,
 } from "../../services/enrollmentService";
 import { fetchTeacherCourses } from "../../services/courseService";
+import { fetchAttendanceSheet } from "../../services/attendanceService";
 
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
@@ -169,6 +170,13 @@ export default function TabStudents({ courseId }) {
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
 
+  const [rosterReviewOpen, setRosterReviewOpen] = useState(false);
+  const [rosterAttendanceLoading, setRosterAttendanceLoading] = useState(false);
+  const [rosterAttendanceError, setRosterAttendanceError] = useState("");
+  const [rosterAttendanceStats, setRosterAttendanceStats] = useState({});
+  const [rosterSessionCount, setRosterSessionCount] = useState(0);
+  const [rosterRemovingId, setRosterRemovingId] = useState(null);
+
   useEffect(() => {
     setAddToolsOpen(false);
 
@@ -284,6 +292,151 @@ export default function TabStudents({ courseId }) {
 
     return { available, alreadyEnrolled };
   }, [bulkPreview, enrolledRollSet]);
+
+  // Roster reconciliation works in the opposite direction from bulk add:
+  // students currently enrolled in Marks Portal but NOT present in the pasted
+  // university roster are surfaced for review. We intentionally call them
+  // "not found in pasted list" rather than automatically assuming they should
+  // be deleted, because a teacher may sometimes paste only part of a roster.
+  const pastedRollSet = useMemo(
+    () => new Set(bulkPreview.students.map((student) => cleanCell(student.roll)).filter(Boolean)),
+    [bulkPreview.students]
+  );
+
+  const enrolledNotInPastedList = useMemo(() => {
+    if (!bulkText.trim() || bulkPreview.students.length === 0) return [];
+
+    return students
+      .filter((student) => {
+        const roll = cleanCell(student?.roll);
+        return roll && !pastedRollSet.has(roll);
+      })
+      .sort((a, b) =>
+        String(a.roll || "").localeCompare(String(b.roll || ""), undefined, {
+          numeric: true,
+          sensitivity: "base",
+        })
+      );
+  }, [bulkText, bulkPreview.students.length, pastedRollSet, students]);
+
+  const buildAttendanceStats = (sheet, targetStudents) => {
+    const sessions = Array.isArray(sheet?.sessions) ? sheet.sessions : [];
+    const matrix = sheet?.matrix && typeof sheet.matrix === "object" ? sheet.matrix : {};
+    const stats = {};
+
+    targetStudents.forEach((student) => {
+      const roll = cleanCell(student?.roll);
+      const row = matrix?.[roll] || {};
+      let presentCount = 0;
+      let lastPresent = null;
+
+      sessions.forEach((session) => {
+        if (row?.[session.key] === true) {
+          presentCount += 1;
+          lastPresent = session;
+        }
+      });
+
+      stats[roll] = {
+        totalClasses: sessions.length,
+        presentCount,
+        percentage:
+          sessions.length > 0
+            ? Number(((presentCount / sessions.length) * 100).toFixed(2))
+            : null,
+        lastPresent,
+      };
+    });
+
+    return { stats, sessionCount: sessions.length };
+  };
+
+  const openRosterReview = async () => {
+    if (enrolledNotInPastedList.length === 0) return;
+
+    setRosterReviewOpen(true);
+    setRosterAttendanceLoading(true);
+    setRosterAttendanceError("");
+    setRosterAttendanceStats({});
+    setRosterSessionCount(0);
+
+    try {
+      const sheet = await fetchAttendanceSheet(courseId);
+      const result = buildAttendanceStats(sheet, enrolledNotInPastedList);
+      setRosterAttendanceStats(result.stats);
+      setRosterSessionCount(result.sessionCount);
+    } catch (err) {
+      console.error(err);
+      setRosterAttendanceError(
+        err?.response?.data?.message || "Could not load attendance details for roster review."
+      );
+    } finally {
+      setRosterAttendanceLoading(false);
+    }
+  };
+
+  const closeRosterReview = () => {
+    if (rosterRemovingId) return;
+    setRosterReviewOpen(false);
+  };
+
+  const handleRosterRemoveStudent = async (student) => {
+    if (!student?.enrollmentId) return;
+
+    const attendance = rosterAttendanceStats[cleanCell(student.roll)];
+    const attendanceLine =
+      attendance?.percentage === null || attendance?.percentage === undefined
+        ? "No saved attendance sessions were found."
+        : `Attendance: ${attendance.percentage}% (${attendance.presentCount}/${attendance.totalClasses} classes).`;
+
+    const result = await Swal.fire({
+      title: "Remove from this course?",
+      html: `
+        <div style="text-align:left">
+          <p><b>${student.name}</b> (${student.roll}) is enrolled here but was not found in the pasted roster.</p>
+          <p style="margin-top:8px;color:#64748b">${attendanceLine}</p>
+          <p style="margin-top:10px">Removing the student will also delete this course's marks and attendance summary. Historical daily attendance records remain archived but will no longer place the student in the course roster.</p>
+        </div>
+      `,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Remove Student",
+      cancelButtonText: "Keep Student",
+      confirmButtonColor: "#dc2626",
+    });
+
+    if (!result.isConfirmed) return;
+
+    setRosterRemovingId(student.enrollmentId);
+    try {
+      await deleteStudentFromCourseRequest(courseId, student.enrollmentId);
+      setStudents((prev) => prev.filter((item) => item.enrollmentId !== student.enrollmentId));
+      setRosterAttendanceStats((prev) => {
+        const next = { ...prev };
+        delete next[cleanCell(student.roll)];
+        return next;
+      });
+
+      await Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: `${student.roll} removed from the course`,
+        showConfirmButton: false,
+        timer: 1700,
+        timerProgressBar: true,
+      });
+    } catch (err) {
+      console.error(err);
+      await Swal.fire({
+        icon: "error",
+        title: "Could not remove student",
+        text: err?.response?.data?.message || "Failed to remove student from this course.",
+      });
+    } finally {
+      setRosterRemovingId(null);
+    }
+  };
 
   const copySemesterOptions = useMemo(() => {
     return [...new Set(copyCourses.map(semesterLabel).filter(Boolean))].sort(
@@ -907,6 +1060,76 @@ export default function TabStudents({ courseId }) {
                     </div>
                   ))}
 
+                {bulkPreview.students.length > 0 && (
+                  <div
+                    className={[
+                      "overflow-hidden rounded-2xl border shadow-sm",
+                      enrolledNotInPastedList.length > 0
+                        ? "border-amber-200 bg-gradient-to-r from-amber-50 via-white to-slate-50 dark:border-amber-500/20 dark:from-amber-500/10 dark:via-slate-900 dark:to-slate-900"
+                        : "border-emerald-200 bg-gradient-to-r from-emerald-50 via-white to-slate-50 dark:border-emerald-500/20 dark:from-emerald-500/10 dark:via-slate-900 dark:to-slate-900",
+                    ].join(" ")}
+                  >
+                    <div className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <div
+                          className={[
+                            "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border",
+                            enrolledNotInPastedList.length > 0
+                              ? "border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
+                              : "border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300",
+                          ].join(" ")}
+                        >
+                          <RosterCompareIcon />
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                              Course roster check
+                            </p>
+                            <span className="rounded-full border border-slate-200 bg-white/80 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-300">
+                              Pasted {bulkPreview.students.length}
+                            </span>
+                            <span className="rounded-full border border-slate-200 bg-white/80 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-300">
+                              Enrolled {students.length}
+                            </span>
+                          </div>
+
+                          {enrolledNotInPastedList.length > 0 ? (
+                            <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-400">
+                              <span className="font-semibold text-amber-700 dark:text-amber-300">
+                                {enrolledNotInPastedList.length} enrolled student{enrolledNotInPastedList.length === 1 ? " is" : "s are"} not found in this pasted list.
+                              </span>{" "}
+                              Review them before deciding whether anyone should be removed.
+                            </p>
+                          ) : (
+                            <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-400">
+                              Every currently enrolled student is present in the detected pasted list.
+                            </p>
+                          )}
+
+                          {bulkPreview.invalidLines.length > 0 && (
+                            <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-500">
+                              Roster comparison uses only the {bulkPreview.students.length} valid detected row{bulkPreview.students.length === 1 ? "" : "s"}; unreadable rows are excluded.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {enrolledNotInPastedList.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={openRosterReview}
+                          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-amber-200 bg-white px-3.5 py-2 text-xs font-bold text-amber-700 shadow-sm transition hover:border-amber-300 hover:bg-amber-50 dark:border-amber-500/25 dark:bg-slate-900 dark:text-amber-300 dark:hover:bg-amber-500/10"
+                        >
+                          <EyeIcon />
+                          Review {enrolledNotInPastedList.length}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex flex-wrap gap-2">
                   {bulkPreview.duplicateRolls.length > 0 && (
                     <PreviewChip tone="warning" label="Duplicate rolls ignored" value={bulkPreview.duplicateRolls.length} />
@@ -953,6 +1176,9 @@ export default function TabStudents({ courseId }) {
                   setBulkText("");
                   setBulkError("");
                   setBulkResult(null);
+                  setRosterReviewOpen(false);
+                  setRosterAttendanceStats({});
+                  setRosterSessionCount(0);
                 }}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
               >
@@ -1362,6 +1588,191 @@ export default function TabStudents({ courseId }) {
         </div>
       </div>
 
+      {rosterReviewOpen && (
+        <div
+          className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeRosterReview();
+          }}
+        >
+          <div className="flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+            <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50 via-white to-amber-50/70 px-6 py-5 dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-amber-950/20">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex min-w-0 gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+                    <RosterCompareIcon className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">
+                        Roster Reconciliation
+                      </h4>
+                      <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+                        {enrolledNotInPastedList.length} to review
+                      </span>
+                    </div>
+                    <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-500 dark:text-slate-400">
+                      These students are currently enrolled in this Marks Portal course, but their rolls were not found among the valid rows in the list you pasted from the university portal. Review attendance before removing anyone.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={closeRosterReview}
+                  disabled={Boolean(rosterRemovingId)}
+                  className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                  aria-label="Close roster review"
+                >
+                  <CloseIcon />
+                </button>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <RosterMetric label="Pasted roster" value={bulkPreview.students.length} />
+                <RosterMetric label="Currently enrolled" value={students.length} />
+                <RosterMetric label="Not in pasted list" value={enrolledNotInPastedList.length} emphasis />
+                <RosterMetric
+                  label="Attendance sessions"
+                  value={rosterAttendanceLoading ? "…" : rosterAttendanceError ? "—" : rosterSessionCount}
+                />
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-auto p-6">
+              {rosterAttendanceError && (
+                <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs leading-5 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
+                  <span className="font-bold">Attendance could not be loaded.</span>{" "}
+                  {rosterAttendanceError} You can still review the students, but attendance fields are unavailable.
+                </div>
+              )}
+
+              {enrolledNotInPastedList.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-14 text-center">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+                    <CheckIcon />
+                  </div>
+                  <h5 className="mt-4 text-base font-bold text-slate-900 dark:text-slate-100">
+                    Roster is aligned
+                  </h5>
+                  <p className="mt-1 max-w-md text-sm text-slate-500 dark:text-slate-400">
+                    There are no remaining enrolled students outside the currently pasted list.
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                      <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur dark:bg-slate-800/95">
+                        <tr className="border-b border-slate-200 dark:border-slate-700">
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                            Student
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                            Attendance
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                            Last Present Day
+                          </th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                            Action
+                          </th>
+                        </tr>
+                      </thead>
+
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {enrolledNotInPastedList.map((student) => {
+                          const attendance = rosterAttendanceStats[cleanCell(student.roll)];
+                          const removing = rosterRemovingId === student.enrollmentId;
+                          return (
+                            <tr key={student.enrollmentId} className="transition hover:bg-slate-50/80 dark:hover:bg-slate-800/50">
+                              <td className="px-4 py-4">
+                                <div className="font-bold text-slate-900 dark:text-slate-100">{student.name}</div>
+                                <div className="mt-0.5 font-mono text-xs font-semibold text-slate-500 dark:text-slate-400">
+                                  {student.roll}
+                                </div>
+                              </td>
+
+                              <td className="px-4 py-4">
+                                {rosterAttendanceLoading ? (
+                                  <div className="inline-flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                                    <SpinnerIcon /> Loading...
+                                  </div>
+                                ) : attendance ? (
+                                  attendance.percentage === null ? (
+                                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">No attendance yet</span>
+                                  ) : (
+                                    <div>
+                                      <AttendancePill percentage={attendance.percentage} />
+                                      <div className="mt-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                                        {attendance.presentCount} / {attendance.totalClasses} classes present
+                                      </div>
+                                    </div>
+                                  )
+                                ) : (
+                                  <span className="text-xs text-slate-400">Unavailable</span>
+                                )}
+                              </td>
+
+                              <td className="px-4 py-4">
+                                {rosterAttendanceLoading ? (
+                                  <span className="text-xs text-slate-400">Loading...</span>
+                                ) : attendance?.lastPresent ? (
+                                  <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                                    <CalendarCheckIcon />
+                                    {formatAttendanceSession(attendance.lastPresent)}
+                                  </div>
+                                ) : attendance?.totalClasses > 0 ? (
+                                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Never marked present</span>
+                                ) : rosterAttendanceError ? (
+                                  <span className="text-xs text-slate-400">Unavailable</span>
+                                ) : (
+                                  <span className="text-xs text-slate-500 dark:text-slate-400">No attendance yet</span>
+                                )}
+                              </td>
+
+                              <td className="px-4 py-4 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRosterRemoveStudent(student)}
+                                  disabled={Boolean(rosterRemovingId)}
+                                  className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-600 shadow-sm transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-500/20 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                                >
+                                  {removing ? <><SpinnerIcon /> Removing...</> : <><TrashIcon /> Remove</>}
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-[11px] leading-5 text-slate-500 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-400">
+                <span className="font-bold text-slate-700 dark:text-slate-300">Important:</span>{" "}
+                This comparison only tells you which enrolled rolls are absent from the list currently pasted above. It never removes students automatically.
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50 px-6 py-4 dark:border-slate-800 dark:bg-slate-950/60">
+              <p className="hidden text-xs text-slate-500 dark:text-slate-400 sm:block">
+                Review first; removal always requires confirmation.
+              </p>
+              <button
+                type="button"
+                onClick={closeRosterReview}
+                disabled={Boolean(rosterRemovingId)}
+                className="ml-auto rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {editStudent && (
         <div
           className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm"
@@ -1579,6 +1990,64 @@ export default function TabStudents({ courseId }) {
   );
 }
 
+function RosterMetric({ label, value, emphasis = false }) {
+  return (
+    <div
+      className={[
+        "rounded-2xl border px-3.5 py-3 shadow-sm",
+        emphasis
+          ? "border-amber-200 bg-white/90 dark:border-amber-500/20 dark:bg-slate-900/80"
+          : "border-slate-200 bg-white/80 dark:border-slate-700 dark:bg-slate-900/70",
+      ].join(" ")}
+    >
+      <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+        {label}
+      </div>
+      <div
+        className={[
+          "mt-1 text-lg font-extrabold tracking-tight",
+          emphasis && Number(value) > 0
+            ? "text-amber-700 dark:text-amber-300"
+            : "text-slate-900 dark:text-slate-100",
+        ].join(" ")}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function AttendancePill({ percentage }) {
+  const numeric = Number(percentage || 0);
+  const tone =
+    numeric >= 80
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+      : numeric >= 60
+        ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
+        : "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300";
+
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-extrabold ${tone}`}>
+      {numeric.toFixed(2)}%
+    </span>
+  );
+}
+
+function formatAttendanceSession(session) {
+  if (!session?.date) return "—";
+
+  const parsed = new Date(`${session.date}T00:00:00`);
+  const dateLabel = Number.isNaN(parsed.getTime())
+    ? String(session.date)
+    : parsed.toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+
+  return session?.period ? `${dateLabel} · P${session.period}` : dateLabel;
+}
+
 function Field({ label, children }) {
   return (
     <div>
@@ -1655,6 +2124,45 @@ function StatPill({ label, value }) {
       <span className="text-slate-500 dark:text-slate-400">{label}:</span>
       <span>{value}</span>
     </span>
+  );
+}
+
+function RosterCompareIcon({ className = "h-4 w-4" }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M4 6h7" />
+      <path d="M4 12h7" />
+      <path d="M4 18h7" />
+      <path d="m15 7 2 2 4-4" />
+      <path d="M15 16h6" />
+    </svg>
+  );
+}
+
+function EyeIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" />
+      <circle cx="12" cy="12" r="2.5" />
+    </svg>
+  );
+}
+
+function CalendarCheckIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M6 2v4M18 2v4M3 9h18" />
+      <rect x="3" y="4" width="18" height="17" rx="2" />
+      <path d="m8 15 2 2 5-5" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+      <path d="m5 12 4 4L19 6" />
+    </svg>
   );
 }
 
