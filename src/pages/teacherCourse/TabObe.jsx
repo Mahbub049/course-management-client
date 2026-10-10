@@ -40,6 +40,7 @@ import {
 } from "../../utils/obeMarksExcelImport";
 import { getAuthItem } from "../../utils/authStorage";
 import { premiumSwal } from "../../utils/premiumDialog";
+import { computeCtScore, normalizeCtPolicy, isCtAssessment, roundCtAverage } from "../../utils/ctAverage";
 import CourseAssessmentPolicyModal from "./CourseAssessmentPolicyModal";
 import ObeClpPanel from "./ObeClpPanel";
 
@@ -1990,11 +1991,19 @@ const saveSetup = async () => {
   };
 
   const handleFetchFromMarksSheet = async () => {
+    const ctWeight = Number(normalizeCtPolicy(course).totalWeight || 0);
+    const ctAssessments = normalAssessments.filter(
+      (assessment) => assessment?.structureType !== "lab_final" && isCtAssessment(assessment?.name)
+    );
+    const lastCtId = ctAssessments.length ? String(ctAssessments[ctAssessments.length - 1]._id) : "";
+    const includeCtAverage = !isLabCourse && ctAssessments.length > 0 && ctWeight > 0;
     const sourceOptions = [
-      ...normalAssessments.map(
-        (assessment) =>
-          `<option value="a:${assessment._id}">${escapeHtml(assessment.name || "Assessment")} (${assessment.fullMarks})</option>`
-      ),
+      ...normalAssessments.flatMap((assessment) => [
+        `<option value="a:${assessment._id}">${escapeHtml(assessment.name || "Assessment")} (${assessment.fullMarks})</option>`,
+        ...(includeCtAverage && String(assessment._id) === lastCtId
+          ? [`<option value="ct_average">CT Avg (${ctWeight}) · Calculated</option>`]
+          : []),
+      ]),
       '<option value="attendance">Attendance</option>',
     ].join("");
     const targetOptions = markBlueprints
@@ -2046,7 +2055,7 @@ const saveSetup = async () => {
         <div style="text-align:left;color:${palette.text};">
           <div style="margin:-2px 0 16px;padding:12px 14px;border:1px solid ${palette.border};border-radius:13px;background:${palette.card};">
             <div style="font-size:13px;font-weight:800;color:${palette.text};">Map marksheet assessments to OBE assessments</div>
-            <div style="margin-top:4px;font-size:12px;line-height:1.55;color:${palette.muted};">Choose only the rows you need. Attendance can also be fetched. For an OBE assessment with multiple questions, question-wise source marks must be available.</div>
+            <div style="margin-top:4px;font-size:12px;line-height:1.55;color:${palette.muted};">Choose only the rows you need. CT Avg follows the marksheet's class test policy. Calculated marks (CT Avg and Attendance) require a single-question OBE assessment; other multi-question assessments need question-wise source marks.</div>
           </div>
           <div style="display:grid;grid-template-columns:28px minmax(0,1fr) 30px minmax(0,1fr) 32px;gap:10px;padding:0 10px 7px;color:${palette.muted};font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;">
             <span></span><span>From marksheet</span><span></span><span>To OBE</span><span></span>
@@ -2129,6 +2138,14 @@ const saveSetup = async () => {
           Swal.showValidationMessage("Complete both From and To for every mapping you added.");
           return false;
         }
+        const incompatibleCalculated = mappings.find((mapping) =>
+          ["ct_average", "attendance"].includes(mapping.source) &&
+          (markBlueprints.find((bp) => String(bp._id) === String(mapping.target))?.items || []).length !== 1
+        );
+        if (incompatibleCalculated) {
+          Swal.showValidationMessage("CT Avg and Attendance can only be mapped to an OBE assessment with one question.");
+          return false;
+        }
         const targetIds = mappings.map((mapping) => mapping.target);
         if (new Set(targetIds).size !== targetIds.length) {
           Swal.showValidationMessage("Each OBE assessment can be selected only once.");
@@ -2143,7 +2160,10 @@ const saveSetup = async () => {
     let copied = 0;
     let skipped = 0;
     const attendanceMap = new Map(attendanceSummary.map((r) => [String(r.student || r.studentId || r._id), Number(r.marks ?? r.attendanceMarks ?? r.obtainedMarks ?? 0)]));
-    const marksByAssessmentStudent = new Map(normalMarks.map((m) => [`${m.assessment}__${m.student}`, m]));
+    const getReferenceId = (value) => String(value?._id || value?.id || value || "");
+    const marksByAssessmentStudent = new Map(normalMarks.map((m) => [
+      `${getReferenceId(m.assessment)}__${getReferenceId(m.student)}`, m,
+    ]));
 
     for (const mapping of result.value) {
       const target = markBlueprints.find((bp) => String(bp._id) === String(mapping.target));
@@ -2155,6 +2175,26 @@ const saveSetup = async () => {
         if (mapping.source === "attendance") {
           const value = Math.min(Number(target.totalMarks || 5), attendanceMap.get(String(student.studentId)) || 0);
           if ((target.items || []).length === 1) { nextDraft[key][target.items[0].key] = value; copied++; } else skipped++;
+          continue;
+        }
+        if (mapping.source === "ct_average") {
+          const targetItems = target.items || [];
+          if (targetItems.length !== 1) { skipped++; continue; }
+          // Recalculate from the underlying CT entries (not from the average
+          // of the raw marks). This is identical to the CT Avg marksheet cell,
+          // including best-one/best-N/manual-selection and half-mark rounding.
+          const ctRowMarks = Object.fromEntries(ctAssessments.map((assessment) => [
+            assessment._id,
+            marksByAssessmentStudent.get(`${assessment._id}__${student.studentId}`),
+          ]));
+          const ctAverage = roundCtAverage(computeCtScore(course, ctAssessments, ctRowMarks));
+          const targetItem = targetItems[0];
+          const scaled = (ctAverage / ctWeight) * Number(targetItem.marks || target.totalMarks || 0);
+          nextDraft[key][targetItem.key] = Math.min(
+            Number(targetItem.marks || target.totalMarks || 0),
+            Math.round(scaled * 2) / 2
+          );
+          copied++;
           continue;
         }
         const mark = marksByAssessmentStudent.get(`${sourceAssessment?._id}__${student.studentId}`);
