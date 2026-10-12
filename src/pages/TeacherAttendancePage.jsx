@@ -12,6 +12,8 @@ import {
   copyAttendancePeriod,
 } from "../services/attendanceService";
 import Swal from "sweetalert2";
+import AttendanceSessionDatePicker from "../components/AttendanceSessionDatePicker";
+import useAttendanceSessions from "../hooks/useAttendanceSessions";
 
 const sortStudentsByRoll = (studentList = []) => {
   return [...studentList].sort((a, b) => {
@@ -58,7 +60,6 @@ const buildSemesterOptions = (courseList = []) => {
 
 export default function TeacherAttendancePage() {
   const dateInputRef = useRef(null);
-  const copySourceDateRef = useRef(null);
   const copyTargetDateRef = useRef(null);
 
   const [courses, setCourses] = useState([]);
@@ -90,6 +91,7 @@ export default function TeacherAttendancePage() {
   // roll -> present
   const [attendance, setAttendance] = useState({});
   const [saving, setSaving] = useState(false);
+  const [sessionRevision, setSessionRevision] = useState(0);
 
   const [copyOpen, setCopyOpen] = useState(false);
   const [copyLoading, setCopyLoading] = useState(false);
@@ -97,11 +99,30 @@ export default function TeacherAttendancePage() {
   const [copyForm, setCopyForm] = useState({
     courseId: "",
     sourceDate: "",
-    sourcePeriod: 1,
+    sourcePeriod: "",
     targetDate: "",
     targetPeriod: 2,
     overwrite: true,
   });
+
+  const isExistingMode = mode === "update" || mode === "delete";
+  const editSessionState = useAttendanceSessions(form.courseId, isExistingMode, sessionRevision);
+  const existingSessions = useMemo(
+    () => editSessionState.sessions.filter((session) => session.editable),
+    [editSessionState.sessions]
+  );
+  const selectedDayPeriods = useMemo(
+    () => existingSessions.filter((session) => session.date === form.date).map((session) => Number(session.period)),
+    [existingSessions, form.date]
+  );
+  const validEditSelection = Boolean(form.courseId && form.date && selectedDayPeriods.includes(Number(form.period)));
+
+  const copySessionState = useAttendanceSessions(copyForm.courseId, copyOpen, sessionRevision);
+  const sourceDayPeriods = useMemo(
+    () => copySessionState.sessions.filter((session) => session.date === copyForm.sourceDate).map((session) => Number(session.period)),
+    [copySessionState.sessions, copyForm.sourceDate]
+  );
+  const validCopySource = Boolean(copyForm.sourceDate && sourceDayPeriods.includes(Number(copyForm.sourcePeriod)));
 
   useEffect(() => {
     async function loadCourses() {
@@ -151,7 +172,7 @@ export default function TeacherAttendancePage() {
     setAttendance({});
     setStudentsError("");
     setArchiveSessionState(null);
-    setForm((prev) => ({ ...prev, courseId: "" }));
+    setForm((prev) => ({ ...prev, courseId: "", date: "", period: nextMode === "update" || nextMode === "delete" ? "" : 1 }));
   };
 
   const openArchiveMode = async () => {
@@ -180,15 +201,19 @@ export default function TeacherAttendancePage() {
     setForm((prev) => ({
       ...prev,
       [name]: value,
+      ...(name === "courseId" ? { date: "", period: isExistingMode ? "" : prev.period } : {}),
     }));
-
-    if (mode === "archive" && ["courseId", "date", "period"].includes(name)) {
-      setArchiveSessionState(null);
-      setShowSheet(false);
-      setStudents([]);
-      setAttendance({});
+    if (["courseId", "date", "period"].includes(name)) {
+      resetSheet();
       setStudentsError("");
     }
+  };
+
+  const selectExistingDate = (date) => {
+    const firstPeriod = existingSessions.find((session) => session.date === date)?.period;
+    setForm((prev) => ({ ...prev, date, period: firstPeriod ?? "" }));
+    resetSheet();
+    setStudentsError("");
   };
 
   const toggleStudent = (roll) => {
@@ -237,6 +262,11 @@ export default function TeacherAttendancePage() {
 
     if (!form.courseId || !form.date) {
       setStudentsError("Please select both course and date.");
+      return;
+    }
+
+    if (mode === "update" && !validEditSelection) {
+      setStudentsError("Choose a date and period with existing attendance.");
       return;
     }
 
@@ -309,6 +339,9 @@ export default function TeacherAttendancePage() {
             message || "No attendance found for this date and period."
           );
           setAttendance({});
+          setShowSheet(false);
+          setStudents([]);
+          if (mode === "update") setSessionRevision((revision) => revision + 1);
           if (mode === "archive") setArchiveSessionState(null);
         }
       }
@@ -413,6 +446,7 @@ export default function TeacherAttendancePage() {
         }
 
         resetSheet();
+        setSessionRevision((revision) => revision + 1);
       }
     } catch (err) {
       console.error(err);
@@ -428,14 +462,13 @@ export default function TeacherAttendancePage() {
   };
 
   const openCopyAttendance = () => {
-    const sourcePeriod = Number(form.period || 1);
     const fallbackCourse = form.courseId || (courses[0]?._id || courses[0]?.id || "");
     setCopyForm({
       courseId: fallbackCourse,
-      sourceDate: form.date || "",
-      sourcePeriod,
+      sourceDate: "",
+      sourcePeriod: "",
       targetDate: form.date || "",
-      targetPeriod: sourcePeriod >= 10 ? sourcePeriod : sourcePeriod + 1,
+      targetPeriod: 2,
       overwrite: true,
     });
     setCopyError("");
@@ -452,8 +485,8 @@ export default function TeacherAttendancePage() {
     e.preventDefault();
     setCopyError("");
 
-    if (!copyForm.courseId || !copyForm.sourceDate || !copyForm.targetDate) {
-      setCopyError("Select the course, source date and target date.");
+    if (!copyForm.courseId || !validCopySource || !copyForm.targetDate || !copyForm.targetPeriod) {
+      setCopyError("Select a recorded source date and period, and a target date and period.");
       return;
     }
 
@@ -469,6 +502,7 @@ export default function TeacherAttendancePage() {
       });
 
       setCopyOpen(false);
+      setSessionRevision((revision) => revision + 1);
       await Swal.fire({
         icon: "success",
         title: result.action === "overwritten" ? "Attendance Replaced" : "Attendance Copied",
@@ -485,51 +519,51 @@ export default function TeacherAttendancePage() {
 
   const handleDeleteAttendance = async (e) => {
     e.preventDefault();
-
-    if (!form.courseId || !form.date || !form.period) {
-      await Swal.fire({
-        icon: "warning",
-        title: "Missing Information",
-        text: "Please select course, date, and period.",
-        confirmButtonText: "OK",
-      });
+    if (saving) return;
+    if (!validEditSelection) {
+      setStudentsError("Select a course, recorded date and available period to delete.");
       return;
     }
 
+    const { courseId, date, period } = form;
+    const courseName = selectedCourse ? `${selectedCourse.code} (Sec ${selectedCourse.section})` : "this course";
     const confirm = await Swal.fire({
       icon: "warning",
       title: "Delete Attendance?",
-      text: `This will permanently delete attendance for Period ${Number(
-        form.period
-      )} on ${form.date}.`,
+      html: `<p>Remove <b>${date} · Period ${Number(period)}</b> from ${courseName.replace(/[&<>"']/g, "")}?</p><p style="margin-top:8px">This permanently deletes the entire class attendance for that period.</p>`,
       showCancelButton: true,
-      confirmButtonText: "Yes, Delete",
+      confirmButtonText: "Yes, Delete Attendance",
       cancelButtonText: "Cancel",
+      confirmButtonColor: "#dc2626",
       reverseButtons: true,
     });
-
     if (!confirm.isConfirmed) return;
 
+    setSaving(true);
+    setStudentsError("");
     try {
-      await deleteAttendanceDay(form.courseId, form.date, Number(form.period));
-
+      await deleteAttendanceDay(courseId, date, Number(period));
+      setForm((prev) => ({ ...prev, date: "", period: "" }));
+      resetSheet();
+      setSessionRevision((revision) => revision + 1);
       await Swal.fire({
         icon: "success",
         title: "Attendance Deleted",
-        text: `Attendance deleted for Period ${Number(form.period)}.`,
+        text: `${date} · Period ${Number(period)} has been deleted. You can select another recorded date now.`,
         confirmButtonText: "OK",
       });
-
-      resetSheet();
     } catch (err) {
       console.error(err);
       await Swal.fire({
         icon: "error",
         title: "Delete Failed",
-        text:
-          err?.response?.data?.message || "Failed to delete attendance record.",
+        text: err?.response?.data?.message || "Failed to delete attendance record.",
         confirmButtonText: "OK",
       });
+      // Another teacher/session may have changed the data in the meantime.
+      setSessionRevision((revision) => revision + 1);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -725,11 +759,11 @@ export default function TeacherAttendancePage() {
               </div>
             )}
 
-            {(mode === "update" || mode === "delete" || mode === "archive") && (
+            {mode === "archive" && (
               <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div>
                   <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    {mode === "delete" ? "Period for Delete" : mode === "archive" ? "Archived Period (Existing or New)" : "Period for Update"}
+                    Archived Period (Existing or New)
                   </label>
                   <select
                     name="period"
@@ -754,7 +788,7 @@ export default function TeacherAttendancePage() {
             )}
 
             <form
-              onSubmit={handleLoadStudents}
+              onSubmit={mode === "delete" ? handleDeleteAttendance : handleLoadStudents}
               className="grid grid-cols-1 gap-4 lg:grid-cols-12"
             >
               {mode === "archive" && (
@@ -766,7 +800,7 @@ export default function TeacherAttendancePage() {
                     value={archiveSemester}
                     onChange={(e) => {
                       setArchiveSemester(e.target.value);
-                      setForm((prev) => ({ ...prev, courseId: "" }));
+                      setForm((prev) => ({ ...prev, courseId: "", date: "", period: 1 }));
                       setStudentsError("");
                       resetSheet();
                     }}
@@ -781,7 +815,7 @@ export default function TeacherAttendancePage() {
                 </div>
               )}
 
-              <div className={mode === "archive" ? "lg:col-span-4" : "lg:col-span-6"}>
+              <div className={mode === "archive" ? "lg:col-span-4" : isExistingMode ? "lg:col-span-5" : "lg:col-span-6"}>
                 <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                   {mode === "archive" ? "Archived Course" : "Course"}
                 </label>
@@ -809,42 +843,84 @@ export default function TeacherAttendancePage() {
 
               <div className={mode === "archive" ? "lg:col-span-2" : "lg:col-span-3"}>
                 <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  Date
+                  {isExistingMode ? "Recorded Date" : "Date"}
                 </label>
-                <input
-                  ref={dateInputRef}
-                  type="date"
-                  name="date"
-                  value={form.date}
-                  onChange={handleChange}
-                  onClick={() => dateInputRef.current?.showPicker?.()}
-                  onFocus={() => dateInputRef.current?.showPicker?.()}
-                  className={`${commonInputClass} cursor-pointer`}
-                />
+                {isExistingMode ? (
+                  <AttendanceSessionDatePicker
+                    value={form.date}
+                    onChange={selectExistingDate}
+                    sessions={existingSessions}
+                    disabled={!form.courseId || editSessionState.loading || !!editSessionState.error}
+                    placeholder={!form.courseId ? "Select a course first" : editSessionState.loading ? "Loading recorded dates..." : "Choose a recorded date"}
+                  />
+                ) : (
+                  <input
+                    ref={dateInputRef}
+                    type="date"
+                    name="date"
+                    value={form.date}
+                    onChange={handleChange}
+                    onClick={() => dateInputRef.current?.showPicker?.()}
+                    onFocus={() => dateInputRef.current?.showPicker?.()}
+                    className={`${commonInputClass} cursor-pointer`}
+                  />
+                )}
               </div>
 
-              <div className="flex items-end lg:col-span-3">
+              {isExistingMode && (
+                <div className="lg:col-span-2">
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    Recorded Period
+                  </label>
+                  <select
+                    name="period"
+                    value={form.period}
+                    onChange={handleChange}
+                    disabled={!form.date || editSessionState.loading}
+                    className={`${commonInputClass} disabled:cursor-not-allowed disabled:opacity-60`}
+                  >
+                    <option value="">Select period</option>
+                    {selectedDayPeriods.map((period) => <option key={period} value={period}>Period {period}</option>)}
+                  </select>
+                </div>
+              )}
+
+              <div className={`flex items-end ${isExistingMode ? "lg:col-span-2" : "lg:col-span-3"}`}>
+
                 <button
                   type="submit"
                   disabled={
-                    loadingStudents ||
+                    loadingStudents || saving ||
                     (mode === "archive"
                       ? loadingArchivedCourses || !archiveSemester || !availableCourses.length
-                      : loadingCourses || !courses.length)
+                      : loadingCourses || !courses.length) ||
+                    (isExistingMode && (editSessionState.loading || !validEditSelection))
                   }
-                  className="inline-flex w-full items-center justify-center rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  className={`inline-flex w-full items-center justify-center rounded-2xl px-3 py-3 text-sm font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${mode === "delete" ? "bg-rose-600 hover:bg-rose-700" : "bg-blue-600 hover:bg-blue-700"}`}
                 >
-                  {loadingStudents
-                    ? "Loading Attendance..."
-                    : mode === "archive"
-                      ? "Load / Create Attendance"
-                      : mode === "delete" || mode === "update"
-                        ? "Load Attendance"
-                        : "Load Students"}
+                  {mode === "delete"
+                    ? saving ? "Deleting..." : "Delete Attendance"
+                    : loadingStudents
+                      ? "Loading Attendance..."
+                      : mode === "archive"
+                        ? "Load / Create Attendance"
+                        : mode === "update" ? "Load Attendance" : "Load Students"}
                 </button>
               </div>
             </form>
 
+            {isExistingMode && form.courseId && !editSessionState.loading && !editSessionState.error && (
+              <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                {existingSessions.length
+                  ? `${new Set(existingSessions.map((session) => session.date)).size} recorded dates available. Grey dates are not selectable. Only saved periods are listed.`
+                  : editSessionState.sessions.length
+                    ? "Only older combined-period records were found. These can be used as a Copy From source, but cannot be individually updated or deleted."
+                    : "No attendance has been recorded for this course yet."}
+              </p>
+            )}
+            {isExistingMode && editSessionState.error && (
+              <p className="mt-3 text-sm text-rose-600 dark:text-rose-400">{editSessionState.error}</p>
+            )}
             {((mode === "archive" ? archivedCourseError : courseError) || studentsError) && (
               <div className="mt-4 space-y-2">
                 {(mode === "archive" ? archivedCourseError : courseError) && (
@@ -862,7 +938,7 @@ export default function TeacherAttendancePage() {
           </div>
 
           {/* Sheet */}
-          {selectedCourse && showSheet && (
+          {mode !== "delete" && selectedCourse && showSheet && (
             <div className="mt-8">
               <div className="mb-5 flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
@@ -1148,7 +1224,7 @@ export default function TeacherAttendancePage() {
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-600 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300"><CopyIcon /></div>
                 <div>
                   <h3 className="text-lg font-bold text-slate-900 dark:text-white">Copy Attendance</h3>
-                  <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">Reuse one completed period instead of marking the same students again.</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">Choose a recorded source class. Copy To can be a new date or an existing period.</p>
                 </div>
               </div>
               <button type="button" onClick={closeCopyAttendance} className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200" aria-label="Close"><CloseIcon /></button>
@@ -1159,7 +1235,7 @@ export default function TeacherAttendancePage() {
                 <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Course</label>
                 <select
                   value={copyForm.courseId}
-                  onChange={(e) => setCopyForm((prev) => ({ ...prev, courseId: e.target.value }))}
+                  onChange={(e) => { setCopyForm((prev) => ({ ...prev, courseId: e.target.value, sourceDate: "", sourcePeriod: "" })); setCopyError(""); }}
                   className={commonInputClass}
                 >
                   <option value="">Select course</option>
@@ -1173,22 +1249,26 @@ export default function TeacherAttendancePage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-800/35">
                   <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white"><SourceIcon /> Copy From</div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-3">
                     <div>
                       <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">Date</label>
-                      <input
-                        ref={copySourceDateRef}
-                        type="date"
+                      <AttendanceSessionDatePicker
                         value={copyForm.sourceDate}
-                        onClick={() => openDatePicker(copySourceDateRef)}
-                        onChange={(e) => setCopyForm((prev) => ({ ...prev, sourceDate: e.target.value }))}
-                        className={`${commonInputClass} cursor-pointer [color-scheme:light] dark:[color-scheme:dark]`}
+                        sessions={copySessionState.sessions}
+                        disabled={!copyForm.courseId || copySessionState.loading || !!copySessionState.error}
+                        onChange={(date) => {
+                          const firstPeriod = copySessionState.sessions.find((session) => session.date === date)?.period;
+                          setCopyForm((prev) => ({ ...prev, sourceDate: date, sourcePeriod: firstPeriod ?? "" }));
+                          setCopyError("");
+                        }}
+                        placeholder={copySessionState.loading ? "Loading dates..." : "Recorded date"}
                       />
                     </div>
                     <div>
                       <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">Period</label>
-                      <select value={copyForm.sourcePeriod} onChange={(e) => setCopyForm((prev) => ({ ...prev, sourcePeriod: e.target.value }))} className={commonInputClass}>
-                        {Array.from({ length: 10 }, (_, i) => i + 1).map((p) => <option key={p} value={p}>Period {p}</option>)}
+                      <select value={copyForm.sourcePeriod} disabled={!copyForm.sourceDate || copySessionState.loading} onChange={(e) => setCopyForm((prev) => ({ ...prev, sourcePeriod: e.target.value }))} className={`${commonInputClass} disabled:cursor-not-allowed disabled:opacity-60`}>
+                        <option value="">Select period</option>
+                        {sourceDayPeriods.map((p) => <option key={p} value={p}>Period {p}</option>)}
                       </select>
                     </div>
                   </div>
@@ -1196,7 +1276,7 @@ export default function TeacherAttendancePage() {
 
                 <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-800/35">
                   <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white"><TargetIcon /> Copy To</div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-3">
                     <div>
                       <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">Date</label>
                       <input
@@ -1218,6 +1298,8 @@ export default function TeacherAttendancePage() {
                 </div>
               </div>
 
+              {copySessionState.error && <p className="text-sm text-rose-600 dark:text-rose-400">{copySessionState.error}</p>}
+              {!copySessionState.loading && copyForm.courseId && !copySessionState.error && !copySessionState.sessions.length && <p className="text-xs text-slate-500 dark:text-slate-400">No recorded attendance is available to copy from this course.</p>}
               <label className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 dark:border-slate-700 dark:bg-slate-800/35">
                 <div>
                   <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">Replace existing target attendance</div>
@@ -1231,7 +1313,7 @@ export default function TeacherAttendancePage() {
 
             <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950/50">
               <button type="button" onClick={closeCopyAttendance} disabled={copyLoading} className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Cancel</button>
-              <button type="submit" disabled={copyLoading} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-60">{copyLoading ? "Copying..." : <><CopyIcon /> Copy Attendance</>}</button>
+              <button type="submit" disabled={copyLoading || copySessionState.loading || !validCopySource || !copyForm.targetDate} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-60">{copyLoading ? "Copying..." : <><CopyIcon /> Copy Attendance</>}</button>
             </div>
           </form>
         </div>

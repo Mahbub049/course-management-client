@@ -20,6 +20,12 @@ export const fetchAttendanceSheet = async (courseId) => {
   return res.data;
 };
 
+// Recorded dates and periods for a course (no student matrix transferred)
+export const fetchAttendanceSessions = async (courseId) => {
+  const res = await api.get("/attendance/sessions", { params: { courseId } });
+  return res.data;
+};
+
 // period-wise fetch (teacher)
 export const fetchAttendanceDay = async (courseId, date, period) => {
   const res = await api.get("/attendance/day", {

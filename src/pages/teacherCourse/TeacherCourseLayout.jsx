@@ -29,21 +29,25 @@ export default function TeacherCourseLayout({
   const typeLabel =
     type === "lab" ? "Lab" : type === "hybrid" ? "Hybrid" : type === "self_study" ? "Self Study" : "Theory";
 
-  const tabs = [
+  // Keep evening-course navigation unchanged. For regular day courses,
+  // present the four main course-workflow tabs together in the requested order.
+  const tabs = isEveningCourse ? [
     { id: "marks", label: "Marks", icon: <MarksIcon /> },
     { id: "assessments", label: "Assessments", icon: <ClipboardIcon /> },
-    ...(isProjectMode
-      ? [{ id: "projects", label: "Projects", icon: <ProjectIcon /> }]
-      : []),
+    ...(isProjectMode ? [{ id: "projects", label: "Projects", icon: <ProjectIcon /> }] : []),
     { id: "submissions", label: "Submissions", icon: <UploadIcon /> },
-    ...(!isEveningCourse
-      ? [{ id: "obe", label: "OBE / CO-PO", icon: <TargetIcon /> }]
-      : []),
     { id: "students", label: "Students", icon: <UsersIcon /> },
     ...(isSelfStudy ? [{ id: "bill", label: "Bill Generate", icon: <BillIcon /> }] : []),
-    ...(isCourseFileEligible
-      ? [{ id: "course-file", label: "Course File", icon: <FolderIcon /> }]
-      : []),
+    { id: "settings", label: "Settings", icon: <SettingsIcon /> },
+  ] : [
+    { id: "marks", label: "Marks", icon: <MarksIcon /> },
+    { id: "assessments", label: "Assessments", icon: <ClipboardIcon /> },
+    { id: "obe", label: "OBE CO-PO", icon: <TargetIcon /> },
+    ...(isCourseFileEligible ? [{ id: "course-file", label: "Course File", icon: <FolderIcon /> }] : []),
+    { id: "submissions", label: "Submissions", icon: <UploadIcon /> },
+    ...(isProjectMode ? [{ id: "projects", label: "Projects", icon: <ProjectIcon /> }] : []),
+    { id: "students", label: "Students", icon: <UsersIcon /> },
+    ...(isSelfStudy ? [{ id: "bill", label: "Bill Generate", icon: <BillIcon /> }] : []),
     { id: "settings", label: "Settings", icon: <SettingsIcon /> },
   ];
 
