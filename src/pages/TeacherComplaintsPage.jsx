@@ -55,6 +55,26 @@ function getStudentRoll(student) {
   return student?.roll || student?.username || "—";
 }
 
+function getAttendancePercentage(stats) {
+  if (!stats || stats.percentage == null) return "—";
+  return `${Number(stats.percentage).toFixed(2)}%`;
+}
+
+function getAttendanceCount(stats) {
+  return stats?.totalClasses > 0
+    ? `${stats.totalPresent}/${stats.totalClasses} classes`
+    : "No recorded classes";
+}
+
+function isSameStudentCourse(first, second) {
+  return (
+    String(first?.student?._id || first?.student || "") ===
+      String(second?.student?._id || second?.student || "") &&
+    String(first?.course?._id || first?.course || "") ===
+      String(second?.course?._id || second?.course || "")
+  );
+}
+
 function getComponentText(c) {
   const cat = c?.category || "marks";
 
@@ -131,7 +151,17 @@ export default function TeacherComplaintsPage() {
       const res = await resolveAttendanceComplaint(selected._id, replyDraft);
       const updated = res.complaint;
 
-      setComplaints((prev) => prev.map((c) => (c._id === updated._id ? updated : c)));
+      // Each attendance issue in the same student/course shares one live total.
+      // Refresh all those cards immediately after the attendance record is saved.
+      setComplaints((prev) =>
+        prev.map((c) => {
+          if (c._id === updated._id) return updated;
+          if (c.category === "attendance" && isSameStudentCourse(c, updated)) {
+            return { ...c, attendanceStats: updated.attendanceStats };
+          }
+          return c;
+        })
+      );
       setSelected(updated);
       setReplyDraft(updated.reply || "");
 
@@ -730,6 +760,9 @@ export default function TeacherComplaintsPage() {
                             <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                               Roll: {getStudentRoll(c.student)}
                             </div>
+                            <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                              Intake {c.course?.intake || "—"} · Sec {c.course?.section || "—"}
+                            </div>
                           </div>
 
                           <div>
@@ -746,9 +779,12 @@ export default function TeacherComplaintsPage() {
                                 {CATEGORY_LABEL[cat] || "Marks"}
                               </span>
 
-                              {cat === "attendance" && c.attendanceRef?.date && (
+                              {cat === "attendance" && (
                                 <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                                  {c.attendanceRef.date} • P{c.attendanceRef.period}
+                                  <span className="font-semibold text-slate-700 dark:text-slate-200">
+                                    {getAttendancePercentage(c.attendanceStats)}
+                                  </span>
+                                  {" · "}{getAttendanceCount(c.attendanceStats)}
                                 </span>
                               )}
                             </div>
@@ -818,9 +854,18 @@ export default function TeacherComplaintsPage() {
                     <span>(Roll: {getStudentRoll(selected.student)})</span>
                   </div>
 
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Pill label={`Section: ${selected.course?.section || "—"}`} />
+                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Intake {selected.course?.intake || "—"} · Sec {selected.course?.section || "—"}
+                    {selectedCategory === "attendance" && (
+                      <span className="ml-2">
+                        · Attendance: <span className="font-semibold text-slate-700 dark:text-slate-200">
+                          {getAttendancePercentage(selected.attendanceStats)}
+                        </span> ({getAttendanceCount(selected.attendanceStats)})
+                      </span>
+                    )}
+                  </div>
 
+                  <div className="mt-3 flex flex-wrap gap-2">
                     <span
                       className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${selectedCategoryBadge}`}
                     >
