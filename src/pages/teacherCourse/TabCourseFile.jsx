@@ -40,11 +40,25 @@ const primaryButton = `${buttonBase} border-indigo-600 bg-indigo-600 text-white 
 const secondaryButton = `${buttonBase} border-slate-200 bg-white text-slate-700 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-800`;
 const dangerButton = `${buttonBase} border-rose-200 bg-rose-50 text-rose-700 hover:border-rose-300 hover:bg-rose-100 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-300`;
 
+// Auto sources are resolved by the server only from this teacher's matching
+// course, intake, semester and offering; independent assessments stay local.
+function automaticSectionRows(state) {
+  const rows = state?.autoSources?.sections || [];
+  if (rows.length) return rows;
+  return state?.course ? [{
+    courseId: state.course.id,
+    section: String(state.course.section || ""),
+    isOwner: true,
+    attendanceReady: state?.autoSources?.attendanceReady === true,
+    obeReady: state?.autoSources?.obeReady === true,
+    continuousLabReady: state?.autoSources?.continuousLabReady === true,
+  }] : [];
+}
+
 function statusForItem(item, state) {
   const docs = state?.documents || [];
   const itemDocs = docs.filter((doc) => doc.itemKey === item.key);
   const sections = (state?.config?.sections || []).map((row) => String(row.section || "")).filter(Boolean);
-  const ownerSection = String(state?.autoSources?.ownerSection || state?.course?.section || "");
 
   if (item.key === "questions") {
     const hasScope = (scopeKey, legacyScope, pattern) => itemDocs.some((doc) =>
@@ -66,9 +80,13 @@ function statusForItem(item, state) {
 
   if (item.mode === "all_sections") {
     const covered = new Set(itemDocs.map((doc) => String(doc.section || "")).filter(Boolean));
-    if (item.key === "attendance" && state?.config?.autoAttendanceEnabled !== false && state?.autoSources?.attendanceReady && ownerSection) covered.add(ownerSection);
-    if (item.key === "course_evaluation" && state?.autoSources?.obeReady && ownerSection) covered.add(ownerSection);
-    if (item.key === "continuous_lab" && state?.autoSources?.continuousLabReady && ownerSection) covered.add(ownerSection);
+    automaticSectionRows(state).forEach((source) => {
+      const section = String(source.section || "");
+      if (!section) return;
+      if (item.key === "attendance" && state?.config?.autoAttendanceEnabled !== false && source.attendanceReady) covered.add(section);
+      if (item.key === "course_evaluation" && source.obeReady) covered.add(section);
+      if (item.key === "continuous_lab" && source.continuousLabReady && source.isOwner) covered.add(section);
+    });
     const needed = sections.length || 1;
     const count = sections.length ? sections.filter((section) => covered.has(section)).length : covered.size;
     if (count >= needed) return { status: "Completed", detail: `${count}/${needed} sections` };
@@ -182,28 +200,34 @@ export default function TabCourseFile({ courseId, course }) {
     try {
       const data = await fetchCourseFileState(courseId);
       let resolvedData = data;
-      // Do not rely only on the Course File summary count for attendance. Archived
-      // courses can contain legacy attendance that is still available through the
-      // normal Attendance Sheet endpoint. Probe that endpoint directly so the
-      // current teacher's archived attendance is detected exactly as the portal
-      // itself would display it.
+      // Verify the same Attendance Sheet endpoint used by the attendance page
+      // for EVERY linked section. This also supports old/legacy attendance rows.
       if (data?.eligible && String(data?.course?.courseType || "theory").toLowerCase() !== "lab") {
-        try {
-          const attendanceSheet = await fetchAttendanceSheet(courseId);
-          const sessionCount = Array.isArray(attendanceSheet?.sessions) ? attendanceSheet.sessions.length : 0;
-          if (sessionCount > 0) {
-            resolvedData = {
-              ...data,
-              autoSources: {
-                ...(data.autoSources || {}),
-                attendanceReady: true,
-                attendanceRecordCount: Math.max(Number(data?.autoSources?.attendanceRecordCount || 0), sessionCount),
-              },
-            };
+        const sources = automaticSectionRows(data);
+        const probed = await Promise.all(sources.map(async (source) => {
+          try {
+            const sheet = await fetchAttendanceSheet(source.courseId);
+            const count = Array.isArray(sheet?.sessions) ? sheet.sessions.length : 0;
+            return count > 0 ? {
+              ...source,
+              attendanceReady: true,
+              attendanceRecordCount: Math.max(Number(source.attendanceRecordCount || 0), count),
+            } : source;
+          } catch (error) {
+            console.warn(`Course-file attendance probe failed for section ${source.section}`, error);
+            return source;
           }
-        } catch (attendanceProbeError) {
-          console.warn("Course-file attendance probe failed", attendanceProbeError);
-        }
+        }));
+        const owner = probed.find((row) => row.isOwner) || {};
+        resolvedData = {
+          ...data,
+          autoSources: {
+            ...(data.autoSources || {}),
+            sections: probed,
+            attendanceReady: owner.attendanceReady === true,
+            attendanceRecordCount: Number(owner.attendanceRecordCount || 0),
+          },
+        };
       }
       setState(resolvedData);
       if (resolvedData?.config?.sections?.length) {
@@ -504,8 +528,8 @@ export default function TabCourseFile({ courseId, course }) {
   };
 
 
-  const getCurrentObeWorkbook = async () => {
-    const payload = await getObeExportPayload(courseId);
+  const getCurrentObeWorkbook = async (targetCourseId = courseId, targetSection = state.course.section) => {
+    const payload = await getObeExportPayload(targetCourseId);
     const normalizedPayload = {
       ...payload,
       blueprints: (payload.blueprints || []).map((blueprint) => ({
@@ -525,16 +549,16 @@ export default function TabCourseFile({ courseId, course }) {
     const workbookFile = new File([workbookBlob], "Current_OBE.xlsm", {
       type: "application/vnd.ms-excel.sheet.macroEnabled.12",
     });
-    const prefix = `${state.course.intake || ""}-${state.course.section || ""}_${state.course.code || "Course"}`;
+    const prefix = `${state.course.intake || ""}-${targetSection || ""}_${state.course.code || "Course"}`;
     return { workbookBlob, workbookFile, prefix };
   };
 
-  const getCurrentObeFiles = async () => {
-    const { workbookBlob, workbookFile, prefix } = await getCurrentObeWorkbook();
+  const getCurrentObeFiles = async (targetCourseId = courseId, targetSection = state.course.section) => {
+    const { workbookBlob, workbookFile, prefix } = await getCurrentObeWorkbook(targetCourseId, targetSection);
     // Run sequentially. LibreOffice starts a real Office conversion process;
     // doing two conversions at once is slower on localhost and can fail on Windows.
-    const reportBlob = await convertCourseFileOfficeToPdf(courseId, workbookFile, "Course Report");
-    const gradeBlob = await convertCourseFileOfficeToPdf(courseId, workbookFile, "GradeSheet");
+    const reportBlob = await convertCourseFileOfficeToPdf(targetCourseId, workbookFile, "Course Report");
+    const gradeBlob = await convertCourseFileOfficeToPdf(targetCourseId, workbookFile, "GradeSheet");
     return [
       { name: `OBE_CO_PO_${safeFileName(prefix)}.xlsm`, blob: workbookBlob, folder: "08 Course Evaluation", combined: false },
       { name: `Course_Report_${safeFileName(prefix)}.pdf`, blob: reportBlob, folder: "08 Course Evaluation", combined: true },
@@ -542,16 +566,18 @@ export default function TabCourseFile({ courseId, course }) {
     ];
   };
 
-  const handleDownloadCurrentObe = async (type) => {
+  const handleDownloadCurrentObe = async (type, targetCourseId = courseId) => {
     setBusy(true);
     try {
-      const { workbookBlob, workbookFile, prefix } = await getCurrentObeWorkbook();
+      const source = automaticSectionRows(state).find((row) => String(row.courseId) === String(targetCourseId));
+      if (!source?.obeReady) throw new Error("OBE data is not ready for this section.");
+      const { workbookBlob, workbookFile, prefix } = await getCurrentObeWorkbook(targetCourseId, source.section);
       if (type === "excel") {
         saveAs(workbookBlob, `OBE_CO_PO_${safeFileName(prefix)}.xlsm`);
         return;
       }
       const sheetName = type === "report" ? "Course Report" : "GradeSheet";
-      const blob = await convertCourseFileOfficeToPdf(courseId, workbookFile, sheetName);
+      const blob = await convertCourseFileOfficeToPdf(targetCourseId, workbookFile, sheetName);
       const name = type === "report"
         ? `Course_Report_${safeFileName(prefix)}.pdf`
         : `GradeSheet_${safeFileName(prefix)}.pdf`;
@@ -563,10 +589,10 @@ export default function TabCourseFile({ courseId, course }) {
     }
   };
 
-  const buildCurrentAttendancePdf = async () => {
-    const data = await fetchAttendanceSheet(courseId);
+  const buildCurrentAttendancePdf = async (targetCourseId = courseId) => {
+    const data = await fetchAttendanceSheet(targetCourseId);
     const sessions = data?.sessions || [];
-    if (!sessions.length) throw new Error("No saved attendance is available for the current section yet.");
+    if (!sessions.length) throw new Error(`No saved attendance is available for section ${data?.course?.section || "selected"}.`);
     const students = [...(data?.students || [])].sort((a, b) =>
       String(a?.roll || "").localeCompare(String(b?.roll || ""), undefined, { numeric: true, sensitivity: "base" })
     );
@@ -584,10 +610,10 @@ export default function TabCourseFile({ courseId, course }) {
     return { blob: doc.output("blob"), name: filename || `Attendance_${state?.course?.code || "Course"}.pdf` };
   };
 
-  const handleDownloadAutoAttendance = async () => {
+  const handleDownloadAutoAttendance = async (targetCourseId = courseId) => {
     setBusy(true);
     try {
-      const built = await buildCurrentAttendancePdf();
+      const built = await buildCurrentAttendancePdf(targetCourseId);
       saveAs(built.blob, built.name);
     } catch (error) {
       Swal.fire("Could not generate attendance PDF", error?.response?.data?.message || error.message, "error");
@@ -742,11 +768,13 @@ export default function TabCourseFile({ courseId, course }) {
 
     const checklistOrder = new Map((state.checklist || []).map((item, index) => [item.key, index + 1]));
 
-    if (String(state.course?.courseType || "theory").toLowerCase() !== "lab" && state?.config?.autoAttendanceEnabled !== false && state?.autoSources?.attendanceReady) {
-      const ownerSection = String(state.course?.section || "");
-      const hasManualOwnerAttendance = (state.documents || []).some((doc) => doc.itemKey === "attendance" && String(doc.section || "") === ownerSection);
-      if (!hasManualOwnerAttendance) {
-        const attendance = await buildCurrentAttendancePdf();
+    const sourceSections = automaticSectionRows(state);
+    if (String(state.course?.courseType || "theory").toLowerCase() !== "lab" && state?.config?.autoAttendanceEnabled !== false) {
+      for (const source of sourceSections) {
+        if (!source.attendanceReady) continue;
+        const hasManual = (state.documents || []).some((doc) => doc.itemKey === "attendance" && String(doc.section || "") === String(source.section));
+        if (hasManual) continue;
+        const attendance = await buildCurrentAttendancePdf(source.courseId);
         entries.push({
           name: attendance.name,
           blob: attendance.blob,
@@ -757,9 +785,22 @@ export default function TabCourseFile({ courseId, course }) {
       }
     }
 
-    if (state.autoSources?.obeReady) {
-      const autoObe = await getCurrentObeFiles();
-      autoObe.forEach((entry) => entries.push({ ...entry, order: checklistOrder.get("course_evaluation") || 8 }));
+    for (const source of sourceSections) {
+      if (!source.obeReady) continue;
+      const sectionDocs = (state.documents || []).filter((doc) =>
+        String(doc.section || "") === String(source.section)
+      );
+      const hasReport = sectionDocs.some((doc) => doc.itemKey === "course_evaluation" && doc.includeInCombined !== false);
+      const hasGradeSheet = sectionDocs.some((doc) => doc.itemKey === "obe_gradesheet" && doc.includeInCombined !== false);
+      const hasWorkbook = sectionDocs.some((doc) => doc.itemKey === "course_evaluation" && /\.xlsm?$/i.test(String(doc.originalFileName || "")));
+      if (hasReport && hasGradeSheet && hasWorkbook) continue;
+      const generated = await getCurrentObeFiles(source.courseId, source.section);
+      generated.forEach((entry) => {
+        if (/^Course_Report_/i.test(entry.name) && hasReport) return;
+        if (/^GradeSheet_/i.test(entry.name) && hasGradeSheet) return;
+        if (/^OBE_CO_PO_/i.test(entry.name) && hasWorkbook) return;
+        entries.push({ ...entry, order: checklistOrder.get("course_evaluation") || 8 });
+      });
     }
     if (state.course?.courseType === "lab" && state.autoSources?.continuousLabReady && labMappings.continuousLabAssessmentIds.length) {
       const clp = await getCurrentClpFiles();
@@ -773,6 +814,9 @@ export default function TabCourseFile({ courseId, course }) {
       const checklistItem = (state.checklist || []).find((item) => item.key === doc.itemKey);
       const folderTitle = checklistItem ? `${String(itemIndex).padStart(2, "0")} ${checklistItem.title}` : doc.itemKey === "obe_gradesheet" ? `${String(itemIndex).padStart(2, "0")} Course Evaluation - Grade Sheet` : `99 ${doc.itemKey}`;
       const originalName = doc.originalFileName || "document";
+      const isSectionDocument = (state.checklist || []).some((item) => item.key === doc.itemKey && item.mode === "all_sections") || doc.itemKey === "obe_gradesheet";
+      const archiveName = isSectionDocument && doc.section && (state.config?.sections || []).length > 1
+        ? `Section_${safeFileName(String(doc.section))}_${originalName}` : originalName;
       // Course Outline is a required serial course-file item. Older uploads can
       // carry includeInCombined=false from earlier Course File versions, which
       // made a perfectly valid uploaded outline disappear from Combine/Print.
@@ -791,9 +835,9 @@ export default function TabCourseFile({ courseId, course }) {
             type: doc.mimeType || blob.type || "application/octet-stream",
           });
           const pdfBlob = await convertCourseFileOfficeToPdf(courseId, officeFile);
-          entries.push({ name: originalName, blob, folder: folderTitle, combined: false, order: itemIndex, doc });
+          entries.push({ name: archiveName, blob, folder: folderTitle, combined: false, order: itemIndex, doc });
           entries.push({
-            name: `${originalName.replace(/\.docx?$/i, "")}.pdf`,
+            name: `${archiveName.replace(/\.docx?$/i, "")}.pdf`,
             blob: pdfBlob,
             folder: folderTitle,
             combined: true,
@@ -807,7 +851,7 @@ export default function TabCourseFile({ courseId, course }) {
         }
       }
 
-      entries.push({ name: originalName, blob, folder: folderTitle, combined: wantsCombined, order: itemIndex, doc });
+      entries.push({ name: archiveName, blob, folder: folderTitle, combined: wantsCombined, order: itemIndex, doc });
     }
 
     const supplementary = state.config?.supplementary || { includeMidSelectionSheet: true, includeFinalSelectionSheet: true };
@@ -1165,15 +1209,15 @@ function ChecklistItem({ index, item, state, completion, busy, startUpload, samp
   const isComplete = completion?.status === "Completed";
   const isPartial = completion?.status === "Partial";
   return (
-    <details className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-all duration-200 open:border-slate-300 open:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:open:border-slate-600">
-      <summary className="flex cursor-pointer list-none items-center gap-3.5 px-4 py-4 transition hover:bg-slate-50/80 dark:hover:bg-slate-800/35 sm:px-5">
+    <details className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-all duration-200 open:border-indigo-200/80 open:shadow-[0_8px_24px_rgba(15,23,42,0.055)] dark:border-slate-700 dark:bg-slate-900 dark:open:border-indigo-500/30">
+      <summary className="flex cursor-pointer list-none items-center gap-3.5 px-4 py-4 outline-none transition-colors hover:bg-slate-50/80 focus-visible:bg-indigo-50/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400/50 dark:hover:bg-slate-800/35 dark:focus-visible:bg-slate-800/50 sm:px-5 [&::-webkit-details-marker]:hidden">
         <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-sm font-black shadow-sm ${isComplete ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300" : isPartial ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300" : "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"}`}>{String(index).padStart(2, "0")}</span>
         <div className="min-w-0 flex-1">
           <div className="text-sm font-extrabold text-slate-900 dark:text-slate-100 sm:text-[15px]">{item.title}</div>
           <div className="mt-1 truncate text-xs font-medium text-slate-400 sm:text-sm">{completion?.detail}</div>
         </div>
         <span className={`hidden rounded-full border px-3 py-1.5 text-xs font-extrabold sm:inline-flex ${statusClass(completion?.status)}`}>{completion?.status}</span>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-400 transition group-open:rotate-180 dark:border-slate-700 dark:bg-slate-800">⌄</span>
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200/90 bg-white text-slate-500 shadow-sm transition-all duration-200 group-hover:border-indigo-200 group-hover:bg-indigo-50 group-hover:text-indigo-600 group-open:border-indigo-200 group-open:bg-indigo-50 group-open:text-indigo-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:group-hover:border-indigo-700 dark:group-hover:bg-slate-800 dark:group-open:border-indigo-700 dark:group-open:bg-slate-800" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px] transition-transform duration-200 group-open:rotate-180"><path d="m6.5 9 5.5 5.5L17.5 9" /></svg></span>
       </summary>
       <div className="border-t border-slate-100 bg-slate-50/35 p-4 dark:border-slate-800 dark:bg-slate-950/20 sm:p-5">
         <div className="mb-4 flex sm:hidden"><span className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${statusClass(completion?.status)}`}>{completion?.status}</span></div>
@@ -1266,6 +1310,7 @@ function AttendanceActions({ state, busy, startUpload, onAutoDownload, onToggleA
   const otherSections = (state?.config?.sections || [])
     .map((row) => String(row.section || ""))
     .filter((section) => section && section !== ownerSection);
+  const linkedSources = automaticSectionRows(state).filter((source) => !source.isOwner && otherSections.includes(String(source.section)));
 
   return (
     <div className="grid gap-4 xl:grid-cols-[1.25fr_0.75fr]">
@@ -1286,7 +1331,7 @@ function AttendanceActions({ state, busy, startUpload, onAutoDownload, onToggleA
           </label>
           {ownerManual && <div className="mb-3 rounded-xl border border-indigo-100 bg-indigo-50/70 px-3 py-2 text-xs font-semibold text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950/25 dark:text-indigo-300">A manual replacement is saved and will take priority in the final package.</div>}
           <div className="flex flex-wrap gap-2">
-            <button disabled={busy || !autoReady} onClick={onAutoDownload} className={primaryButton}>Download Attendance PDF</button>
+            <button disabled={busy || !autoReady} onClick={() => onAutoDownload()} className={primaryButton}>Download Attendance PDF</button>
             <button disabled={busy} onClick={() => startUpload("attendance", { multiple: false, section: ownerSection, label: "Manual attendance replacement", replaceSection: true })} className={secondaryButton}>{ownerManual ? "Replace Manual File" : "Upload Manual File"}</button>
           </div>
         </div>
@@ -1295,11 +1340,21 @@ function AttendanceActions({ state, busy, startUpload, onAutoDownload, onToggleA
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
         <div className="border-b border-slate-100 px-4 py-3.5 dark:border-slate-800">
           <div className="text-sm font-extrabold text-slate-800 dark:text-slate-100">Other sections</div>
-          <p className="mt-1.5 text-sm leading-6 text-slate-500 dark:text-slate-400">Upload attendance for other configured sections individually or in one batch.</p>
+          <p className="mt-1.5 text-sm leading-6 text-slate-500 dark:text-slate-400">Linked sections taught by you are fetched automatically. Upload a file only for a section without portal attendance.</p>
         </div>
         <div className="p-4">
+          {!!linkedSources.length && (
+            <div className="mb-3 space-y-2">
+              {linkedSources.map((source) => (
+                <div key={source.courseId} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800/35">
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Section {source.section} <span className={`ml-1 text-xs ${source.attendanceReady ? "text-emerald-600 dark:text-emerald-300" : "text-slate-400"}`}>{source.attendanceReady ? "· Portal ready" : "· No saved attendance"}</span></span>
+                  {source.attendanceReady && <button type="button" disabled={busy} onClick={() => onAutoDownload(source.courseId)} className={`${secondaryButton} min-h-[34px] px-3 py-1.5 text-xs`}>Download PDF</button>}
+                </div>
+              ))}
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
-            <button disabled={busy || !otherSections.length} onClick={() => startUpload("attendance", { sectioned: true, multiple: false, otherSectionsOnly: true })} className={primaryButton}>Upload Single</button>
+            <button disabled={busy || !otherSections.length} onClick={() => startUpload("attendance", { sectioned: true, multiple: false, otherSectionsOnly: true })} className={secondaryButton}>Upload Single</button>
             <button disabled={busy || !otherSections.length} onClick={() => startUpload("attendance", { sectioned: true, multiple: true, otherSectionsOnly: true })} className={secondaryButton}>Bulk Auto Match</button>
           </div>
           {!otherSections.length && <p className="mt-3 text-xs font-medium text-slate-400">No additional section is configured.</p>}
@@ -1393,6 +1448,7 @@ function ExamQuestionsActions({ state, busy, startUpload }) {
 
 function CourseEvaluationActions({ state, busy, onCurrentDownload, onExternalFiles }) {
   const inputRef = useRef(null);
+  const linkedSources = automaticSectionRows(state).filter((source) => !source.isOwner);
   return (
     <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
@@ -1417,9 +1473,19 @@ function CourseEvaluationActions({ state, busy, onCurrentDownload, onExternalFil
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
         <div className="border-b border-slate-100 px-4 py-3.5 dark:border-slate-800">
           <div className="text-sm font-extrabold text-slate-800 dark:text-slate-100">Other sections</div>
-          <p className="mt-1.5 text-sm leading-6 text-slate-500 dark:text-slate-400">Import CO-PO Excel or PDF files for other sections. Excel files use the same finalized Course Report and Grade Sheet rules.</p>
+          <p className="mt-1.5 text-sm leading-6 text-slate-500 dark:text-slate-400">CO-PO data from your linked sections is included automatically. Upload external files only when necessary.</p>
         </div>
         <div className="p-4">
+          {linkedSources.length > 0 && <div className="mb-3 space-y-2">{linkedSources.map((source) => (
+            <div key={source.courseId} className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 dark:border-slate-700 dark:bg-slate-800/35">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><span className="text-sm font-bold text-slate-700 dark:text-slate-200">Section {source.section}</span><span className={`text-xs font-semibold ${source.obeReady ? "text-emerald-600 dark:text-emerald-300" : "text-slate-400"}`}>{source.obeReady ? "OBE ready · auto-included" : "OBE incomplete"}</span></div>
+              {source.obeReady && <div className="flex flex-wrap gap-2">
+                <button type="button" disabled={busy} onClick={() => onCurrentDownload("report", source.courseId)} className={`${secondaryButton} min-h-[34px] px-3 py-1.5 text-xs`}>Course Report</button>
+                <button type="button" disabled={busy} onClick={() => onCurrentDownload("grade", source.courseId)} className={`${secondaryButton} min-h-[34px] px-3 py-1.5 text-xs`}>Grade Sheet</button>
+                <button type="button" disabled={busy} onClick={() => onCurrentDownload("excel", source.courseId)} className={`${secondaryButton} min-h-[34px] px-3 py-1.5 text-xs`}>OBE Excel</button>
+              </div>}
+            </div>
+          ))}</div>}
           <input ref={inputRef} type="file" multiple accept=".xlsx,.xlsm,.xls,.pdf,application/pdf" className="hidden" onChange={(e) => { const files = Array.from(e.target.files || []); e.target.value = ""; onExternalFiles(files); }} />
           <button disabled={busy} onClick={() => inputRef.current?.click()} className={secondaryButton}>Upload CO-PO Excel / PDF</button>
         </div>
@@ -1429,7 +1495,7 @@ function CourseEvaluationActions({ state, busy, onCurrentDownload, onExternalFil
 }
 
 function SampleSuggestions({ state, itemKey, suggestions, busy, onCandidateChange, onSampleFile, onUseSubmission, onSampleIncluded }) {
-  if (!suggestions?.length) return <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-sm font-medium text-amber-700 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300">No matching marks assessment was found. Check the assessment name or use Lab Course Mapping where available.</div>;
+  if (!suggestions?.length) return <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-sm font-medium text-amber-700 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300">No matching assessment was found in this section's Marks or OBE records. Check the assessment setup first.</div>;
   const answerScriptOnly = ["class_test", "mid", "final", "lab_exam"].includes(itemKey);
   const assignmentSamples = itemKey === "assignment";
   return (
@@ -1459,7 +1525,7 @@ function SampleSuggestions({ state, itemKey, suggestions, busy, onCandidateChang
                   </div>
                   {candidates.length ? (
                     <>
-                      <select value={selected?.studentId || ""} onChange={(e) => onCandidateChange(suggestion, band, e.target.value)} className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+                      <select value={selected?.studentId || ""} onChange={(e) => onCandidateChange(suggestion, band, e.target.value)} className="mt-3 w-full cursor-pointer rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 shadow-sm outline-none transition hover:border-indigo-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-indigo-600">
                         {candidates.map((candidate) => <option key={candidate.studentId} value={candidate.studentId}>{candidate.roll} · {candidate.name} · {candidate.scoreDisplay || candidate.score}</option>)}
                       </select>
                       {answerScriptOnly ? (
@@ -1519,7 +1585,7 @@ function DocumentList({ docs, onDownload, onDelete }) {
               <td className="px-4 py-3.5"><div className="max-w-[420px] truncate font-bold text-slate-700 dark:text-slate-200">{doc.originalFileName}</div>{doc.label && <div className="mt-0.5 max-w-[420px] truncate text-xs text-slate-400">{doc.label}</div>}</td>
               <td className="px-4 py-3.5 font-semibold text-slate-600 dark:text-slate-300">{doc.section || "—"}</td>
               <td className="px-4 py-3.5 text-slate-600 dark:text-slate-300">{doc.band ? BAND_LABEL[doc.band] : "—"}{doc.studentRoll ? ` · ${doc.studentRoll}` : ""}</td>
-              <td className="px-4 py-3.5"><div className="flex justify-end gap-2"><button onClick={() => onDownload(doc)} className={secondaryButton}>Download</button><button onClick={() => onDelete(doc)} className={dangerButton}>Remove</button></div></td>
+              <td className="px-4 py-3.5"><div className="flex justify-end gap-2"><button onClick={() => onDownload(doc)} className={secondaryButton}>Download</button>{!doc.linkedFromSibling && <button onClick={() => onDelete(doc)} className={dangerButton}>Remove</button>}</div></td>
             </tr>
           ))}</tbody>
         </table>

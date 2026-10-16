@@ -2274,8 +2274,12 @@ const saveSetup = async () => {
             status: statusToken === "A" ? "absent" : statusToken === "I" ? "incomplete" : "present",
             entries: (blueprint.items || []).map((item) => {
               const raw = getDraftValue(student.studentId, blueprint._id, item.key);
+              // Preserve an untouched/cleared input, distinguishing it from 0.
+              if (String(raw ?? "").trim() === "") {
+                return { itemKey: item.key, obtainedMarks: null };
+              }
               const numeric = Number(raw);
-              return { itemKey: item.key, obtainedMarks: Number.isFinite(numeric) ? numeric : 0 };
+              return { itemKey: item.key, obtainedMarks: Number.isFinite(numeric) ? numeric : null };
             }),
           });
         }
@@ -4020,10 +4024,13 @@ const saveSetup = async () => {
           studentId,
           blueprintId,
           status: statusToken === "A" ? "absent" : statusToken === "I" ? "incomplete" : "present",
-          entries: (blueprint?.items || []).map((item) => ({
-            itemKey: item.key,
-            obtainedMarks: Number(nextDraft[recordKey]?.[item.key] || 0),
-          })),
+          entries: (blueprint?.items || []).map((item) => {
+            const raw = nextDraft[recordKey]?.[item.key];
+            return {
+              itemKey: item.key,
+              obtainedMarks: String(raw ?? "").trim() === "" ? null : Number(raw),
+            };
+          }),
         };
       });
 

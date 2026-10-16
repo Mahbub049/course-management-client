@@ -3234,14 +3234,13 @@ export default function TabMarks({ courseId, course }) {
         ? result.skippedBlueprints
         : [];
       const importedRecords = Number(result?.importedRecords || 0);
+      const clearedBlankRecords = Number(result?.clearedBlankRecords || 0);
       const protectedRecords = Number(result?.protectedExistingRecords || 0);
+      const hasChanges = importedRecords > 0 || createdCount > 0 || clearedBlankRecords > 0;
 
       await premiumSwal({
-        icon: importedRecords > 0 || createdCount > 0 ? "success" : "info",
-        title:
-          importedRecords > 0 || createdCount > 0
-            ? "OBE fetch completed"
-            : "Nothing needed to change",
+        icon: hasChanges ? "success" : "info",
+        title: hasChanges ? "OBE fetch completed" : "Nothing needed to change",
         html: `
           <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">
             <div class="premium-dialog-card" style="padding:13px"><div class="premium-dialog-muted" style="font-size:10px;font-weight:800;text-transform:uppercase">Marks imported</div><div class="premium-dialog-success" style="font-size:22px;font-weight:900;margin-top:3px">${importedRecords}</div></div>
@@ -3249,6 +3248,7 @@ export default function TabMarks({ courseId, course }) {
             <div class="premium-dialog-card" style="padding:13px"><div class="premium-dialog-muted" style="font-size:10px;font-weight:800;text-transform:uppercase">Mappings used</div><div class="premium-dialog-sky" style="font-size:22px;font-weight:900;margin-top:3px">${matched.length}</div></div>
             <div class="premium-dialog-card" style="padding:13px"><div class="premium-dialog-muted" style="font-size:10px;font-weight:800;text-transform:uppercase">Existing protected</div><div style="font-size:22px;font-weight:900;margin-top:3px;color:#fde68a">${protectedRecords}</div></div>
           </div>
+          ${clearedBlankRecords ? `<div class="premium-dialog-muted" style="margin-top:12px;font-size:12px">${clearedBlankRecords} existing marksheet cell(s) were cleared because their OBE entries were blank.</div>` : ""}
           ${skipped.length ? `<div class="premium-dialog-warning" style="margin-top:12px;padding:11px 13px"><strong>${skipped.length} OBE item(s) were not fetched.</strong> Review the selected mapping if something is missing.</div>` : ""}
         `,
         confirmButtonText: "Done",
