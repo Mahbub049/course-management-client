@@ -1646,55 +1646,18 @@ function getObeBlueprintCategory(blueprint = {}) {
   return category === "ct_aggregate" ? "ct" : category;
 }
 
-function scoreObeBlueprintTarget(blueprint, assessment) {
-  if (!blueprint || !assessment) return -1;
-  const sourceName = normalizeImportLabel(blueprint.assessmentName || "");
-  const targetName = normalizeImportLabel(assessment.name || "");
-  const sourceCategory = getObeBlueprintCategory(blueprint);
-  const targetCategory = importCategory(assessment.name || "");
-  const sameMarks =
-    Math.abs(Number(blueprint.totalMarks || 0) - Number(assessment.fullMarks || 0)) < 1e-9;
-
-  let score = 0;
-  if (sourceName && targetName && sourceName === targetName) score += 140;
-  if (sourceCategory !== "other" && sourceCategory === targetCategory) score += 70;
-  if (sameMarks) score += 55;
-  if (sourceName && targetName && (sourceName.includes(targetName) || targetName.includes(sourceName))) {
-    score += 24;
-  }
-  if (assessment?.structureType === "lab_final") score += 8;
-  return score;
-}
-
-function buildObeFetchDefaults(blueprints = [], assessments = [], courseType = "theory") {
+function buildObeFetchDefaults(blueprints = [], courseType = "theory") {
   const mappings = {};
   const createConfigs = {};
-  const usedAssessmentIds = new Set();
 
   (blueprints || []).forEach((blueprint) => {
-    const candidates = (assessments || [])
-      .filter((assessment) => !usedAssessmentIds.has(String(assessment._id)))
-      .map((assessment) => ({
-        assessment,
-        score: scoreObeBlueprintTarget(blueprint, assessment),
-      }))
-      .filter(
-        ({ assessment, score }) =>
-          score > 0 &&
-          Math.abs(Number(blueprint.totalMarks || 0) - Number(assessment.fullMarks || 0)) < 1e-9
-      )
-      .sort((a, b) => b.score - a.score);
+    const blueprintId = String(blueprint._id);
+    // Fetch is always opt-in: do not auto-map or create any assessment.
+    mappings[blueprintId] = "skip";
 
-    const best = candidates[0];
-    if (best && best.score >= 105) {
-      mappings[String(blueprint._id)] = `assessment:${best.assessment._id}`;
-      usedAssessmentIds.add(String(best.assessment._id));
-    } else {
-      mappings[String(blueprint._id)] = "create";
-    }
-
+    // Pre-fill details only for when the teacher explicitly chooses Create.
     const type = getObeBlueprintCategory(blueprint);
-    createConfigs[String(blueprint._id)] = {
+    createConfigs[blueprintId] = {
       name:
         courseType === "lab" && type === "mid"
           ? "Lab Mid"
@@ -1807,7 +1770,7 @@ function ObeFetchModal({
                 <div className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-indigo-600 dark:text-indigo-300">OBE → Marksheet</div>
                 <h3 className="mt-1 text-xl font-extrabold tracking-tight text-slate-900 sm:text-2xl dark:text-white">Review assessment mapping before fetching</h3>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-                  Match each OBE assessment to an existing marksheet field or create the missing field directly. OBE question/CO items are shown so you can verify the source before anything is changed.
+                  All OBE assessments are skipped by default. Choose a destination only for the assessments you want to fetch; the others will remain untouched. Question/CO items are shown to help you verify the source.
                 </p>
               </div>
             </div>
@@ -1917,7 +1880,7 @@ function ObeFetchModal({
         </div>
 
         <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950/60 sm:flex-row sm:items-center sm:justify-between sm:px-7">
-          <div className="text-xs text-slate-500">Nothing is created or overwritten until you confirm this screen.</div>
+          <div className="text-xs text-slate-500">Only the selected assessments will be fetched. Skipped assessments will not be changed.</div>
           <div className="flex gap-2 self-end">
             <button type="button" onClick={onClose} disabled={busy} className="h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Cancel</button>
             <button type="button" onClick={onFetch} disabled={busy || !selected.length} className="inline-flex h-11 items-center gap-2 rounded-xl bg-indigo-600 px-5 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
@@ -3084,7 +3047,7 @@ export default function TabMarks({ courseId, course }) {
         return;
       }
 
-      const defaults = buildObeFetchDefaults(usableBlueprints, assessments, courseType);
+      const defaults = buildObeFetchDefaults(usableBlueprints, courseType);
       setObeFetch({
         open: true,
         busy: false,
