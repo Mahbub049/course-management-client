@@ -8,6 +8,7 @@ import {
 } from "../services/complaintService";
 import { fetchTeacherCourses, updateCourseRequest } from "../services/courseService";
 import Swal from "sweetalert2";
+import { attendanceIssueRefs } from "../utils/issueAccess";
 
 const STATUS_BADGE_CLASSES = {
   open: "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/20",
@@ -79,10 +80,9 @@ function getComponentText(c) {
   const cat = c?.category || "marks";
 
   if (cat === "attendance") {
-    if (c?.attendanceRef?.date && c?.attendanceRef?.period != null) {
-      return `${c.attendanceRef.date} (P${c.attendanceRef.period})`;
-    }
-    return "Attendance";
+    const refs = attendanceIssueRefs(c);
+    if (refs.length === 1) return `${refs[0].date} (P${refs[0].period})`;
+    return refs.length ? `${refs.length} attendance sessions` : "Attendance";
   }
 
   if (cat === "general") {
@@ -91,6 +91,30 @@ function getComponentText(c) {
 
   return c?.assessment?.name || "Whole course";
 }
+
+const toInputDate = (value) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+};
+const toIsoDate = (value) => value ? new Date(value).toISOString() : null;
+const getCourseId = (course) => course?._id || course?.id || "";
+const prepareDraft = (course) => {
+  const settings = course?.complaintSettings || {};
+  return {
+    attendanceTargetPercentage: settings.attendanceTargetPercentage ?? 50,
+    categories: Object.fromEntries(["marks", "attendance", "general"].map((category) => {
+      const rule = settings.categories?.[category] || {};
+      return [category, {
+        enabled: rule.enabled !== false,
+        startAt: toInputDate(rule.startAt),
+        endAt: toInputDate(rule.endAt),
+      }];
+    })),
+  };
+};
 
 export default function TeacherComplaintsPage() {
   const navigate = useNavigate();
@@ -103,11 +127,14 @@ export default function TeacherComplaintsPage() {
   const [courseSettingsLoading, setCourseSettingsLoading] = useState(true);
   const [togglingCourseId, setTogglingCourseId] = useState("");
   const [showCourseControls, setShowCourseControls] = useState(false);
+  const [settingsDraft, setSettingsDraft] = useState({});
+  const [includeAllPending, setIncludeAllPending] = useState(true);
 
   const [statusFilter, setStatusFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [courseFilter, setCourseFilter] = useState("all");
   const [search, setSearch] = useState("");
+  const [groupAttendance, setGroupAttendance] = useState(true);
 
   const [selected, setSelected] = useState(null);
   const [replyDraft, setReplyDraft] = useState("");
@@ -145,40 +172,40 @@ export default function TeacherComplaintsPage() {
 
   const handleResolveAttendance = async () => {
     if (!selected) return;
-
+    const related = complaints.filter((issue) =>
+      issue.category === "attendance" && isSameStudentCourse(issue, selected) &&
+      ["open", "in_review"].includes(issue.status));
+    const pendingCount = includeAllPending ? related.length : 1;
+    const sessionCount = (includeAllPending ? related : [selected])
+      .reduce((count, issue) => count + attendanceIssueRefs(issue).length, 0);
+    const confirm = await Swal.fire({
+      icon: "question", title: "Approve attendance correction?",
+      html: `This will mark <b>${sessionCount} class(es) present</b> and resolve <b>${pendingCount} issue(s)</b>. Please verify the submitted application and evidence first.`,
+      showCancelButton: true, confirmButtonText: "Yes, approve", reverseButtons: true,
+    });
+    if (!confirm.isConfirmed) return;
     setSaving(true);
     try {
-      const res = await resolveAttendanceComplaint(selected._id, replyDraft);
+      const res = await resolveAttendanceComplaint(selected._id, replyDraft, includeAllPending);
+      const changed = new Map((res.complaints || []).map((issue) => [issue._id, issue]));
       const updated = res.complaint;
-
-      // Each attendance issue in the same student/course shares one live total.
-      // Refresh all those cards immediately after the attendance record is saved.
-      setComplaints((prev) =>
-        prev.map((c) => {
-          if (c._id === updated._id) return updated;
-          if (c.category === "attendance" && isSameStudentCourse(c, updated)) {
-            return { ...c, attendanceStats: updated.attendanceStats };
-          }
-          return c;
-        })
-      );
+      setComplaints((prev) => prev.map((issue) => {
+        if (changed.has(issue._id)) return changed.get(issue._id);
+        if (issue.category === "attendance" && isSameStudentCourse(issue, updated)) {
+          return { ...issue, attendanceStats: updated.attendanceStats };
+        }
+        return issue;
+      }));
       setSelected(updated);
       setReplyDraft(updated.reply || "");
-
       Swal.fire({
-        icon: "success",
-        title: "Done",
-        text: "Attendance updated and issue resolved.",
-        timer: 1800,
-        showConfirmButton: false,
+        icon: "success", title: "Attendance updated",
+        text: `${res.updatedSessions} session(s) updated · ${res.resolvedCount} application(s) resolved.`,
+        timer: 2000, showConfirmButton: false,
       });
     } catch (err) {
-      console.error(err);
-      Swal.fire({
-        icon: "error",
-        title: "Failed",
-        text: err?.response?.data?.message || "Failed to resolve attendance issue.",
-      });
+      Swal.fire({ icon: "error", title: "Unable to resolve",
+        text: err?.response?.data?.message || "Attendance correction failed." });
     } finally {
       setSaving(false);
     }
@@ -259,6 +286,42 @@ export default function TeacherComplaintsPage() {
     }
   };
 
+  const changeSettingsDraft = (course, category, field, value) => {
+    const id = getCourseId(course);
+    setSettingsDraft((current) => {
+      const draft = current[id] || prepareDraft(course);
+      return { ...current, [id]: category
+        ? { ...draft, categories: { ...draft.categories,
+            [category]: { ...draft.categories[category], [field]: value } } }
+        : { ...draft, [field]: value } };
+    });
+  };
+
+  const saveSettingsDraft = async (course) => {
+    const id = getCourseId(course);
+    const draft = settingsDraft[id] || prepareDraft(course);
+    setTogglingCourseId(id);
+    try {
+      const target = Number(draft.attendanceTargetPercentage);
+      if (!(target > 0 && target <= 100)) throw new Error("Target must be between 0.01% and 100%.");
+      const categories = Object.fromEntries(Object.entries(draft.categories).map(([name, rule]) => [
+        name, { enabled: rule.enabled, startAt: toIsoDate(rule.startAt), endAt: toIsoDate(rule.endAt) },
+      ]));
+      const updated = await updateCourseRequest(id, { complaintSettings: {
+        ...course.complaintSettings,
+        attendanceTargetPercentage: target, categories,
+      }});
+      setCourses((prev) => prev.map((item) => getCourseId(item) === id
+        ? { ...item, complaintSettings: updated?.complaintSettings || { ...item.complaintSettings, categories, attendanceTargetPercentage: target } }
+        : item));
+      setSettingsDraft((prev) => { const next = { ...prev }; delete next[id]; return next; });
+      Swal.fire({ icon: "success", title: "Issue access saved", timer: 1300, showConfirmButton: false });
+    } catch (err) {
+      Swal.fire({ icon: "error", title: "Could not save settings",
+        text: err?.response?.data?.message || err?.message || "Please try again." });
+    } finally { setTogglingCourseId(""); }
+  };
+
   const filteredComplaints = useMemo(() => {
     return complaints.filter((c) => {
       if (statusFilter !== "all" && c.status !== statusFilter) return false;
@@ -274,10 +337,9 @@ export default function TeacherComplaintsPage() {
       if (search.trim()) {
         const q = search.trim().toLowerCase();
 
-        const attendanceText =
-          c.category === "attendance" && c.attendanceRef
-            ? `${c.attendanceRef.date} period ${c.attendanceRef.period}`
-            : "";
+        const attendanceText = c.category === "attendance"
+          ? attendanceIssueRefs(c).map((r) => `${r.date} period ${r.period}`).join(" ")
+          : "";
 
         const text = [
           c.student?.name,
@@ -302,6 +364,31 @@ export default function TeacherComplaintsPage() {
       return true;
     });
   }, [complaints, statusFilter, categoryFilter, courseFilter, search]);
+
+  const displayComplaints = useMemo(() => {
+    if (!groupAttendance) return filteredComplaints;
+    const grouped = new Map();
+    const display = [];
+    for (const issue of filteredComplaints) {
+      if (issue.category !== "attendance") {
+        display.push(issue);
+        continue;
+      }
+      const student = String(issue.student?._id || issue.student || "");
+      const course = String(issue.course?._id || issue.course || "");
+      const key = `${student}:${course}:${issue.status}`;
+      if (!grouped.has(key)) {
+        const item = { ...issue, _groupCount: 1, _groupSessions: attendanceIssueRefs(issue).length };
+        grouped.set(key, item);
+        display.push(item);
+      } else {
+        const current = grouped.get(key);
+        current._groupCount += 1;
+        current._groupSessions += attendanceIssueRefs(issue).length;
+      }
+    }
+    return display;
+  }, [filteredComplaints, groupAttendance]);
 
   const courseSubmissionStats = useMemo(() => {
     const open = courses.filter(
@@ -513,58 +600,73 @@ export default function TeacherComplaintsPage() {
                 No active courses found.
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
                 {courses.map((course) => {
-                  const id = course._id || course.id;
+                  const id = getCourseId(course);
                   const isOpen = course?.complaintSettings?.allowStudentComplaints !== false;
                   const isToggling = togglingCourseId === id;
-
+                  const draft = settingsDraft[id] || prepareDraft(course);
                   return (
-                    <div
-                      key={id}
-                      className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/40 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">
-                          {course.code} – {course.title}
+                    <div key={id} className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-700 dark:bg-slate-950/40">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-bold text-slate-900 dark:text-slate-100">{course.code} – {course.title}</div>
+                          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Section {course.section || "—"} · {course.semester || "—"} {course.year || ""}</div>
                         </div>
-                        <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                          Section {course.section || "—"} • {course.semester || "—"} {course.year || ""}
-                        </div>
-                        <div
-                          className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                            isOpen
-                              ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
-                              : "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300"
-                          }`}
-                        >
-                          {isOpen ? "Issues Open" : "Issues Closed"}
-                        </div>
+                        <button type="button" disabled={isToggling}
+                          onClick={() => handleToggleComplaintSubmission(course, !isOpen)}
+                          className={`rounded-xl border px-3 py-2 text-xs font-bold disabled:opacity-50 ${isOpen
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+                            : "border-slate-300 bg-slate-200 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"}`}>
+                          {isOpen ? "Issue submissions: On" : "Issue submissions: Off"}
+                        </button>
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleToggleComplaintSubmission(course, !isOpen)}
-                        disabled={isToggling}
-                        data-pending-label="Updating…"
-                        className={`inline-flex min-w-[145px] items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                          isOpen
-                            ? "border border-rose-200 bg-white text-rose-700 hover:bg-rose-50 dark:border-rose-500/20 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-500/10"
-                            : "border border-emerald-200 bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-500/20"
-                        }`}
-                      >
-                        {isToggling ? (
-                          <>
-                            <SpinnerIcon />
-                            Updating...
-                          </>
-                        ) : (
-                          <>
-                            <PowerIcon />
-                            {isOpen ? "Turn Off" : "Turn On"}
-                          </>
-                        )}
-                      </button>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {["attendance", "marks", "general"].map((cat) => (
+                          <label key={cat} className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold dark:border-slate-700 ${draft.categories[cat].enabled
+                            ? "border-indigo-200 bg-white text-slate-900 dark:bg-slate-800 dark:text-slate-100"
+                            : "border-slate-200 bg-slate-100 text-slate-400 dark:bg-slate-900"}`}>
+                            <input type="checkbox" checked={draft.categories[cat].enabled}
+                              onChange={(event) => changeSettingsDraft(course, cat, "enabled", event.target.checked)}
+                              className="h-4 w-4 rounded text-indigo-600" />
+                            {CATEGORY_LABEL[cat]}
+                          </label>
+                        ))}
+                      </div>
+                      <div className="mt-4 flex flex-wrap items-center gap-3">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Minimum attendance (%)</label>
+                        <input type="number" min="0.01" max="100" step="0.01" value={draft.attendanceTargetPercentage}
+                          onChange={(event) => changeSettingsDraft(course, null, "attendanceTargetPercentage", event.target.value)}
+                          className="w-24 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white" />
+                        <span className="text-xs text-slate-400">Student can request only enough sessions to reach this.</span>
+                      </div>
+                      <details className="mt-3 rounded-xl border border-slate-200 bg-white/70 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/60">
+                        <summary className="cursor-pointer text-xs font-semibold text-slate-600 dark:text-slate-300">Optional category submission windows</summary>
+                        <div className="mt-3 space-y-3">
+                          {["attendance", "marks", "general"].map((cat) => (
+                            <div key={cat} className="grid gap-2 border-t border-slate-100 pt-3 dark:border-slate-800 sm:grid-cols-[90px_1fr_1fr] sm:items-center">
+                              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">{CATEGORY_LABEL[cat]}</span>
+                              <label className="text-[11px] text-slate-500 dark:text-slate-400">Starts (optional)
+                                <input type="datetime-local" value={draft.categories[cat].startAt}
+                                  onChange={(event) => changeSettingsDraft(course, cat, "startAt", event.target.value)}
+                                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+                              </label>
+                              <label className="text-[11px] text-slate-500 dark:text-slate-400">Ends (optional)
+                                <input type="datetime-local" value={draft.categories[cat].endAt}
+                                  onChange={(event) => changeSettingsDraft(course, cat, "endAt", event.target.value)}
+                                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                      <div className="mt-4 flex items-center justify-between gap-3">
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">Save changes to apply to student submissions.</span>
+                        <button type="button" disabled={isToggling} onClick={() => saveSettingsDraft(course)}
+                          className="shrink-0 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-50">
+                          {isToggling ? "Saving…" : "Save Rules"}
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
@@ -690,10 +792,14 @@ export default function TeacherComplaintsPage() {
                 Issues
               </div>
               <div className="text-xs text-slate-500 dark:text-slate-400">
-                Showing {filteredComplaints.length} result
-                {filteredComplaints.length === 1 ? "" : "s"}
+                Showing {displayComplaints.length} row{displayComplaints.length === 1 ? "" : "s"}
+                {groupAttendance ? ` · ${filteredComplaints.length} individual applications` : ""}
               </div>
             </div>
+            <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+              <input type="checkbox" checked={groupAttendance} onChange={(e) => setGroupAttendance(e.target.checked)} className="rounded text-indigo-600" />
+              Group attendance by student
+            </label>
           </div>
 
           <div className="max-h-[70vh] overflow-y-auto p-3">
@@ -703,7 +809,7 @@ export default function TeacherComplaintsPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                {filteredComplaints.map((c) => {
+                {displayComplaints.map((c) => {
                   const badgeClass =
                     STATUS_BADGE_CLASSES[c.status] ||
                     "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700";
@@ -714,7 +820,9 @@ export default function TeacherComplaintsPage() {
                     "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700";
 
                   const isActive = selected?._id === c._id;
-                  const componentText = getComponentText(c);
+                  const componentText = c._groupCount > 1
+                    ? `${c._groupSessions} sessions · ${c._groupCount} applications`
+                    : getComponentText(c);
 
                   return (
                     <button
@@ -874,22 +982,53 @@ export default function TeacherComplaintsPage() {
 
                     <Pill label={`Component: ${getComponentText(selected)}`} />
 
-                    {selectedCategory === "attendance" && selected.attendanceRef?.date && (
-                      <Pill
-                        label={`Session: ${selected.attendanceRef.date} (P${selected.attendanceRef.period})`}
-                      />
-                    )}
+                    {selectedCategory === "attendance" && attendanceIssueRefs(selected).map((ref) => (
+                      <Pill key={`${ref.date}-${ref.period}`} label={`${ref.date} (P${ref.period})`} />
+                    ))}
                   </div>
                 </div>
 
                 <div>
                   <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    Student message
+                    Student application
                   </div>
                   <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-800 shadow-sm whitespace-pre-wrap dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
                     {selected.message || "No message provided."}
                   </div>
                 </div>
+
+                {selectedCategory === "attendance" && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+                    <div className="mb-2 text-xs font-bold text-slate-800 dark:text-slate-200">
+                      Other pending applications from this student · {complaints.filter((c) => c.category === "attendance" && isSameStudentCourse(c, selected) && ["open", "in_review"].includes(c.status) && c._id !== selected._id).length}
+                    </div>
+                    <div className="max-h-56 space-y-2 overflow-y-auto">
+                      {complaints.filter((c) => c.category === "attendance" && isSameStudentCourse(c, selected) && ["open", "in_review"].includes(c.status) && c._id !== selected._id).map((issue) => (
+                        <div key={issue._id} className="rounded-xl border border-slate-200 bg-white p-3 text-xs dark:border-slate-700 dark:bg-slate-900">
+                          <div className="font-semibold text-slate-800 dark:text-white">{attendanceIssueRefs(issue).map((ref) => `${ref.date} (P${ref.period})`).join(" · ")}</div>
+                          <p className="mt-1 whitespace-pre-wrap text-slate-600 dark:text-slate-300">{issue.message}</p>
+                          {!!issue.attachments?.length && <div className="mt-2 flex flex-wrap gap-2">
+                            {issue.attachments.map((file, i) => file.url ? <a key={i} href={file.url} target="_blank" rel="noopener noreferrer" className="font-semibold text-indigo-700 underline dark:text-indigo-300">📎 {file.name}</a> : <span key={i}>{file.name}</span>)}
+                          </div>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {!!selected.attachments?.length && (
+                  <div>
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Supporting documents</div>
+                    <div className="flex flex-wrap gap-2">
+                      {selected.attachments.map((file, i) => file.url ? (
+                        <a key={i} href={file.url} target="_blank" rel="noopener noreferrer"
+                          className="max-w-full truncate rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300">
+                          📎 {file.name}
+                        </a>
+                      ) : <span key={i} className="text-xs text-slate-500">{file.name} (link unavailable)</span>)}
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -945,6 +1084,12 @@ export default function TeacherComplaintsPage() {
                       Mark In Review
                     </button>
 
+                    {selectedCategory === "attendance" && (
+                      <label className="col-span-full flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                        <input type="checkbox" checked={includeAllPending} onChange={(e) => setIncludeAllPending(e.target.checked)} className="h-4 w-4 rounded" />
+                        Also approve this student's other pending attendance applications in this course ({complaints.filter((item) => item.category === "attendance" && isSameStudentCourse(item, selected) && ["open", "in_review"].includes(item.status)).length} pending)
+                      </label>
+                    )}
                     {selectedCategory === "attendance" ? (
                       <button
                         onClick={handleResolveAttendance}
@@ -953,7 +1098,7 @@ export default function TeacherComplaintsPage() {
                         className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300 dark:hover:bg-emerald-500/20"
                       >
                         <CheckIcon />
-                        Resolve & Update Attendance
+                        Approve Attendance Sessions
                       </button>
                     ) : (
                       <button

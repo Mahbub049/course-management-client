@@ -10,6 +10,7 @@ import {
 } from "../services/studentService";
 import { fetchStudentAttendanceSheet } from "../services/attendanceService";
 import StudentPageBack from "../components/StudentPageBack";
+import { issueCategoryAccess, sessionsForTarget, attendanceIssueRefs } from "../utils/issueAccess";
 
 const CATEGORY_LABELS = {
   marks: "Marks",
@@ -70,6 +71,8 @@ export default function StudentComplaintsPage() {
   const [category, setCategory] = useState("marks");
   const [assessmentId, setAssessmentId] = useState("");
   const [attendanceSelections, setAttendanceSelections] = useState([]);
+  const [attendanceSummary, setAttendanceSummary] = useState(null);
+  const [attachments, setAttachments] = useState([]);
   const [message, setMessage] = useState("");
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -106,9 +109,14 @@ export default function StudentComplaintsPage() {
         const queryCategory = searchParams.get("category") || "marks";
         const queryAssessment = searchParams.get("assessment") || "";
 
-        if (queryCourse && safeCourses.some((course) => getCourseId(course) === queryCourse)) {
+        const linkedCourse = safeCourses.find((course) => getCourseId(course) === queryCourse);
+        if (queryCourse && linkedCourse) {
           setFormCourseId(queryCourse);
-          setCategory(["marks", "attendance", "general"].includes(queryCategory) ? queryCategory : "marks");
+          const requestedCategory = ["marks", "attendance", "general"].includes(queryCategory) ? queryCategory : "marks";
+          const allowedCategory = issueCategoryAccess(linkedCourse.complaintSettings, requestedCategory).allowed
+            ? requestedCategory
+            : ["marks", "attendance", "general"].find((cat) => issueCategoryAccess(linkedCourse.complaintSettings, cat).allowed) || "marks";
+          setCategory(allowedCategory);
           setAssessmentId(queryAssessment);
           setFormOpen(true);
         }
@@ -125,35 +133,30 @@ export default function StudentComplaintsPage() {
     };
   }, []);
 
-  const reportedAttendanceKeys = useMemo(() => {
-    return new Set(
-      complaints
-        .filter(
-          (item) =>
-            item?.category === "attendance" &&
-            item?.attendanceRef?.date &&
-            item?.attendanceRef?.period != null
-        )
-        .map((item) =>
-          getAttendanceKey(
-            getComplaintCourseId(item),
-            item.attendanceRef.date,
-            item.attendanceRef.period
-          )
-        )
-    );
-  }, [complaints]);
+  const reportedAttendanceKeys = useMemo(() => new Set(
+    complaints.filter((item) => item?.category === "attendance")
+      .flatMap((item) => attendanceIssueRefs(item).map((ref) =>
+        getAttendanceKey(getComplaintCourseId(item), ref.date, ref.period)))
+  ), [complaints]);
 
   const selectedCourse = useMemo(
     () => courses.find((course) => getCourseId(course) === formCourseId) || null,
     [courses, formCourseId]
   );
 
-  const complaintsOpen =
-    selectedCourse?.complaintSettings?.allowStudentComplaints !== false;
-  const complaintClosedMessage =
-    selectedCourse?.complaintSettings?.closedMessage ||
-    "Issue submission is currently closed by the course teacher.";
+  const categoryAccess = issueCategoryAccess(selectedCourse?.complaintSettings, category);
+  const complaintsOpen = categoryAccess.allowed;
+  const complaintClosedMessage = categoryAccess.message;
+  const attendanceTarget = Number(selectedCourse?.complaintSettings?.attendanceTargetPercentage || 50);
+  const pendingAttendanceSessions = useMemo(() => new Set(
+    complaints.filter((issue) => issue.category === "attendance" &&
+      String(getComplaintCourseId(issue)) === String(formCourseId) &&
+      ["open", "in_review"].includes(issue.status))
+      .flatMap((issue) => attendanceIssueRefs(issue).map((ref) => `${ref.date}:${ref.period}`))
+  ).size, [complaints, formCourseId]);
+  const remainingAttendance = attendanceSummary
+    ? Math.max(0, sessionsForTarget(attendanceSummary.totalPresent, attendanceSummary.totalClasses, attendanceTarget) - pendingAttendanceSessions)
+    : 0;
 
   useEffect(() => {
     let active = true;
@@ -161,6 +164,7 @@ export default function StudentComplaintsPage() {
     const loadContext = async () => {
       setAssessmentOptions([]);
       setAttendanceOptions([]);
+      setAttendanceSummary(null);
       setAttendanceSelections([]);
       setFormError("");
 
@@ -189,6 +193,10 @@ export default function StudentComplaintsPage() {
         } else if (category === "attendance") {
           const data = await fetchStudentAttendanceSheet(formCourseId);
           if (!active) return;
+          setAttendanceSummary({
+            totalPresent: Number(data?.totalPresent || 0),
+            totalClasses: Number(data?.totalClasses || 0),
+          });
           const rows = Array.isArray(data?.rows) ? data.rows : [];
           const options = rows
             .filter(isAbsent)
@@ -235,10 +243,15 @@ export default function StudentComplaintsPage() {
   const openCreateIssue = () => {
     setSuccessMessage("");
     setFormError("");
-    setCategory("marks");
+    const singleCourse = courses.length === 1 ? courses[0] : null;
+    const initialCategory = singleCourse
+      ? ["marks", "attendance", "general"].find((cat) => issueCategoryAccess(singleCourse.complaintSettings, cat).allowed) || "marks"
+      : "marks";
+    setCategory(initialCategory);
     setAssessmentId("");
     setAttendanceSelections([]);
     setMessage("");
+    setAttachments([]);
     if (courses.length === 1) setFormCourseId(getCourseId(courses[0]));
     else setFormCourseId("");
     setFormOpen(true);
@@ -257,11 +270,28 @@ export default function StudentComplaintsPage() {
 
   const toggleAttendance = (row) => {
     const key = getAttendanceKey(formCourseId, row.date, row.period);
-    setAttendanceSelections((current) =>
-      current.includes(key)
-        ? current.filter((item) => item !== key)
-        : [...current, key]
-    );
+    setAttendanceSelections((current) => {
+      if (current.includes(key)) return current.filter((item) => item !== key);
+      if (current.length >= remainingAttendance) {
+        setFormError(`Select at most ${remainingAttendance} session${remainingAttendance === 1 ? "" : "s"} for the ${attendanceTarget}% requirement.`);
+        return current;
+      }
+      setFormError("");
+      return [...current, key];
+    });
+  };
+
+  const handleFiles = (event) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (files.length > 5 || attachments.length + files.length > 5) {
+      return setFormError("You can attach up to 5 files.");
+    }
+    if (files.some((file) => file.size > 10 * 1024 * 1024)) {
+      return setFormError("Each attachment must be 10 MB or smaller.");
+    }
+    setFormError("");
+    setAttachments((previous) => [...previous, ...files]);
   };
 
   const handleSubmit = async (event) => {
@@ -276,6 +306,12 @@ export default function StudentComplaintsPage() {
       return setFormError("Please choose the assessment related to your marks issue.");
     }
 
+    if (category === "attendance" && remainingAttendance === 0) {
+      return setFormError(`You already meet the ${attendanceTarget}% requirement, have enough pending applications, or have no recorded classes.`);
+    }
+    if (category === "attendance" && attendanceSelections.length > remainingAttendance) {
+      return setFormError(`You can choose at most ${remainingAttendance} absent sessions.`);
+    }
     if (category === "attendance" && attendanceSelections.length === 0) {
       return setFormError("Select at least one absent attendance record.");
     }
@@ -286,45 +322,22 @@ export default function StudentComplaintsPage() {
 
     setSubmitting(true);
     try {
+      const payload = {
+        courseId: formCourseId,
+        category,
+        assessmentId: category === "marks" ? assessmentId : undefined,
+        message: message.trim(),
+        attachments: ["attendance", "general"].includes(category) ? attachments : [],
+      };
       if (category === "attendance") {
-        const selectedRows = attendanceOptions.filter((row) =>
-          attendanceSelections.includes(
-            getAttendanceKey(formCourseId, row.date, row.period)
-          )
-        );
-
-        const results = await Promise.allSettled(
-          selectedRows.map((row) =>
-            createStudentComplaint({
-              courseId: formCourseId,
-              category: "attendance",
-              attendanceRef: {
-                date: row.date,
-                period: Number(row.period),
-              },
-              message: message.trim(),
-            })
-          )
-        );
-
-        const failed = results.filter((result) => result.status === "rejected");
-        if (failed.length) {
-          const firstError = failed[0]?.reason;
-          throw firstError || new Error("Some attendance issues could not be submitted.");
-        }
-
-        setSuccessMessage(
-          `${selectedRows.length} attendance issue${selectedRows.length === 1 ? "" : "s"} submitted successfully.`
-        );
-      } else {
-        await createStudentComplaint({
-          courseId: formCourseId,
-          category,
-          assessmentId: category === "marks" ? assessmentId : undefined,
-          message: message.trim(),
-        });
-        setSuccessMessage("Your issue has been submitted successfully.");
+        payload.attendanceRefs = attendanceOptions
+          .filter((row) => attendanceSelections.includes(getAttendanceKey(formCourseId, row.date, row.period)))
+          .map((row) => ({ date: row.date, period: Number(row.period) }));
       }
+      await createStudentComplaint(payload);
+      setSuccessMessage(category === "attendance"
+        ? `Your attendance application for ${attendanceSelections.length} session${attendanceSelections.length === 1 ? "" : "s"} was submitted as one issue.`
+        : "Your issue has been submitted successfully.");
 
       await loadIssues();
       setFormOpen(false);
@@ -482,7 +495,13 @@ export default function StudentComplaintsPage() {
                 <select
                   value={formCourseId}
                   onChange={(event) => {
-                    setFormCourseId(event.target.value);
+                    const courseId = event.target.value;
+                    const nextCourse = courses.find((course) => getCourseId(course) === courseId);
+                    setFormCourseId(courseId);
+                    if (nextCourse && !issueCategoryAccess(nextCourse.complaintSettings, category).allowed) {
+                      setCategory(["marks", "attendance", "general"].find((cat) => issueCategoryAccess(nextCourse.complaintSettings, cat).allowed) || "marks");
+                    }
+                    setAttachments([]);
                     setAssessmentId("");
                     setAttendanceSelections([]);
                   }}
@@ -490,7 +509,8 @@ export default function StudentComplaintsPage() {
                 >
                   <option value="">Choose course</option>
                   {courses.map((course) => {
-                    const open = course?.complaintSettings?.allowStudentComplaints !== false;
+                    const open = course?.complaintSettings?.allowStudentComplaints !== false &&
+                      ["marks", "attendance", "general"].some((type) => issueCategoryAccess(course.complaintSettings, type).allowed);
                     return (
                       <option key={getCourseId(course)} value={getCourseId(course)}>
                         {course.code} — {course.title} (Sec {course.section || "—"}){open ? "" : " — Issues closed"}
@@ -517,12 +537,16 @@ export default function StudentComplaintsPage() {
                       key={value}
                       type="button"
                       onClick={() => {
+                        if (!issueCategoryAccess(selectedCourse?.complaintSettings, value).allowed) return;
                         setCategory(value);
+                        setAttachments([]);
                         setAssessmentId("");
                         setAttendanceSelections([]);
                       }}
+                      disabled={!!selectedCourse && !issueCategoryAccess(selectedCourse.complaintSettings, value).allowed}
+                      title={issueCategoryAccess(selectedCourse?.complaintSettings, value).message}
                       className={[
-                        "flex min-h-[70px] flex-col items-center justify-center gap-1.5 rounded-2xl border px-2 py-3 text-xs font-bold transition",
+                        "flex min-h-[70px] disabled:cursor-not-allowed disabled:opacity-40 flex-col items-center justify-center gap-1.5 rounded-2xl border px-2 py-3 text-xs font-bold transition",
                         category === value
                           ? "border-violet-300 bg-violet-50 text-violet-700 ring-2 ring-violet-500/10 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-300"
                           : "border-slate-200 bg-slate-50 text-slate-600 hover:border-violet-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300",
@@ -567,11 +591,26 @@ export default function StudentComplaintsPage() {
               ) : null}
 
               {category === "attendance" ? (
-                <Field label="Absent attendance" required hint="Only absent records that have not already been reported are shown. You can select one or multiple.">
+                <Field label="Absent attendance" required hint="Select only the sessions needed to meet your teacher's minimum attendance requirement.">
+                  {attendanceSummary && (
+                    <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800/70">
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+                        <span>Current: {attendanceSummary.totalPresent}/{attendanceSummary.totalClasses} classes</span>
+                        <span>Required: {attendanceTarget}%</span>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                        {remainingAttendance > 0
+                          ? `You may select up to ${remainingAttendance} more absent class${remainingAttendance === 1 ? "" : "es"}. ${pendingAttendanceSessions} already pending · Selected ${attendanceSelections.length}/${remainingAttendance} · Projected after approval: ${(100 * (attendanceSummary.totalPresent + pendingAttendanceSessions + attendanceSelections.length) / attendanceSummary.totalClasses).toFixed(2)}%`
+                          : `You already meet the ${attendanceTarget}% requirement, or existing pending applications cover what is needed.`}
+                      </p>
+                    </div>
+                  )}
                   {contextLoading ? (
                     <ContextLoading label="Loading absent records…" />
                   ) : !formCourseId ? (
                     <EmptyContext text="Choose a course first." />
+                  ) : remainingAttendance === 0 ? (
+                    <EmptyContext text="Your attendance target is met, covered by pending applications, or there are no recorded classes." />
                   ) : attendanceOptions.length === 0 ? (
                     <EmptyContext text="No unreported absent attendance records are available for this course." />
                   ) : (
@@ -592,6 +631,7 @@ export default function StudentComplaintsPage() {
                             <input
                               type="checkbox"
                               checked={checked}
+                              disabled={!checked && attendanceSelections.length >= remainingAttendance}
                               onChange={() => toggleAttendance(row)}
                               className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
                             />
@@ -611,12 +651,14 @@ export default function StudentComplaintsPage() {
               ) : null}
 
               <Field
-                label={category === "general" ? "Describe the issue" : "Issue details"}
+                label={["general", "attendance"].includes(category) ? "Written application" : "Issue details"}
                 required
                 hint={
                   category === "general"
-                    ? "Write the course-related issue you want your teacher to review."
-                    : "Add a short explanation so your teacher can understand the problem quickly."
+                    ? "Write your application to the course teacher. Explain the request clearly."
+                    : category === "attendance"
+                      ? "Write a complete application and attach supporting documents if available."
+                      : "Explain the marks-related issue clearly."
                 }
               >
                 <textarea
@@ -627,12 +669,31 @@ export default function StudentComplaintsPage() {
                     category === "marks"
                       ? "Example: My marks for this assessment do not match my script/result."
                       : category === "attendance"
-                        ? "Example: I was present in the selected class(es). Please review the attendance."
+                        ? "Write your application explaining why attendance is requested for the selected classes. Include the reason and any relevant details."
                         : "Write your issue here…"
                   }
                   className="field-control min-h-[112px] resize-y"
                 />
               </Field>
+
+              {["attendance", "general"].includes(category) && (
+                <Field label="Supporting attachments" hint="Optional · PDF, images, documents, spreadsheets or ZIP · Max 5 files, 10 MB each.">
+                  <input
+                    type="file" multiple
+                    accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.heic"
+                    onChange={handleFiles} className="field-control text-xs"
+                  />
+                  {attachments.length > 0 && <div className="mt-2 space-y-1.5">
+                    {attachments.map((file, index) => (
+                      <div key={`${file.name}-${index}`} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2 text-xs dark:border-slate-700">
+                        <span className="min-w-0 truncate text-slate-700 dark:text-slate-200">{file.name} · {(file.size / 1024 / 1024).toFixed(2)} MB</span>
+                        <button type="button" onClick={() => setAttachments((previous) => previous.filter((_, i) => i !== index))}
+                          className="font-semibold text-rose-600">Remove</button>
+                      </div>
+                    ))}
+                  </div>}
+                </Field>
+              )}
 
               <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
                 <button
@@ -645,7 +706,7 @@ export default function StudentComplaintsPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={submitting || !complaintsOpen}
+                  disabled={submitting || !complaintsOpen || (category === "attendance" && remainingAttendance === 0)}
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {submitting ? <SpinnerIcon /> : <SendIcon />}
@@ -704,17 +765,24 @@ function IssueCard({ item }) {
             {item.assessment.name}
           </span>
         ) : null}
-        {category === "attendance" && item.attendanceRef ? (
-          <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-            {item.attendanceRef.date} · Period {item.attendanceRef.period}
+        {category === "attendance" && attendanceIssueRefs(item).map((ref) => (
+          <span key={`${ref.date}-${ref.period}`} className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+            {ref.date} · P{ref.period}
           </span>
-        ) : null}
+        ))}
       </div>
 
       <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
         {item.message}
       </div>
 
+      {!!item.attachments?.length && <div className="mt-3 flex flex-wrap gap-2">
+        {item.attachments.map((file, index) => file.url ? (
+          <a key={index} href={file.url} target="_blank" rel="noopener noreferrer" className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 dark:border-slate-700 dark:text-indigo-300">
+            📎 {file.name}
+          </a>
+        ) : <span key={index} className="text-xs text-slate-400">{file.name} (unavailable)</span>)}
+      </div>}
       <div className="mt-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/70">
         <div className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Teacher reply</div>
         <div className={`mt-1 text-sm leading-6 ${item.reply ? "text-slate-700 dark:text-slate-200" : "italic text-slate-400"}`}>

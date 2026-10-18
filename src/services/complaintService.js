@@ -2,7 +2,19 @@ import api from './api';
 
 // STUDENT: create complaint
 export const createStudentComplaint = async (payload) => {
-  const res = await api.post('/complaints/student', payload);
+  // Multipart allows a single attendance application plus supporting evidence.
+  const body = new FormData();
+  Object.entries(payload).forEach(([key, value]) => {
+    if (value == null) return;
+    if (key === "attachments") {
+      (value || []).forEach((file) => body.append("attachments", file));
+    } else if (typeof value === "object") {
+      body.append(key, JSON.stringify(value));
+    } else {
+      body.append(key, value);
+    }
+  });
+  const res = await api.post('/complaints/student', body);
   return res.data;
 };
 
@@ -32,9 +44,10 @@ export const deleteCourseRequest = async (courseId) => {
   return res.data;
 };
 
-export const resolveAttendanceComplaint = async (complaintId, reply = "") => {
+export const resolveAttendanceComplaint = async (complaintId, reply = "", includePendingForStudent = false) => {
   const res = await api.post(`/complaints/teacher/${complaintId}/resolve-attendance`, {
     reply,
+    includePendingForStudent,
   });
   return res.data;
 };
