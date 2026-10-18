@@ -65,8 +65,8 @@ export const updateTeacherCounsellingBooking = async (bookingId, payload) => {
   return res.data;
 };
 
-export const getStudentCounsellingInfo = async () => {
-  const res = await api.get("/routine/student/counselling");
+export const getStudentCounsellingInfo = async (teacherId = "") => {
+  const res = await api.get("/routine/student/counselling", { params: teacherId ? { teacherId } : {} });
   return res.data;
 };
 

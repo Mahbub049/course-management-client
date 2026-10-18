@@ -9,7 +9,6 @@ import {
   fetchStudentCourses,
 } from "../services/studentService";
 import { fetchStudentAttendanceSheet } from "../services/attendanceService";
-import StudentPageBack from "../components/StudentPageBack";
 import { issueCategoryAccess, sessionsForTarget, attendanceIssueRefs } from "../utils/issueAccess";
 
 const CATEGORY_LABELS = {
@@ -60,6 +59,12 @@ export default function StudentComplaintsPage() {
   const [courses, setCourses] = useState([]);
   const [complaints, setComplaints] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Keep scheduled openings/expiry accurate on an already-open page.
+  const [accessClock, setAccessClock] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setAccessClock(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, []);
   const [loadError, setLoadError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
@@ -113,9 +118,9 @@ export default function StudentComplaintsPage() {
         if (queryCourse && linkedCourse) {
           setFormCourseId(queryCourse);
           const requestedCategory = ["marks", "attendance", "general"].includes(queryCategory) ? queryCategory : "marks";
-          const allowedCategory = issueCategoryAccess(linkedCourse.complaintSettings, requestedCategory).allowed
+          const allowedCategory = issueCategoryAccess(linkedCourse.complaintSettings, requestedCategory, Date.now()).allowed
             ? requestedCategory
-            : ["marks", "attendance", "general"].find((cat) => issueCategoryAccess(linkedCourse.complaintSettings, cat).allowed) || "marks";
+            : ["marks", "attendance", "general"].find((cat) => issueCategoryAccess(linkedCourse.complaintSettings, cat, Date.now()).allowed) || "marks";
           setCategory(allowedCategory);
           setAssessmentId(queryAssessment);
           setFormOpen(true);
@@ -144,7 +149,7 @@ export default function StudentComplaintsPage() {
     [courses, formCourseId]
   );
 
-  const categoryAccess = issueCategoryAccess(selectedCourse?.complaintSettings, category);
+  const categoryAccess = issueCategoryAccess(selectedCourse?.complaintSettings, category, accessClock);
   const complaintsOpen = categoryAccess.allowed;
   const complaintClosedMessage = categoryAccess.message;
   const attendanceTarget = Number(selectedCourse?.complaintSettings?.attendanceTargetPercentage || 50);
@@ -245,7 +250,7 @@ export default function StudentComplaintsPage() {
     setFormError("");
     const singleCourse = courses.length === 1 ? courses[0] : null;
     const initialCategory = singleCourse
-      ? ["marks", "attendance", "general"].find((cat) => issueCategoryAccess(singleCourse.complaintSettings, cat).allowed) || "marks"
+      ? ["marks", "attendance", "general"].find((cat) => issueCategoryAccess(singleCourse.complaintSettings, cat, accessClock).allowed) || "marks"
       : "marks";
     setCategory(initialCategory);
     setAssessmentId("");
@@ -286,6 +291,9 @@ export default function StudentComplaintsPage() {
     event.target.value = "";
     if (files.length > 5 || attachments.length + files.length > 5) {
       return setFormError("You can attach up to 5 files.");
+    }
+    if (files.some((file) => !/\.(pdf|png|jpe?g|webp|gif|bmp|docx?)$/i.test(file.name))) {
+      return setFormError("Only PDF, images, DOC and DOCX files are supported.");
     }
     if (files.some((file) => file.size > 10 * 1024 * 1024)) {
       return setFormError("Each attachment must be 10 MB or smaller.");
@@ -355,7 +363,6 @@ export default function StudentComplaintsPage() {
 
   return (
     <div className="w-full space-y-5 pb-8">
-      <StudentPageBack />
       <section className="relative overflow-hidden rounded-[30px] border border-slate-200 bg-gradient-to-br from-white via-violet-50/50 to-sky-50/60 p-5 shadow-sm dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-slate-950 sm:p-6 lg:p-7">
         <div className="pointer-events-none absolute -right-20 -top-20 h-52 w-52 rounded-full bg-violet-300/20 blur-3xl dark:bg-violet-500/10" />
         <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -498,8 +505,8 @@ export default function StudentComplaintsPage() {
                     const courseId = event.target.value;
                     const nextCourse = courses.find((course) => getCourseId(course) === courseId);
                     setFormCourseId(courseId);
-                    if (nextCourse && !issueCategoryAccess(nextCourse.complaintSettings, category).allowed) {
-                      setCategory(["marks", "attendance", "general"].find((cat) => issueCategoryAccess(nextCourse.complaintSettings, cat).allowed) || "marks");
+                    if (nextCourse && !issueCategoryAccess(nextCourse.complaintSettings, category, accessClock).allowed) {
+                      setCategory(["marks", "attendance", "general"].find((cat) => issueCategoryAccess(nextCourse.complaintSettings, cat, accessClock).allowed) || "marks");
                     }
                     setAttachments([]);
                     setAssessmentId("");
@@ -510,7 +517,7 @@ export default function StudentComplaintsPage() {
                   <option value="">Choose course</option>
                   {courses.map((course) => {
                     const open = course?.complaintSettings?.allowStudentComplaints !== false &&
-                      ["marks", "attendance", "general"].some((type) => issueCategoryAccess(course.complaintSettings, type).allowed);
+                      ["marks", "attendance", "general"].some((type) => issueCategoryAccess(course.complaintSettings, type, accessClock).allowed);
                     return (
                       <option key={getCourseId(course)} value={getCourseId(course)}>
                         {course.code} — {course.title} (Sec {course.section || "—"}){open ? "" : " — Issues closed"}
@@ -537,14 +544,14 @@ export default function StudentComplaintsPage() {
                       key={value}
                       type="button"
                       onClick={() => {
-                        if (!issueCategoryAccess(selectedCourse?.complaintSettings, value).allowed) return;
+                        if (!issueCategoryAccess(selectedCourse?.complaintSettings, value, accessClock).allowed) return;
                         setCategory(value);
                         setAttachments([]);
                         setAssessmentId("");
                         setAttendanceSelections([]);
                       }}
-                      disabled={!!selectedCourse && !issueCategoryAccess(selectedCourse.complaintSettings, value).allowed}
-                      title={issueCategoryAccess(selectedCourse?.complaintSettings, value).message}
+                      disabled={!!selectedCourse && !issueCategoryAccess(selectedCourse.complaintSettings, value, accessClock).allowed}
+                      title={issueCategoryAccess(selectedCourse?.complaintSettings, value, accessClock).message}
                       className={[
                         "flex min-h-[70px] disabled:cursor-not-allowed disabled:opacity-40 flex-col items-center justify-center gap-1.5 rounded-2xl border px-2 py-3 text-xs font-bold transition",
                         category === value
@@ -677,10 +684,10 @@ export default function StudentComplaintsPage() {
               </Field>
 
               {["attendance", "general"].includes(category) && (
-                <Field label="Supporting attachments" hint="Optional · PDF, images, documents, spreadsheets or ZIP · Max 5 files, 10 MB each.">
+                <Field label="Supporting attachments" hint="Optional · PDF, images or Word (DOC/DOCX) · Max 5 files, 10 MB each.">
                   <input
                     type="file" multiple
-                    accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.heic"
+                    accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.doc,.docx"
                     onChange={handleFiles} className="field-control text-xs"
                   />
                   {attachments.length > 0 && <div className="mt-2 space-y-1.5">

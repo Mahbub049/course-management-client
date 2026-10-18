@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { fetchStudentCourses } from "../services/studentService";
 import StudentLabSubmissions from "./studentCourse/StudentLabSubmissions";
-import StudentPageBack from "../components/StudentPageBack";
 
 function getCourseId(course) {
   return course?._id || course?.id || "";
@@ -86,7 +85,6 @@ export default function StudentSubmissionsPage() {
 
   return (
     <div className="w-full space-y-5 pb-8">
-      <StudentPageBack />
       <section className="relative overflow-hidden rounded-[30px] border border-slate-200 bg-gradient-to-br from-white via-violet-50/50 to-sky-50/60 p-5 shadow-sm dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-slate-950 sm:p-6 lg:p-7">
         <div className="pointer-events-none absolute -right-20 -top-20 h-52 w-52 rounded-full bg-violet-300/20 blur-3xl dark:bg-violet-500/10" />
         <div className="relative">

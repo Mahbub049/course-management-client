@@ -51,3 +51,9 @@ export const resolveAttendanceComplaint = async (complaintId, reply = "", includ
   });
   return res.data;
 };
+
+// TEACHER: one server-authorized operation over all owned active courses.
+export const bulkManageIssueAccess = async (payload) => {
+  const res = await api.post('/complaints/teacher/access/bulk', payload);
+  return res.data;
+};

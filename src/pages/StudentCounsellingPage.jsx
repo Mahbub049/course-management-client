@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
-import StudentPageBack from "../components/StudentPageBack";
 import {
   createStudentCounsellingBooking,
   deleteStudentCounsellingBooking,
@@ -93,6 +92,7 @@ function groupSlotsByDay(slots = []) {
 
 function StudentCounsellingPage() {
   const [info, setInfo] = useState(null);
+  const [selectedTeacherId, setSelectedTeacherId] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
@@ -142,10 +142,11 @@ function StudentCounsellingPage() {
     );
   }, [bookings]);
 
-  const loadInfo = async () => {
+  const loadInfo = async (teacherId = selectedTeacherId) => {
     try {
       setLoading(true);
-      const data = await getStudentCounsellingInfo();
+      const data = await getStudentCounsellingInfo(teacherId);
+      setSelectedTeacherId(data?.teacher?.id || "");
       const slots = data?.counsellingSlots || [];
       const currentDate = form.date || todayString();
       const targetDate = hasSlotForDate(slots, currentDate)
@@ -243,7 +244,7 @@ function StudentCounsellingPage() {
     try {
       await deleteStudentCounsellingBooking(booking.id);
       Swal.fire("Deleted", "Your pending counselling request has been deleted.", "success");
-      await loadInfo();
+      await loadInfo(selectedTeacherId);
     } catch (err) {
       console.error(err);
       Swal.fire("Failed", err?.response?.data?.message || "Could not delete this request", "error");
@@ -261,6 +262,7 @@ function StudentCounsellingPage() {
     try {
       setSubmitting(true);
       await createStudentCounsellingBooking({
+        teacherId: selectedTeacherId,
         date: form.date,
         slotId: form.slotId,
         topic: form.topic,
@@ -269,7 +271,7 @@ function StudentCounsellingPage() {
 
       Swal.fire("Submitted", "Your counselling request has been submitted.", "success");
       setForm((prev) => ({ ...prev, topic: "", message: "" }));
-      await loadInfo();
+      await loadInfo(selectedTeacherId);
     } catch (err) {
       console.error(err);
       Swal.fire("Failed", err?.response?.data?.message || "Could not submit counselling request", "error");
@@ -281,7 +283,6 @@ function StudentCounsellingPage() {
   if (loading) {
     return (
       <div className="space-y-4">
-        <StudentPageBack />
         <div className="flex min-h-[50vh] items-center justify-center text-base font-bold text-slate-500 dark:text-slate-400">
           Loading counselling hours...
         </div>
@@ -292,7 +293,6 @@ function StudentCounsellingPage() {
   if (!info?.teacher) {
     return (
       <div className="space-y-4">
-        <StudentPageBack />
         <section className="rounded-[2rem] border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm dark:border-slate-700 dark:bg-slate-950">
           <h1 className="text-2xl font-black text-slate-900 dark:text-white">
             No course teacher found
@@ -307,7 +307,28 @@ function StudentCounsellingPage() {
 
   return (
     <div className="space-y-4">
-      <StudentPageBack />
+
+      {(info?.faculties?.length || 0) > 0 && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950 sm:p-5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white">Choose your course faculty</h2>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Available counselling hours and requests are shown for the selected teacher.</p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{info.faculties.length} faculty</span>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {info.faculties.map((faculty) => (
+              <button type="button" key={faculty.id}
+                onClick={() => faculty.id !== selectedTeacherId && loadInfo(faculty.id)}
+                className={`rounded-xl border px-4 py-3 text-left transition ${faculty.id === selectedTeacherId ? "border-violet-500 bg-violet-50 ring-1 ring-violet-200 dark:bg-violet-500/10" : "border-slate-200 bg-slate-50 hover:border-violet-300 dark:border-slate-700 dark:bg-slate-900"}`}>
+                <span className="block text-sm font-bold text-slate-900 dark:text-white">{faculty.name}</span>
+                <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">{faculty.courses.map((c) => c.code).join(" · ")}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
         <div className="relative px-5 py-4 sm:px-6">

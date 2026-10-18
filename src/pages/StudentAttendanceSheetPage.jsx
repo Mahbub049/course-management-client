@@ -2,11 +2,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchStudentCourses } from "../services/studentCourseService";
 import { fetchStudentAttendanceSheet } from "../services/attendanceService";
-import StudentPageBack from "../components/StudentPageBack";
-import {
-  createStudentComplaint,
-  fetchStudentComplaints,
-} from "../services/complaintService";
 
 export default function StudentAttendanceSheetPage() {
   const [courses, setCourses] = useState([]);
@@ -17,15 +12,6 @@ export default function StudentAttendanceSheetPage() {
 
   const [err, setErr] = useState("");
   const [data, setData] = useState(null);
-
-  const [issueOpen, setIssueOpen] = useState(false);
-  const [issueRow, setIssueRow] = useState(null);
-  const [issueMessage, setIssueMessage] = useState("");
-  const [submittingIssue, setSubmittingIssue] = useState(false);
-  const [issueSuccess, setIssueSuccess] = useState("");
-  const [submittedAttendanceKeys, setSubmittedAttendanceKeys] = useState(
-    () => new Set()
-  );
 
   useEffect(() => {
     (async () => {
@@ -46,48 +32,9 @@ export default function StudentAttendanceSheetPage() {
     })();
   }, []);
 
-  useEffect(() => {
-    let active = true;
-
-    (async () => {
-      try {
-        const complaintList = await fetchStudentComplaints();
-        if (!active) return;
-
-        const keys = new Set(
-          (Array.isArray(complaintList) ? complaintList : [])
-            .filter(
-              (complaint) =>
-                complaint?.category === "attendance" &&
-                complaint?.course &&
-                complaint?.attendanceRef?.date &&
-                complaint?.attendanceRef?.period != null
-            )
-            .map((complaint) =>
-              getAttendanceComplaintKey(
-                complaint.course?._id || complaint.course,
-                complaint.attendanceRef.date,
-                complaint.attendanceRef.period
-              )
-            )
-        );
-
-        setSubmittedAttendanceKeys(keys);
-      } catch (error) {
-        // The server still enforces duplicate prevention if this optional lookup fails.
-        console.error("Failed to load existing attendance issues", error);
-      }
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
   const handleView = async () => {
     if (!courseId) return setErr("Please select a course");
     setErr("");
-    setIssueSuccess("");
     setData(null);
 
     try {
@@ -114,122 +61,8 @@ export default function StudentAttendanceSheetPage() {
     return { rows, totalClasses, totalPresent, percentage };
   }, [data]);
 
-  const selectedCourse = useMemo(() => {
-    return courses.find((c) => (c._id || c.id) === courseId) || null;
-  }, [courses, courseId]);
-
-  const complaintsOpen =
-    selectedCourse?.complaintSettings?.allowStudentComplaints !== false;
-
-  const complaintClosedMessage =
-    selectedCourse?.complaintSettings?.closedMessage ||
-    "Issue submission is currently closed by the course teacher.";
-
-  const hasAttendanceComplaint = (row) => {
-    if (!row || !courseId) return false;
-
-    return submittedAttendanceKeys.has(
-      getAttendanceComplaintKey(courseId, row.date, row.period)
-    );
-  };
-
-  const issueAlreadyReported = hasAttendanceComplaint(issueRow);
-
-  const openIssueModal = (row) => {
-    setIssueSuccess("");
-    setErr("");
-
-    if (!complaintsOpen) {
-      setErr(complaintClosedMessage);
-      return;
-    }
-
-    if (hasAttendanceComplaint(row)) {
-      setErr(
-        "You have already submitted an attendance issue for this date and period."
-      );
-      return;
-    }
-
-    setIssueRow(row);
-    setIssueMessage(
-      `I have an attendance issue for ${row.date} (Period ${row.period}). Please review it.`
-    );
-    setIssueOpen(true);
-  };
-
-  const closeIssueModal = () => {
-    if (submittingIssue) return;
-    setIssueOpen(false);
-    setIssueRow(null);
-    setIssueMessage("");
-  };
-
-  const handleSubmitIssue = async () => {
-    if (!courseId) return setErr("Please select a course first");
-    if (!issueRow) return setErr("Please select an attendance row");
-    if (!issueMessage.trim()) return setErr("Please write your issue message");
-    if (!complaintsOpen) return setErr(complaintClosedMessage);
-    if (hasAttendanceComplaint(issueRow)) {
-      return setErr(
-        "You have already submitted an attendance issue for this date and period."
-      );
-    }
-
-    setSubmittingIssue(true);
-    setErr("");
-    setIssueSuccess("");
-
-    try {
-      await createStudentComplaint({
-        courseId,
-        category: "attendance",
-        attendanceRef: {
-          date: issueRow.date,
-          period: Number(issueRow.period),
-        },
-        message: issueMessage.trim(),
-      });
-
-      const complaintKey = getAttendanceComplaintKey(
-        courseId,
-        issueRow.date,
-        issueRow.period
-      );
-
-      setSubmittedAttendanceKeys((current) => {
-        const next = new Set(current);
-        next.add(complaintKey);
-        return next;
-      });
-
-      setIssueSuccess(
-        "Attendance issue submitted successfully. Another issue cannot be submitted for this same class."
-      );
-    } catch (e) {
-      if (e?.response?.data?.code === "DUPLICATE_ATTENDANCE_COMPLAINT") {
-        const complaintKey = getAttendanceComplaintKey(
-          courseId,
-          issueRow.date,
-          issueRow.period
-        );
-
-        setSubmittedAttendanceKeys((current) => {
-          const next = new Set(current);
-          next.add(complaintKey);
-          return next;
-        });
-      }
-
-      setErr(e?.response?.data?.message || "Failed to submit attendance issue");
-    } finally {
-      setSubmittingIssue(false);
-    }
-  };
-
   return (
     <div className="space-y-4 sm:space-y-6">
-      <StudentPageBack />
       {/* Hero */}
       <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-indigo-50 p-5 shadow-sm dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/30 sm:p-6 lg:p-7">
         <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-indigo-200/40 blur-3xl dark:bg-indigo-600/20" />
@@ -245,8 +78,8 @@ export default function StudentAttendanceSheetPage() {
             Attendance Sheet
           </h1>
           <p className="mt-2 hidden max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400 sm:block">
-            Select a course to view your attendance period-wise. You can also report
-            attendance issues for a specific class entry.
+            Select a course to view your period-wise attendance records.
+            Attendance reports can be submitted separately from the Issues Center.
           </p>
         </div>
       </section>
@@ -289,12 +122,7 @@ export default function StudentAttendanceSheetPage() {
           </div>
         )}
 
-        {selectedCourse && !complaintsOpen && (
-          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-            <div className="font-semibold">Issue submission is closed</div>
-            <div className="opacity-90">{complaintClosedMessage}</div>
-          </div>
-        )}
+
       </section>
 
       {/* Summary */}
@@ -367,9 +195,6 @@ export default function StudentAttendanceSheetPage() {
                         <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-300">
                           Status
                         </th>
-                        <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-300">
-                          Action
-                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -392,22 +217,7 @@ export default function StudentAttendanceSheetPage() {
                           <td className="px-6 py-4 text-center">
                             <AttendanceBadge status={r.status} />
                           </td>
-                          <td className="px-6 py-4 text-right">
-                            {isAbsentStatus(r.status) ? (
-                              <button
-                                type="button"
-                                onClick={() => openIssueModal(r)}
-                                disabled={!complaintsOpen || hasAttendanceComplaint(r)}
-                                className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-500/30 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-500/10"
-                                title={hasAttendanceComplaint(r) ? "An attendance issue has already been submitted for this class." : undefined}
-                              >
-                                {hasAttendanceComplaint(r) ? <CheckSmallIcon /> : <FlagIcon />}
-                                {hasAttendanceComplaint(r) ? "Already Reported" : "Report Issue"}
-                              </button>
-                            ) : (
-                              <span className="text-xs font-medium text-slate-400 dark:text-slate-600">—</span>
-                            )}
-                          </td>
+
                         </tr>
                       ))}
                     </tbody>
@@ -437,17 +247,7 @@ export default function StudentAttendanceSheetPage() {
                         <AttendanceBadge status={r.status} />
                       </div>
 
-                      {isAbsentStatus(r.status) && (
-                        <button
-                          type="button"
-                          onClick={() => openIssueModal(r)}
-                          disabled={!complaintsOpen || hasAttendanceComplaint(r)}
-                          className="mt-2.5 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-white/90 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-500/30 dark:bg-slate-900/90 dark:text-rose-300"
-                        >
-                          {hasAttendanceComplaint(r) ? <CheckSmallIcon /> : <FlagIcon />}
-                          {hasAttendanceComplaint(r) ? "Already Reported" : "Report Absence Issue"}
-                        </button>
-                      )}
+
                     </div>
                   ))}
                 </div>
@@ -457,112 +257,9 @@ export default function StudentAttendanceSheetPage() {
         </>
       )}
 
-      {/* Issue Modal */}
-      {issueOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <button
-            type="button"
-            onClick={closeIssueModal}
-            className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
-            aria-label="Close"
-          />
 
-          <div className="relative z-10 w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-900 sm:p-6">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                  Report Attendance Issue
-                </h3>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  This will be sent to the teacher in the issues center.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={closeIssueModal}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                disabled={submittingIssue}
-                aria-label="Close modal"
-              >
-                <XIcon />
-              </button>
-            </div>
-
-            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200">
-              <div className="font-semibold">Selected Class</div>
-              <div className="mt-2 leading-6">
-                Date: <span className="font-semibold">{issueRow?.date}</span>
-                <br />
-                Period: <span className="font-semibold">{issueRow?.period}</span>
-                <br />
-                Your Status: <span className="font-semibold">{issueRow?.status}</span>
-              </div>
-            </div>
-
-            <div className="mt-5">
-              <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200">
-                Your message
-              </label>
-              <textarea
-                value={issueMessage}
-                onChange={(e) => setIssueMessage(e.target.value)}
-                className="min-h-[140px] w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                placeholder="Explain what went wrong, for example: I was present but it shows absent."
-                disabled={submittingIssue}
-              />
-              <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                Tip: mention any proof like screenshot or witness if needed.
-              </div>
-            </div>
-
-            {issueSuccess && (
-              <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
-                {issueSuccess}
-              </div>
-            )}
-
-            {err && (
-              <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
-                {err}
-              </div>
-            )}
-
-            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={closeIssueModal}
-                disabled={submittingIssue}
-                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                onClick={handleSubmitIssue}
-                disabled={submittingIssue || issueAlreadyReported || Boolean(issueSuccess)}
-                data-pending-label="Submitting…"
-                className="rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {submittingIssue
-                  ? "Submitting..."
-                  : issueAlreadyReported || issueSuccess
-                  ? "Already Submitted"
-                  : "Submit Issue"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
-}
-
-function getAttendanceComplaintKey(courseId, date, period) {
-  return `${String(courseId || "").trim()}::${String(date || "").trim()}::${Number(
-    period || 0
-  )}`;
 }
 
 function getAttendanceSortTime(row) {
@@ -633,9 +330,9 @@ function AttendanceBadge({ status }) {
 
   return (
     <span
-      className={`inline-flex min-w-8 items-center justify-center rounded-full border px-2.5 py-1 text-xs font-semibold ${cls}`}
+      className={`inline-flex min-w-20 items-center justify-center rounded-full border px-2.5 py-1 text-xs font-semibold ${cls}`}
     >
-      {normalized === "present" ? "P" : normalized === "absent" ? "A" : normalized === "late" ? "L" : status}
+      {normalized === "present" ? "Present" : normalized === "absent" ? "Absent" : normalized === "late" ? "Late" : status}
     </span>
   );
 }
@@ -661,27 +358,3 @@ function EmptyIcon() {
   );
 }
 
-function CheckSmallIcon() {
-  return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M20 6L9 17l-5-5" />
-    </svg>
-  );
-}
-
-function FlagIcon() {
-  return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M4 22V4" />
-      <path d="M4 4h12l-1 4 3 4H4" />
-    </svg>
-  );
-}
-
-function XIcon() {
-  return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M18 6L6 18M6 6l12 12" />
-    </svg>
-  );
-}

@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchStudentCourses } from "../services/studentService";
-import StudentPageBack from "../components/StudentPageBack";
 
 import StudentProjectGroups from "./studentCourse/StudentProjectGroups";
 import StudentProjectInfo from "./studentCourse/StudentProjectInfo";
@@ -110,7 +109,6 @@ function StudentCoursesPage() {
 
   return (
     <div className="w-full space-y-5 pb-10 sm:space-y-6">
-      <StudentPageBack />
       {/* Hero Header */}
       <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-indigo-50 p-4 shadow-sm dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/30 sm:p-6 lg:p-7">
         <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-indigo-200/40 blur-3xl dark:bg-indigo-600/20" />

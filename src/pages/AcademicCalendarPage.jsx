@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
-import StudentPageBack from "../components/StudentPageBack";
 import { academicCalendarService } from "../services/academicCalendarService";
 import {
   isNativeMobileApp,
@@ -750,7 +749,6 @@ export default function AcademicCalendarPage() {
   if (loading) {
     return (
       <div className="space-y-5">
-        {!isTeacher && <StudentPageBack />}
         <div className="flex min-h-[60vh] items-center justify-center">
           <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-semibold text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
             <span className="h-4 w-4 animate-spin rounded-full border-2 border-violet-500 border-t-transparent" />
@@ -763,7 +761,6 @@ export default function AcademicCalendarPage() {
 
   return (
     <div className="space-y-5">
-      {!isTeacher && <StudentPageBack />}
 
       <section className="relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
         <div className="pointer-events-none absolute -right-24 -top-28 h-64 w-64 rounded-full bg-violet-200/45 blur-3xl dark:bg-violet-500/10" />
