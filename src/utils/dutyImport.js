@@ -100,7 +100,10 @@ export function classifyDutyEntry(entry = {}) {
   if (/^Fri(day)?$/i.test(day) || /^Sat(urday)?$/i.test(day)) return "evening";
   const range = parseTimeRange(entry.time || "");
   const startMinutes = timeToMinutes(entry.startTime || range.startTime || entry.time);
-  return startMinutes !== null && startMinutes >= 18 * 60 ? "evening" : "day";
+  // Friday/Saturday are always evening duties; on other days the evening
+  // rate starts at 5:45 PM (5:01–5:44 PM requires manual review).
+  if (startMinutes !== null && startMinutes > 17 * 60 && startMinutes < 17 * 60 + 45) return "review";
+  return startMinutes !== null && startMinutes >= 17 * 60 + 45 ? "evening" : "day";
 }
 
 function normalizeDuty(row = {}) {

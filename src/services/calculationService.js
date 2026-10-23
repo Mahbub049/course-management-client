@@ -34,3 +34,9 @@ export const updateCalculationSettings = async (payload) => {
   const res = await api.put("/calculations/settings", payload);
   return res.data;
 };
+
+// Live, faculty-shortcode-specific billing based on shared Exam Duties.
+export const getLiveExamDutyBill = async (sessionId) =>
+  (await api.get(`/calculations/exam-duties/${sessionId}`)).data;
+export const syncLiveExamDutyBill = async (sessionId, replaceManual = false) =>
+  (await api.post(`/calculations/exam-duties/${sessionId}/sync`, { replaceManual })).data;

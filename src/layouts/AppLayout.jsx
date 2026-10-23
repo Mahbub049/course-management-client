@@ -96,7 +96,7 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
     ...(isNativeApp
       ? [{ to: "/notifications", label: "Notifications", icon: <NotificationIcon /> }]
       : []),
-    { to: "/teacher/calculations", label: "Calculations", icon: <CalculatorSidebarIcon /> },
+    { to: "/teacher/exam-duties", label: "Exam Duties", icon: <CalculatorSidebarIcon /> },
   ];
 
   const studentLinks = [
@@ -131,8 +131,10 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
   const showStudentBack =
     role === "student" && location.pathname !== "/student/dashboard";
 
-  const hideStudentSidebar = role === "student";
-  const onStudentDashboard = role === "student" && location.pathname === "/student/dashboard";
+  const hideStudentSidebar =
+    role === "student" &&
+    (location.pathname.startsWith("/student/counselling") ||
+      location.pathname.startsWith("/academic-calendar"));
 
   const SidebarContent = ({ isMobile = false, collapsed = false }) => (
     <div className="flex h-full flex-col">
@@ -464,48 +466,6 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
 
           )}
 
-          {role === "student" && !onStudentDashboard && (
-            <nav aria-label="Student navigation" className="relative z-30 shrink-0 overflow-hidden border-b border-slate-200/80 bg-white/95 shadow-[0_6px_24px_-18px_rgba(15,23,42,0.25)] backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/95 dark:shadow-[0_8px_24px_-18px_rgba(0,0,0,0.7)]">
-              <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-r from-violet-50/70 via-transparent to-sky-50/40 dark:from-violet-500/[0.07] dark:to-sky-500/[0.03]" />
-              <div className="relative mx-auto flex w-full max-w-[1760px] items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
-                <button type="button" onClick={() => navigate("/student/dashboard")}
-                  className="group flex min-w-0 items-center gap-3 rounded-xl text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500" aria-label="Go to student dashboard">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-indigo-700 text-white shadow-[0_4px_14px_-7px_rgba(99,102,241,0.9)] transition group-hover:scale-[1.04]"><CapIcon /></span>
-                  <span className="min-w-0 leading-tight">
-                    <span className="block truncate text-sm font-extrabold tracking-tight text-slate-900 dark:text-slate-100 sm:text-base">Student Portal</span>
-                    <span className="mt-0.5 block truncate text-[10px] font-semibold tracking-wide text-slate-400 dark:text-slate-500 sm:text-[11px]">Academic workspace <span className="mx-1 text-slate-300 dark:text-slate-700">/</span> <span className="text-indigo-600 dark:text-indigo-300">{pageTitle}</span></span>
-                  </span>
-                </button>
-                <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-                  <div className="hidden items-center gap-2 rounded-xl border border-slate-200/80 bg-slate-50/60 px-2.5 py-1.5 dark:border-slate-800 dark:bg-slate-900/70 md:flex">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-100 text-xs font-extrabold text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">{(userName || "S").trim().charAt(0).toUpperCase()}</span>
-                    <span className="max-w-40 truncate text-xs font-semibold text-slate-700 dark:text-slate-200">{userName || "Student"}</span>
-                  </div>
-                  <span className="mx-0.5 hidden h-6 w-px bg-slate-200 dark:bg-slate-800 sm:block" />
-                  <button type="button" onClick={toggleTheme} title={isDark ? "Switch to light mode" : "Switch to dark mode"} aria-label="Toggle appearance"
-                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white/85 text-slate-600 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"><span className="h-4 w-4"><MoonIcon /></span></button>
-                  <button type="button" onClick={() => navigate("/change-password")} title="Manage account"
-                    className="inline-flex h-9 items-center justify-center rounded-xl border border-slate-200 bg-white/85 px-3 text-xs font-bold text-slate-600 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800">Account</button>
-                  <button type="button" onClick={handleLogout} title="Logout" aria-label="Logout"
-                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white/85 text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-rose-500/30 dark:hover:bg-rose-500/10"><span className="h-4 w-4"><LogoutIcon /></span></button>
-                </div>
-              </div>
-              <div className="relative border-t border-slate-100/90 dark:border-slate-800/80">
-                <div className={`flex w-full items-center gap-1 overflow-x-auto px-3 py-2 sm:gap-1.5 sm:px-6 lg:grid lg:gap-2 lg:overflow-visible lg:px-8 lg:py-2.5 ${isNativeApp ? "lg:grid-cols-8" : "lg:grid-cols-7"} [scrollbar-width:thin]`}>
-                  {/* Mobile/tablet: scroll when needed. Desktop: each destination occupies an equal-width column. */}
-                  {studentLinks.map((link) => (
-                    <NavLink key={link.to} to={link.to} aria-label={link.label}
-                      className={({ isActive }) => `group relative inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl border px-3.5 py-2.5 text-xs font-bold tracking-[0.005em] outline-offset-2 transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 sm:text-[13px] lg:w-full lg:min-w-0 lg:shrink lg:gap-1 lg:px-1.5 lg:text-[11px] xl:gap-2 xl:px-3.5 xl:text-[13px] ${isActive || (link.to === "/student/marks" && location.pathname.startsWith("/student/courses/"))
-                        ? "border-violet-500/20 bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-[0_4px_12px_-7px_rgba(99,102,241,0.8)] dark:border-violet-400/25"
-                        : "border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-100/90 hover:text-slate-900 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-white"}`}>
-                      <span className="flex h-4 w-4 shrink-0 items-center justify-center">{link.icon}</span>
-                      <span>{link.label}</span>
-                    </NavLink>
-                  ))}
-                </div>
-              </div>
-            </nav>
-          )}
           <main className="min-w-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5 md:px-8">
             <Outlet />
           </main>

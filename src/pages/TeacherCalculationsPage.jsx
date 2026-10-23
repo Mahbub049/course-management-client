@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
+import ExamDutyLiveBilling from "../components/ExamDutyLiveBilling";
 import { getAuthItem } from "../utils/authStorage";
 import {
   createDutyCalculation,
@@ -211,6 +212,8 @@ function TeacherCalculationsPage() {
           </div>
         </div>
       </section>
+
+      <ExamDutyLiveBilling onSynced={() => refresh(1, true)} />
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard label="Saved Calculations" value={semesterCount} sub="10 records per page" icon={<StackIcon />} />
@@ -441,7 +444,7 @@ function SettingsModal({ settings, onClose, onSaved }) {
       Swal.fire("Save failed", apiMessage(error, "Could not save settings."), "error");
     } finally { setSaving(false); }
   };
-  return <ModalShell onClose={onClose} width="max-w-xl"><ModalHeader title="Billing Settings" subtitle="Set the per-duty rates and tax percentage used for all saved calculations." onClose={onClose} icon={<SettingsIcon />} /><form onSubmit={save}><div className="space-y-4 p-5 sm:p-6"><RateInput label="Day duty bill" value={form.dayDutyRate} onChange={(value) => setForm((old) => ({ ...old, dayDutyRate: value }))} prefix="৳" hint="Applied to Sun–Thu duties starting before 6:00 PM." /><RateInput label="Evening duty bill" value={form.eveningDutyRate} onChange={(value) => setForm((old) => ({ ...old, eveningDutyRate: value }))} prefix="৳" hint="All Friday and Saturday duties, plus Sun–Thu duties starting at or after 6:00 PM." /><RateInput label="Tax rate" value={form.taxRate} onChange={(value) => setForm((old) => ({ ...old, taxRate: value }))} suffix="%" max="100" hint="Tax is deducted from the gross duty bill to calculate the total receivable amount." /><div className="rounded-2xl border border-violet-200 bg-violet-50 p-4 text-xs leading-5 text-violet-800 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-200"><strong>Classification rule:</strong> Friday and Saturday are always evening duties. On other days, a duty starting at 6:00 PM or later is an evening duty.</div></div><div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4 dark:border-slate-800"><button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200">Cancel</button><button disabled={saving} type="submit" className="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{saving ? "Saving…" : "Save Settings"}</button></div></form></ModalShell>;
+  return <ModalShell onClose={onClose} width="max-w-xl"><ModalHeader title="Billing Settings" subtitle="Set the per-duty rates and tax percentage used for all saved calculations." onClose={onClose} icon={<SettingsIcon />} /><form onSubmit={save}><div className="space-y-4 p-5 sm:p-6"><RateInput label="Day duty bill" value={form.dayDutyRate} onChange={(value) => setForm((old) => ({ ...old, dayDutyRate: value }))} prefix="৳" hint="Applied to Sunday–Thursday duties starting at or before 5:00 PM." /><RateInput label="Evening duty bill" value={form.eveningDutyRate} onChange={(value) => setForm((old) => ({ ...old, eveningDutyRate: value }))} prefix="৳" hint="All Friday and Saturday duties, plus Sunday–Thursday duties from 5:45 PM." /><RateInput label="Tax rate" value={form.taxRate} onChange={(value) => setForm((old) => ({ ...old, taxRate: value }))} suffix="%" max="100" hint="Tax is deducted from the gross duty bill to calculate the total receivable amount." /><div className="rounded-2xl border border-violet-200 bg-violet-50 p-4 text-xs leading-5 text-violet-800 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-200"><strong>Classification rule:</strong> Friday and Saturday always use the evening rate. Sunday–Thursday duties are day-rate up to 5:00 PM and evening-rate from 5:45 PM. Intermediate times need review and are excluded from the bill until resolved.</div></div><div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4 dark:border-slate-800"><button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200">Cancel</button><button disabled={saving} type="submit" className="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{saving ? "Saving…" : "Save Settings"}</button></div></form></ModalShell>;
 }
 
 function RateInput({ label, value, onChange, prefix, suffix, hint, max }) {
@@ -489,6 +492,7 @@ function ImportModal({ onClose, onSaved }) {
   const save = async () => {
     if (!semester.trim() || !examType.trim()) return Swal.fire("Missing information", "Enter semester and exam type before saving.", "warning");
     if (!duties.length) return Swal.fire("No recognized duties", "Analyze the document before saving.", "warning");
+    if (duties.some(d => classifyDutyEntry(d) === 'review')) return Swal.fire('Review the duty times', 'One or more weekday duties start between 5:01 PM and 5:44 PM. These times have no automatic rate; please correct or review them before billing.', 'warning');
     setSaving(true);
     try {
       await createDutyCalculation({ semester: semester.trim(), examType: examType.trim(), sourceFileName: file?.name || "", duties });
@@ -540,6 +544,7 @@ function DutyListModal({ id, onClose, onSaved }) {
   const save = async () => {
     if (!draftMeta.semester.trim() || !draftMeta.examType.trim()) return Swal.fire("Missing information", "Semester and exam type are required.", "warning");
     if (!draftDuties.length) return Swal.fire("No duties", "At least one duty must remain in the list.", "warning");
+    if (draftDuties.some(d => classifyDutyEntry(d) === 'review')) return Swal.fire('Review duty times', 'Duty times between 5:01 PM and 5:44 PM on weekdays need manual correction before a payable bill can be saved.', 'warning');
     setSaving(true);
     try {
       const data = await updateDutyCalculation(id, { ...draftMeta, duties: draftDuties });
@@ -641,7 +646,7 @@ function TimeInput({ value, onChange, placeholder, ariaLabel }) {
 }
 function ClockPickerIcon() { return <svg viewBox="0 0 24 24" className="pointer-events-none h-3.5 w-3.5 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 1.5"/></svg>; }
 function Field({ label, children }) { return <label className="block"><span className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-300">{label}</span>{children}</label>; }
-function TypeBadge({ type }) { const evening = type === "evening"; return <span className={evening ? "inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300" : "inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300"}>{evening ? "Evening" : "Day"}</span>; }
+function TypeBadge({ type }) { const evening = type === "evening"; const review=type==='review'; return <span className={review?'inline-flex rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-extrabold uppercase text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300':evening ? "inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300" : "inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300"}>{review?'Review time':evening ? "Evening" : "Day"}</span>; }
 
 function Spinner() { return <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" opacity=".2"/><path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/></svg>; }
 function CalculatorIcon() { return <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.9"><rect x="5" y="2.5" width="14" height="19" rx="3"/><path d="M8 6.5h8v3H8zM8 13h1M12 13h1M16 13h1M8 17h1M12 17h1M16 17h1"/></svg>; }
