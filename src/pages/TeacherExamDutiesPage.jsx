@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import Swal from 'sweetalert2';
 import TeacherCalculationsPage from './TeacherCalculationsPage';
 import { extractExamDutyPdfs, facultyCodeMatches } from '../utils/examDutyPdf';
@@ -27,6 +28,9 @@ function Glyph({name,size=18}) {
     calculator:<><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M8 6h8v3H8zM8 13h1M12 13h1M16 13h1M8 17h1M12 17h1M16 17h1"/></>,
     upload:<><path d="M12 16V3m0 0-5 5m5-5 5 5"/><path d="M4 16v4h16v-4"/></>,
     printer:<><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 15h12v6H6z"/></>,
+    chevronDown:<path d="m6 9 6 6 6-6"/>,
+    layers:<><path d="m12 2-9 5 9 5 9-5-9-5Z"/><path d="m3 12 9 5 9-5M3 17l9 5 9-5"/></>,
+    listChecks:<><path d="M9 6h12M9 12h12M9 18h12m-18-12 1.7 1.7L7 5m-4 7 1.7 1.7L7 11m-4 7 1.7 1.7L7 17"/></>,
     users:<><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M17 5a3 3 0 0 1 0 6M20 20v-2a5 5 0 0 0-3-4.6"/></>,
     search:<><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></>,
     alert:<><path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v5M12 17h.01"/></>,
@@ -221,12 +225,96 @@ function DutyTable({rows,onRemoveProxy,onChangeDuty,onRevert}) {
   return <div className="overflow-x-auto"><table className="w-full min-w-[1110px] border-collapse text-left text-sm"><thead><tr className="border-b border-slate-200 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-900/70">{['Date & day','Time','Program','Intake','Sec.','Course No.','Course teacher','Invigilators','Room','Assignment'].map(h=><th key={h} className="whitespace-nowrap px-3.5 py-3">{h}</th>)}</tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-800">{rows.map(r=><tr key={r._id} className={`transition hover:bg-slate-50 dark:hover:bg-slate-800/40 ${r.changeSide==='outgoing'?'bg-slate-50/70 dark:bg-slate-900/35':''}`}><td className="whitespace-nowrap px-3.5 py-3.5"><strong className="font-bold text-slate-900 dark:text-white">{fmtDate(r.date)}</strong><div className="text-xs text-slate-500">{r.day||dayOf(r.date)}</div></td><td className="whitespace-nowrap px-3.5 py-3.5"><div className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">{r.startTime}</div><div className="text-xs tabular-nums text-slate-500">to {r.endTime}</div></td><td className="max-w-[180px] px-3.5 py-3.5 text-xs font-medium text-slate-600 dark:text-slate-300">{r.program||'—'}</td><td className="px-3.5 py-3.5 text-slate-700 dark:text-slate-200">{r.intake||'—'}</td><td className="px-3.5 py-3.5 text-slate-700 dark:text-slate-200">{r.section||'—'}</td><td className="whitespace-nowrap px-3.5 py-3.5 font-bold text-slate-900 dark:text-white">{r.course||'—'}</td><td className="px-3.5 py-3.5 text-slate-600 dark:text-slate-300">{r.courseTeacher||'—'}</td><td className="px-3.5 py-3.5 text-xs text-slate-600 dark:text-slate-300">{r.invigilators||'—'}</td><td className="px-3.5 py-3.5 font-semibold text-slate-700 dark:text-slate-200">{r.room||'—'}</td><td className="px-3.5 py-3.5"><div className="flex min-w-[106px] flex-col items-start gap-1.5"><Pill tone={r.changeSide==='outgoing'?'red':r.changeId||r.assignment==='proxy'||r.category==='reserved'?'violet':'neutral'}>{r.assignment==='exchanged_out'?`Exchanged with ${r.counterpartyCode}`:r.assignment==='transferred_out'?`Transferred to ${r.counterpartyCode}`:r.assignment==='exchange'?`Exchange · ${r.counterpartyCode}`:r.assignment==='transfer'?`From ${r.counterpartyCode}`:r.assignment==='proxy'?`Proxy · ${r.originalCode||''}`:r.category==='reserved'?'Reserved':r.category==='support'?'IT support':'Official'}</Pill>{r.changeSide==='outgoing'&&<span className="text-[10px] text-slate-500">Not an active duty</span>}{r.conflicts?.length>0&&<span title="Overlapping duties" className="flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300"><Glyph name="alert" size={12}/> Time overlap</span>}{r.assignment==='proxy'&&<button type="button" onClick={()=>onRemoveProxy(r)} className="text-[11px] font-semibold text-rose-600 hover:underline dark:text-rose-400">Remove proxy</button>}{r.changeId&&<button type="button" onClick={()=>onRevert(r)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 hover:underline dark:text-rose-400"><Glyph name="undo" size={12}/> Revert</button>}{r.assignment==='official'&&<><button type="button" onClick={()=>onChangeDuty(r,'exchange')} className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-600 hover:underline dark:text-violet-400"><Glyph name="swap" size={12}/> Exchange duty</button><button type="button" onClick={()=>onChangeDuty(r,'transfer')} className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 hover:underline dark:text-slate-300"><Glyph name="send" size={12}/> Give away</button></>}</div></td></tr>)}</tbody></table></div>;
 }
 
-function PrintableRoutine({session,faculty,rows,mode='current'}) { if(!session) return null; return <section className={`exam-duty-print-only exam-duty-print-${mode}`}><header className="duty-print-top"><div className="duty-print-brand">BUBT <span>· Faculty Examination Duty Routine</span></div><h1>{session.season} {session.year} — {session.examType} Examination</h1><p>{faculty.name} ({faculty.shortCode}) · {mode==='complete'?'Complete duty history (including reassigned-out entries)':'Current active assignments'}</p><div className="duty-print-info"><span>{rows.length} assigned duties</span><span>{new Date().toLocaleDateString('en-GB')}</span></div></header><table className="duty-print-table"><thead><tr><th>#</th><th>Date / Day</th><th>Time</th><th>Program</th><th>Intake</th><th>Sec.</th><th>Course</th><th>Teacher</th><th>Invigilators</th><th>Room</th><th>Type</th></tr></thead><tbody>{rows.map((r,i)=><tr key={r._id}><td>{i+1}</td><td>{fmtDate(r.date)}<div>{r.day||dayOf(r.date)}</div></td><td>{r.startTime}<div>{r.endTime}</div></td><td>{r.program}</td><td>{r.intake}</td><td>{r.section}</td><td>{r.course}</td><td>{r.courseTeacher}</td><td>{r.invigilators}</td><td>{r.room}</td><td>{r.assignment==='exchanged_out'?`Exchanged with ${r.counterpartyCode} (given away)`:r.assignment==='transferred_out'?`Transferred to ${r.counterpartyCode} (given away)`:r.assignment==='exchange'?`Exchanged from ${r.counterpartyCode}`:r.assignment==='transfer'?`Transferred from ${r.counterpartyCode}`:r.assignment==='proxy'?`Proxy for ${r.originalCode||'faculty'}`:r.category==='reserved'?'Reserved':r.category==='support'?'IT support':'Official'}</td></tr>)}</tbody></table><footer>Generated from Faculty Exam Duties · BUBT Marks Portal</footer></section>; }
+function OwnCourseExams({rows, faculty, loading}) {
+  const [query,setQuery] = useState('');
+  const displayed = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    return (rows || []).filter(r => !term || [r.date,r.day,r.program,r.course,r.intake,r.section,r.invigilators,r.room,r.sourceFile]
+      .some(value => String(value || '').toLowerCase().includes(term)));
+  }, [rows,query]);
+  return <section aria-labelledby="my-course-exams-heading" className="overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
+    <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 id="my-course-exams-heading" className="text-base font-bold text-slate-900 dark:text-white">My course exams</h3>
+          <Pill tone="violet">{loading ? '…' : `${rows.length} exam${rows.length===1?'':'s'}`}</Pill>
+        </div>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Examinations taught by {faculty.shortCode || 'your faculty code'}, found in the Course Teacher column of the shared routine. These are not additional invigilation duties.</p>
+      </div>
+      {!!rows.length&&<div className="relative flex shrink-0 items-center">
+        <span className="pointer-events-none absolute left-3 text-slate-400"><Glyph name="search" size={16}/></span>
+        <input aria-label="Search my course exams" className={`${cls} w-full pl-9 sm:w-[205px]`} placeholder="Search course exams" value={query} onChange={e=>setQuery(e.target.value)}/>
+      </div>}
+    </div>
+    {loading?<div className="flex min-h-[130px] items-center justify-center text-sm text-slate-500">Loading your course examinations…</div>:
+    !rows.length?<div className="flex min-h-[130px] flex-col items-center justify-center gap-2 px-5 text-center">
+      <div className="rounded-xl bg-slate-100 p-2.5 text-slate-500 dark:bg-slate-800 dark:text-slate-300"><Glyph name="doc" size={19}/></div>
+      <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">No course exams found in this session</p>
+      <p className="text-xs text-slate-500">The shared routine does not list your shortcode as Course Teacher for an examination.</p>
+    </div>:
+    !displayed.length?<div className="px-5 py-12 text-center text-sm text-slate-500">No course exams match your search.</div>:
+    <div className="overflow-x-auto"><table className="w-full min-w-[910px] border-collapse text-left text-sm">
+      <thead><tr className="border-b border-slate-200 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-900/70">
+        {['Date & day','Time','Program','Intake','Sec.','Course no.','Course teacher','Invigilators','Room'].map(h=><th key={h} scope="col" className="whitespace-nowrap px-3.5 py-3">{h}</th>)}
+      </tr></thead>
+      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">{displayed.map(r=><tr key={r._id} className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40">
+        <td className="whitespace-nowrap px-3.5 py-3.5"><strong className="font-bold text-slate-900 dark:text-white">{fmtDate(r.date)}</strong><div className="text-xs text-slate-500">{r.day||dayOf(r.date)}</div></td>
+        <td className="whitespace-nowrap px-3.5 py-3.5"><div className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">{r.startTime}</div><div className="text-xs tabular-nums text-slate-500">to {r.endTime}</div></td>
+        <td className="max-w-[195px] px-3.5 py-3.5 text-xs font-medium text-slate-600 dark:text-slate-300">{r.program||'—'}</td>
+        <td className="px-3.5 py-3.5 text-slate-700 dark:text-slate-200">{r.intake||'—'}</td>
+        <td className="px-3.5 py-3.5 text-slate-700 dark:text-slate-200">{r.section||'—'}</td>
+        <td className="whitespace-nowrap px-3.5 py-3.5 font-bold text-slate-900 dark:text-white">{r.course||'—'}</td>
+        <td className="px-3.5 py-3.5 text-slate-600 dark:text-slate-300">{r.courseTeacher||'—'}</td>
+        <td className="px-3.5 py-3.5 text-xs text-slate-600 dark:text-slate-300">{r.invigilators||'—'}</td>
+        <td className="px-3.5 py-3.5 font-semibold text-slate-700 dark:text-slate-200">{r.room||'—'}</td>
+      </tr>)}</tbody>
+    </table></div>}
+    {!!rows.length&&<div className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500 dark:border-slate-800">Showing {displayed.length} of {rows.length} course exams · Sorted by date and start time · Read-only official schedule</div>}
+  </section>;
+}
 
+function PrintableRoutine({session, faculty, rows, mode='current'}) {
+  if (!session || typeof document === 'undefined') return null;
+  const isComplete = mode === 'complete';
+  return createPortal(
+    <section className={`exam-duty-print-only exam-duty-print-${mode}`}>
+      <header className="duty-print-top">
+        <div className="duty-print-line duty-print-heading">
+          <div className="duty-print-brand"><strong>BUBT</strong><span>Faculty Examination Duty Routine</span></div>
+          <strong className="duty-print-session">{session.season} {session.year} · {session.examType} Examination</strong>
+        </div>
+        <div className="duty-print-line duty-print-meta">
+          <span className="duty-print-faculty">{faculty.name} ({faculty.shortCode})</span>
+          <span className="duty-print-summary">{isComplete ? 'Complete duty history' : 'Current active routine'} <b>· {rows.length} duties</b></span>
+        </div>
+      </header>
+      <table className="duty-print-table">
+        <thead><tr><th>#</th><th>Date / Day</th><th>Time</th><th>Program</th><th>Intake</th><th>Sec.</th><th>Course</th><th>Teacher</th><th>Invigilators</th><th>Room</th><th>Type</th></tr></thead>
+        <tbody>{rows.map((r,i)=><tr key={r._id}>
+          <td>{i+1}</td><td>{fmtDate(r.date)}<div>{r.day||dayOf(r.date)}</div></td><td>{r.startTime}<div>{r.endTime}</div></td>
+          <td>{r.program||'—'}</td><td>{r.intake||'—'}</td><td>{r.section||'—'}</td><td>{r.course||'—'}</td>
+          <td>{r.courseTeacher||'—'}</td><td>{r.invigilators||'—'}</td><td>{r.room||'—'}</td>
+          <td>{r.assignment==='exchanged_out'?`Exchanged with ${r.counterpartyCode} (given away)`:r.assignment==='transferred_out'?`Transferred to ${r.counterpartyCode} (given away)`:r.assignment==='exchange'?`Exchanged from ${r.counterpartyCode}`:r.assignment==='transfer'?`Transferred from ${r.counterpartyCode}`:r.assignment==='proxy'?`Proxy for ${r.originalCode||'faculty'}`:r.category==='reserved'?'Reserved':r.category==='support'?'IT support':'Official'}</td>
+        </tr>)}</tbody>
+      </table>
+      <footer>Generated from Faculty Exam Duties · BUBT Marks Portal</footer>
+    </section>,
+    document.body
+  );
+}
 function DutyList() {
   const [sessions,setSessions]=useState([]),[selected,setSelected]=useState(''),[faculty,setFaculty]=useState({name:'Faculty',shortCode:''});
   const [schedule,setSchedule]=useState(null),[loading,setLoading]=useState(true),[loadRows,setLoadRows]=useState(false),[error,setError]=useState('');
   const [printOpen,setPrintOpen]=useState(false),[importOpen,setImportOpen]=useState(false),[proxyOpen,setProxyOpen]=useState(false),[changeTarget,setChangeTarget]=useState(null),[search,setSearch]=useState(''),[type,setType]=useState('all'),[assignment,setAssignment]=useState('all');
+  const printMenuRef=useRef(null);
+  useEffect(()=>{
+    if (!printOpen) return undefined;
+    const closeOnOutsideClick=(event)=>{ if(!printMenuRef.current?.contains(event.target)) setPrintOpen(false); };
+    const closeOnEscape=(event)=>{ if(event.key==='Escape') setPrintOpen(false); };
+    document.addEventListener('pointerdown',closeOnOutsideClick);
+    document.addEventListener('keydown',closeOnEscape);
+    return ()=>{document.removeEventListener('pointerdown',closeOnOutsideClick);document.removeEventListener('keydown',closeOnEscape);};
+  },[printOpen]);
   const reloadSessions=useCallback(async(preferred)=>{
     setLoading(true);setError('');try{
       const data=await listExamDutySessions();setSessions(data.sessions||[]);setFaculty(data.faculty||{name:'Faculty',shortCode:''});
@@ -291,7 +379,24 @@ function DutyList() {
     catch(e){Swal.fire('Could not revert',apiError(e),'error');}
   };
   return <div className="space-y-5">
-    <section className="flex flex-col gap-4 rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/70 lg:flex-row lg:items-center lg:justify-between sm:p-6"><div className="flex items-start gap-4"><div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-violet-600 text-white shadow-md shadow-violet-600/15"><Glyph name="calendar" size={24}/></div><div><div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">My invigilation schedule</h2><Pill tone="violet">{faculty.shortCode||'Faculty'}</Pill></div><div className="mt-3"><label htmlFor="exam-duty-session" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Examination session</label><select id="exam-duty-session" className={`${cls} w-full min-w-[230px] max-w-[440px] sm:min-w-[340px]`} value={selected} onChange={e=>setSelected(e.target.value)}><option value="">{loading?'Loading examinations…':'Choose an examination'}</option>{sessions.map(s=><option key={s._id} value={s._id}>{sessionName(s)} ({s.totalRows||0} stored)</option>)}</select></div></div></div><div className="flex flex-wrap gap-2"><div className="relative"><button type="button" aria-expanded={printOpen} aria-haspopup="menu" className={secondary} onClick={()=>setPrintOpen(v=>!v)} disabled={!rows.length}><Glyph name="printer"/> Print routine <span className="text-slate-400">⌄</span></button>{printOpen&&<div role="menu" aria-label="Print routine options" className="absolute right-0 z-30 mt-2 w-[290px] overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-900"><button role="menuitem" type="button" onClick={()=>printRoutine('complete')} className="block w-full rounded-lg px-3 py-2.5 text-left hover:bg-violet-50 dark:hover:bg-slate-800"><span className="block text-sm font-semibold text-slate-900 dark:text-white">Complete duty record</span><span className="mt-0.5 block text-xs text-slate-500">Official, proxies, exchanges, transfers and given-away duties</span></button><button role="menuitem" type="button" onClick={()=>printRoutine('current')} className="block w-full rounded-lg px-3 py-2.5 text-left hover:bg-violet-50 dark:hover:bg-slate-800"><span className="block text-sm font-semibold text-slate-900 dark:text-white">Current active routine</span><span className="mt-0.5 block text-xs text-slate-500">Only duties you are currently assigned to perform</span></button></div>}</div><button type="button" className={secondary} onClick={()=>setProxyOpen(true)} disabled={!selected}><Glyph name="users"/> Proxy duty</button><button type="button" className={primary} onClick={()=>setImportOpen(true)}><Glyph name="upload"/> {active&&!active.canDelete?"Import different exam":"Import PDFs"}</button>{active?.canDelete&&<button type="button" className={danger} onClick={deleteRoutine} disabled={loading}><Glyph name="trash"/> Delete routine</button>}</div></section>
+    <section className="flex flex-col gap-4 rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/70 lg:flex-row lg:items-center lg:justify-between sm:p-6"><div className="flex items-start gap-4"><div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-violet-600 text-white shadow-md shadow-violet-600/15"><Glyph name="calendar" size={24}/></div><div><div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">My invigilation schedule</h2><Pill tone="violet">{faculty.shortCode||'Faculty'}</Pill></div><div className="mt-3"><label htmlFor="exam-duty-session" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Examination session</label><select id="exam-duty-session" className={`${cls} w-full min-w-[230px] max-w-[440px] sm:min-w-[340px]`} value={selected} onChange={e=>setSelected(e.target.value)}><option value="">{loading?'Loading examinations…':'Choose an examination'}</option>{sessions.map(s=><option key={s._id} value={s._id}>{sessionName(s)} ({s.totalRows||0} stored)</option>)}</select></div></div></div><div className="flex flex-wrap gap-2"><div className="relative" ref={printMenuRef}>
+      <button type="button" aria-expanded={printOpen} aria-haspopup="menu" aria-controls="exam-duty-print-menu" className={`${secondary} group border-slate-300 shadow-sm hover:border-violet-400 hover:bg-violet-50/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 dark:border-slate-700 dark:hover:border-violet-500/50 dark:hover:bg-slate-800/80`} onClick={()=>setPrintOpen(v=>!v)} disabled={!rows.length}>
+        <Glyph name="printer" size={17}/><span>Print routine</span>
+        <span className={`ml-1 flex h-6 w-6 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500 transition-all duration-200 group-hover:border-violet-200 group-hover:text-violet-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 ${printOpen?'rotate-180 border-violet-200 bg-violet-50 text-violet-600 dark:bg-violet-500/10':''}`}><Glyph name="chevronDown" size={15}/></span>
+      </button>
+      {printOpen&&<div id="exam-duty-print-menu" role="menu" aria-label="Print routine options" className="absolute right-0 z-40 mt-2 w-[min(345px,calc(100vw-32px))] overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-[0_18px_45px_-15px_rgba(15,23,42,0.32)] ring-1 ring-slate-950/5 dark:border-slate-700 dark:bg-slate-900 dark:shadow-[0_18px_45px_-15px_rgba(0,0,0,0.65)] dark:ring-white/5">
+        <div className="px-3 pb-2 pt-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">Choose print version</div>
+        <button role="menuitem" type="button" onClick={()=>printRoutine('complete')} className="group flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-violet-50 focus-visible:bg-violet-50 focus-visible:outline-none dark:hover:bg-slate-800 dark:focus-visible:bg-slate-800">
+          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-violet-100 bg-violet-50 text-violet-600 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300"><Glyph name="layers" size={17}/></span>
+          <span className="min-w-0"><span className="block text-sm font-bold text-slate-900 dark:text-white">Complete duty record</span><span className="mt-1 block text-xs leading-relaxed text-slate-500 dark:text-slate-400">Includes official, proxy, exchanged and transferred duties, even reassigned-out records</span></span>
+        </button>
+        <div className="mx-3 my-1 border-t border-slate-100 dark:border-slate-800"/>
+        <button role="menuitem" type="button" onClick={()=>printRoutine('current')} className="group flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-violet-50 focus-visible:bg-violet-50 focus-visible:outline-none dark:hover:bg-slate-800 dark:focus-visible:bg-slate-800">
+          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"><Glyph name="listChecks" size={18}/></span>
+          <span className="min-w-0"><span className="block text-sm font-bold text-slate-900 dark:text-white">Current active routine</span><span className="mt-1 block text-xs leading-relaxed text-slate-500 dark:text-slate-400">Only the duties you are currently assigned to perform</span></span>
+        </button>
+      </div>}
+    </div><button type="button" className={secondary} onClick={()=>setProxyOpen(true)} disabled={!selected}><Glyph name="users"/> Proxy duty</button><button type="button" className={primary} onClick={()=>setImportOpen(true)}><Glyph name="upload"/> {active&&!active.canDelete?"Import different exam":"Import PDFs"}</button>{active?.canDelete&&<button type="button" className={danger} onClick={deleteRoutine} disabled={loading}><Glyph name="trash"/> Delete routine</button>}</div></section>
     {error&&<div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">{error}</div>}
     {active&&<p className="text-right text-xs text-slate-500">{active.totalRows} shared records · {new Set((active.sourceFiles||[]).map(f=>f.name)).size} PDF source(s)</p>}
     {active&&<div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><SmallStat label="My total duties" value={activeRows.length} detail={`${official} official · ${reserved} reserved · ${moved} received`}/><SmallStat label="Official duties" value={official} detail="Original invigilation remaining"/><SmallStat label="Proxy duties" value={proxies} detail="Added manually"/><SmallStat label="Overlapping slots" value={overlapping} detail="Review scheduling conflicts"/></div>}
@@ -299,6 +404,7 @@ function DutyList() {
       {loading||loadRows?<div className="flex min-h-[250px] items-center justify-center text-sm font-medium text-slate-500">Loading your examination duties…</div>:!active?<div className="flex min-h-[280px] flex-col items-center justify-center gap-3 px-5 text-center"><div className="rounded-2xl bg-violet-50 p-4 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300"><Glyph name="upload" size={28}/></div><h4 className="text-lg font-bold text-slate-900 dark:text-white">No exam routine uploaded yet</h4><p className="max-w-md text-sm text-slate-500">Upload the official PDF routines together to build the shared examination schedule. Only duties matching your profile shortcode will appear in your list.</p><button type="button" className={primary} onClick={()=>setImportOpen(true)}>Import official PDFs <Glyph name="arrow"/></button></div>:visible.length?<DutyTable rows={visible} onRemoveProxy={remove} onChangeDuty={(row,mode)=>setChangeTarget({row,mode})} onRevert={revert}/>:<div className="flex min-h-[200px] flex-col items-center justify-center gap-2 p-6 text-center"><h4 className="font-bold text-slate-900 dark:text-white">No matching duties</h4><p className="max-w-md text-sm text-slate-500">{rows.length?'Clear the search or filters to see your assignments.':'No duties for your shortcode in this examination yet. You can still search and take proxy duties.'}</p></div>}
       {active&&visible.length>0&&<div className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500 dark:border-slate-800">Showing {visible.length} rows · {activeRows.length} active duties. Reassigned-out rows appear in the complete print record, but not in the current active routine.</div>}
     </section>
+    {active&&<OwnCourseExams rows={(schedule?.courseExams||[]).slice().sort(ordered)} faculty={faculty} loading={loadRows}/>}
     {active&&<><PrintableRoutine session={active} faculty={faculty} rows={activeRows} mode="current"/><PrintableRoutine session={active} faculty={faculty} rows={rows} mode="complete"/></>}
     {importOpen&&<ImportModal current={active?.canDelete ? selected : ""} sessions={sessions} faculty={faculty} onClose={()=>setImportOpen(false)} onDone={async(data)=>{setImportOpen(false);await reloadSessions(String(data.sessionId));if(String(data.sessionId)===String(selected))await reloadRows();}}/>}
     {changeTarget&&selected&&<DutyChangeModal sessionId={selected} source={changeTarget.row} initialMode={changeTarget.mode} faculty={faculty} myRows={rows} onClose={()=>setChangeTarget(null)} onDone={async()=>{setChangeTarget(null);await reloadRows();await reloadSessions(selected);}}/>}
@@ -308,5 +414,5 @@ function DutyList() {
 
 export default function TeacherExamDutiesPage(){
   const [params,setParams]=useSearchParams();const current=params.get('tab')==='calculations'?'calculations':'list';
-  return <div className="mx-auto w-full max-w-[1680px] space-y-5 pb-8"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-xs font-semibold uppercase tracking-wider text-violet-600 dark:text-violet-400">Faculty workspace</div><h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Exam Duties</h1></div><div className="inline-flex w-full gap-1 rounded-2xl border border-slate-200 bg-slate-100 p-1 dark:border-slate-800 dark:bg-slate-900 sm:w-auto" role="tablist" aria-label="Exam duties sections"><button role="tab" aria-selected={current==='list'} type="button" onClick={()=>setParams({tab:'list'})} className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition sm:flex-none ${current==='list'?'bg-white text-violet-700 shadow-sm dark:bg-slate-800 dark:text-violet-300':'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}><Glyph name="calendar"/> Duty list</button><button role="tab" aria-selected={current==='calculations'} type="button" onClick={()=>setParams({tab:'calculations'})} className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition sm:flex-none ${current==='calculations'?'bg-white text-violet-700 shadow-sm dark:bg-slate-800 dark:text-violet-300':'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}><Glyph name="calculator"/> Calculations</button></div></div>{current==='list'?<DutyList/>:<TeacherCalculationsPage/>}</div>;
+  return <div className="w-full min-w-0 space-y-5 pb-8"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-xs font-semibold uppercase tracking-wider text-violet-600 dark:text-violet-400">Faculty workspace</div><h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Exam Duties</h1></div><div className="inline-flex w-full gap-1 rounded-2xl border border-slate-200 bg-slate-100 p-1 dark:border-slate-800 dark:bg-slate-900 sm:w-auto" role="tablist" aria-label="Exam duties sections"><button role="tab" aria-selected={current==='list'} type="button" onClick={()=>setParams({tab:'list'})} className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition sm:flex-none ${current==='list'?'bg-white text-violet-700 shadow-sm dark:bg-slate-800 dark:text-violet-300':'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}><Glyph name="calendar"/> Duty list</button><button role="tab" aria-selected={current==='calculations'} type="button" onClick={()=>setParams({tab:'calculations'})} className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition sm:flex-none ${current==='calculations'?'bg-white text-violet-700 shadow-sm dark:bg-slate-800 dark:text-violet-300':'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}><Glyph name="calculator"/> Calculations</button></div></div>{current==='list'?<DutyList/>:<TeacherCalculationsPage/>}</div>;
 }

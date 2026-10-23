@@ -128,6 +128,10 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
     return found?.label || portalBrandName;
   }, [location.pathname, links, portalBrandName, role]);
 
+  // Wide duty tables need most of the available workspace. Do not change
+  // padding on other pages (including student pages).
+  const compactExamDuties = role === "teacher" && location.pathname.startsWith("/teacher/exam-duties");
+
   const showStudentBack =
     role === "student" && location.pathname !== "/student/dashboard";
 
@@ -358,7 +362,7 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
 
         <div className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
           {role === "teacher" && (
-          <header className="z-30 shrink-0 border-b border-slate-200/80 bg-white/85 px-4 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/75 sm:px-6 md:px-8">
+          <header className={`z-30 shrink-0 border-b border-slate-200/80 bg-white/85 px-4 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/75 ${compactExamDuties ? "sm:px-4 md:px-5" : "sm:px-6 md:px-8"}`}>
             <div className="flex h-14 items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
                 {role === "teacher" ? (
@@ -466,7 +470,7 @@ const [userName, setUserName] = useState(() => getAuthItem("marksPortalName") ||
 
           )}
 
-          <main className="min-w-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5 md:px-8">
+          <main className={compactExamDuties ? "min-w-0 flex-1 overflow-y-auto px-3 py-4 sm:px-4 sm:py-5 md:px-5" : "min-w-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5 md:px-8"}>
             <Outlet />
           </main>
         </div>
