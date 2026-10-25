@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { getAuthItem } from "../utils/authStorage";
 import { syncMobileNotifications } from "../services/mobileNotificationService";
 import { initializePushNotifications } from "../services/pushNotificationService";
+import { clearExamDutyNative } from "../services/nativeExamDutyService";
 
 export default function MobileNotificationBridge() {
   const navigate = useNavigate();
@@ -14,6 +15,9 @@ export default function MobileNotificationBridge() {
   useEffect(() => {
     const token = getAuthItem("marksPortalToken");
     if (!token) {
+      if (activeTokenRef.current) {
+        clearExamDutyNative().catch((error) => console.warn("Could not clear old exam duty alerts", error));
+      }
       activeTokenRef.current = "";
       return undefined;
     }

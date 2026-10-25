@@ -12,6 +12,11 @@ import {
 } from "../services/mobileNotificationService";
 import { loadPortalNotificationItems } from "../utils/notificationItems";
 import { getAuthItem } from "../utils/authStorage";
+import {
+  getNativeExamDutyNotificationStatus,
+  openNativeExamDutyNotificationSettings,
+  previewNativeExamDuty,
+} from "../services/nativeExamDutyService";
 
 const CATEGORY_OPTIONS = [
   { key: "tasks", label: "Tasks", description: "Your personal teacher-created tasks." },
@@ -94,7 +99,11 @@ export default function NotificationSettingsPage() {
     if (!native) return;
     try {
       const diagnostics = await getNativeNotificationDiagnostics();
-      setDeviceStatus(diagnostics);
+      const examDutyStatus = await getNativeExamDutyNotificationStatus().catch((error) => ({
+        enabled: false,
+        reason: error?.message || "Native exam duty plugin unavailable",
+      }));
+      setDeviceStatus({ ...diagnostics, examDutyStatus });
     } catch (error) {
       console.error("Could not read notification diagnostics", error);
     }
@@ -395,6 +404,40 @@ export default function NotificationSettingsPage() {
     }
   };
 
+  const previewExamDuty = async () => {
+    setDeviceBusy(true);
+    try {
+      const result = await previewNativeExamDuty();
+      const isSystemFallback = result?.mode === "system";
+      Swal.fire({
+        icon: "success",
+        title: isSystemFallback ? "Android exam duty alert sent" : "Exam duty preview sent",
+        text: isSystemFallback
+          ? "The redesigned exam reminder was posted to Android's notification panel. Swipe down, expand the BUBT Portal alert and tap Acknowledge to clear this preview."
+          : "Pull down Android's system notification shade and expand the exam-duty alert. Press Acknowledge to clear this demo.",
+      });
+    } catch (error) {
+      const response = await Swal.fire({
+        icon: "warning",
+        title: "Exam duty notification not displayed",
+        text: error?.message || "Android did not confirm that the exam-duty notification appeared.",
+        showCancelButton: true,
+        confirmButtonText: "Open Android settings",
+        cancelButtonText: "Close",
+      });
+      if (response.isConfirmed) {
+        try {
+          await openNativeExamDutyNotificationSettings();
+        } catch (settingsError) {
+          Swal.fire({ icon: "error", title: "Cannot open settings", text: settingsError?.message });
+        }
+      }
+    } finally {
+      await refreshDeviceStatus();
+      setDeviceBusy(false);
+    }
+  };
+
   const scheduleOneMinuteTest = async () => {
     setDeviceBusy(true);
     try {
@@ -564,6 +607,15 @@ export default function NotificationSettingsPage() {
                       }
                     />
                     <DeviceStatusRow
+                      label="Exam duty notification channel"
+                      value={
+                        deviceStatus.examDutyStatus?.enabled
+                          ? "Enabled"
+                          : deviceStatus.examDutyStatus?.reason || "Checking…"
+                      }
+                      good={deviceStatus.examDutyStatus?.enabled === true}
+                    />
+                    <DeviceStatusRow
                       label="Scheduled on this phone"
                       value={String(deviceStatus.pendingCount || 0)}
                       good={(deviceStatus.pendingCount || 0) > 0}
@@ -599,6 +651,12 @@ export default function NotificationSettingsPage() {
                   </div>
                 ) : null}
 
+                {role === "teacher" ? (
+                  <button type="button" onClick={previewExamDuty} disabled={deviceBusy}
+                    className="w-full rounded-xl border border-blue-200 bg-blue-50 px-3 py-3 text-sm font-bold text-blue-800 hover:bg-blue-100 disabled:opacity-60 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-200">
+                    Preview exam duty system notification
+                  </button>
+                ) : null}
                 <div className="grid gap-2 sm:grid-cols-2">
                   <button
                     type="button"

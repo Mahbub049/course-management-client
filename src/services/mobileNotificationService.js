@@ -3,6 +3,7 @@ import { LocalNotifications } from "@capacitor/local-notifications";
 import { notificationService } from "./notificationService";
 import { loadPortalNotificationItems } from "../utils/notificationItems";
 import { getAuthItem } from "../utils/authStorage";
+import { flushExamDutyAcknowledgements, syncExamDutyNative } from "./nativeExamDutyService";
 
 const CHANNEL_ID = "bubt-portal-reminders-v3";
 const ACTION_PENDING = "MARKS_PORTAL_PENDING";
@@ -425,11 +426,15 @@ export async function syncMobileNotifications({ requestPermission = false } = {}
     };
   }
 
+  await flushExamDutyAcknowledgements();
   const role = getAuthItem("marksPortalRole");
   const profileData = await notificationService.getProfile();
   const preferences = profileData?.preferences || {};
 
   if (preferences.enabled === false) {
+    await syncExamDutyNative([], [], { enabled: false }).catch((error) =>
+      console.warn("Could not clear native exam duties", error)
+    );
     const pending = await LocalNotifications.getPending();
     const ours = (pending.notifications || []).filter(notificationBelongsToPortal);
     if (ours.length) {
@@ -451,6 +456,9 @@ export async function syncMobileNotifications({ requestPermission = false } = {}
     scheduleWindowDays: preferences.scheduleWindowDays || 7,
   });
   const completed = stateMap(profileData?.states || []);
+  await syncExamDutyNative(items, profileData?.states || [], {
+    enabled: preferences.categories?.exams !== false,
+  }).catch((error) => console.warn("Native exam duty sync unavailable", error));
   const categories = preferences.categories || {};
   const hasNativePushDevice = Array.isArray(preferences.deviceTokens)
     ? preferences.deviceTokens.some((device) =>
@@ -478,6 +486,7 @@ export async function syncMobileNotifications({ requestPermission = false } = {}
     // Faculty calendar reminders are sent by the server through FCM when push
     // is configured. Skipping them locally prevents duplicate reminders while
     // still leaving local scheduling as a fallback before FCM is configured.
+    if (item.source === "exam-duty" && isAndroid()) continue;
     if (useServerFacultyPush && item.source === "faculty") continue;
     if (categories[item.category] === false) continue;
     if (completed.get(item.sourceKey) === true) continue;

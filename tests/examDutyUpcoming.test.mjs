@@ -1,0 +1,10 @@
+import { strict as assert } from 'node:assert';
+import { nextDuty, dhakaClock } from '../src/utils/examDutyUpcoming.js';
+const past={_id:'past',date:'2026-10-25',startTime:'09:00 AM',endTime:'09:30 AM',assignment:'official'};
+const sent={_id:'sent',date:'2026-10-25',startTime:'10:30 AM',endTime:'11:00 AM',assignment:'exchanged_out'};
+const next={_id:'next',date:'2026-10-25',startTime:'11:15 AM',endTime:'12:30 PM',assignment:'exchange'};
+assert.deepEqual(nextDuty([past,sent,next],{date:'2026-10-25',minutes:613}),{key:'next',status:'next'});
+assert.deepEqual(nextDuty([past,sent,next],{date:'2026-10-25',minutes:700}),{key:'next',status:'current'});
+assert.equal(nextDuty([past],{date:'2026-10-26',minutes:1}),null);
+assert.equal(dhakaClock(new Date('2026-10-25T04:13:00Z')).minutes,613);
+console.log('PASS: Asia/Dhaka current/next upcoming highlighting and outgoing exclusions.');

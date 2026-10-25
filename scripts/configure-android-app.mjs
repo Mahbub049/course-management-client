@@ -13,6 +13,9 @@ const sourceRes = path.join(projectRoot, "mobile-assets", "android");
 const firebaseConfigSource = path.join(projectRoot, "mobile-assets", "google-services.json");
 const firebaseConfigTarget = path.join(androidRoot, "app", "google-services.json");
 const stringsPath = path.join(appMain, "res", "values", "strings.xml");
+const dutyAssets = path.join(projectRoot, "mobile-assets", "exam-duty");
+const dutyJava = path.join(appMain, "java", "com", "bubt", "marksportal");
+const mainActivity = path.join(dutyJava, "MainActivity.java");
 
 if (!existsSync(androidRoot) || !existsSync(manifestPath)) {
   console.log("Android project not found yet; skipping native notification/icon configuration.");
@@ -21,6 +24,8 @@ if (!existsSync(androidRoot) || !existsSync(manifestPath)) {
 
 const EXACT_PERMISSION =
   '<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />';
+const BOOT_PERMISSION =
+  '<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />';
 const POST_PERMISSION =
   '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />';
 
@@ -33,6 +38,9 @@ if (!manifest.includes("android.permission.POST_NOTIFICATIONS")) {
   permissionLines.push(`    ${POST_PERMISSION}`);
 }
 
+if (!manifest.includes("android.permission.RECEIVE_BOOT_COMPLETED")) {
+  permissionLines.push(`    ${BOOT_PERMISSION}`);
+}
 if (permissionLines.length) {
   const manifestOpenStart = manifest.indexOf("<manifest");
   const manifestOpenEnd = manifest.indexOf(">", manifestOpenStart);
@@ -63,7 +71,7 @@ async function copyTree(source, destination) {
 
 // Capacitor's generated project may contain WEBP launcher assets with the same
 // Android resource names. Remove them before copying the BUBT PNG/XML icons.
-for (const density of ["mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi"]) {
+if (existsSync(sourceRes)) for (const density of ["mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi"]) {
   const dir = path.join(targetRes, `mipmap-${density}`);
   for (const name of [
     "ic_launcher.webp",
@@ -74,8 +82,42 @@ for (const density of ["mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi"]) {
   }
 }
 
-await copyTree(sourceRes, targetRes);
-console.log("Applied BUBT launcher icon and notification icons.");
+if (existsSync(sourceRes)) {
+  await copyTree(sourceRes, targetRes);
+  console.log("Applied BUBT launcher icon and notification icons.");
+} else {
+  console.log("No optional launcher branding assets found; keeping existing launcher icons.");
+}
+
+// These are real Android NotificationCompat RemoteViews and receivers. They
+// appear in the DEVICE'S system shade, not as a React component/WebView popup.
+await copyTree(path.join(dutyAssets, "res"), targetRes);
+await copyTree(path.join(dutyAssets, "java"), dutyJava);
+if (!existsSync(mainActivity)) {
+  throw new Error("MainActivity.java not found in the expected com.bubt.marksportal package.");
+}
+let activity = await readFile(mainActivity, "utf8");
+if (!activity.includes("registerPlugin(ExamDutyNotifierPlugin.class)")) {
+  if (/void\s+onCreate\s*\(.*?\)\s*\{/.test(activity)) {
+    activity = activity.replace(/(void\s+onCreate\s*\(.*?\)\s*\{)/, '$1\n        registerPlugin(ExamDutyNotifierPlugin.class);');
+  } else {
+    activity = activity.replace(/(extends\s+BridgeActivity\s*\{)/,
+      '$1\n    @Override\n    public void onCreate(android.os.Bundle savedInstanceState) {\n        registerPlugin(ExamDutyNotifierPlugin.class);\n        super.onCreate(savedInstanceState);\n    }');
+  }
+  await writeFile(mainActivity, activity, "utf8");
+}
+if (!manifest.includes(".ExamDutyActionReceiver")) {
+  manifest = manifest.replace(/(<application\b[^>]*>)/,
+    '$1\n        <receiver android:name=".ExamDutyActionReceiver" android:exported="false" />\n' +
+    '        <receiver android:name=".ExamDutyBootReceiver" android:exported="false">\n' +
+    '            <intent-filter>\n' +
+    '                <action android:name="android.intent.action.BOOT_COMPLETED" />\n' +
+    '                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />\n' +
+    '            </intent-filter>\n' +
+    '        </receiver>');
+  await writeFile(manifestPath, manifest, "utf8");
+}
+console.log("Installed custom exam duty notification layouts, native plugin, alarms and boot receivers.");
 
 // Keep the installed Android application label in sync even for an already-generated
 // Capacitor project. `cap sync` does not always rewrite the existing strings.xml.
@@ -93,45 +135,20 @@ if (existsSync(stringsPath)) {
   console.log("Set Android app name to BUBT Portal.");
 }
 
-if (!existsSync(firebaseConfigSource)) {
-  throw new Error(
-    "FCM SETUP REQUIRED: client/mobile-assets/google-services.json is missing. " +
-      "Download the Android google-services.json for package com.bubt.marksportal from Firebase and place it there before rebuilding."
+if (existsSync(firebaseConfigSource)) {
+  let firebaseConfig;
+  try {
+    firebaseConfig = JSON.parse(await readFile(firebaseConfigSource, "utf8"));
+  } catch (error) {
+    throw new Error(`FCM SETUP ERROR: google-services.json is invalid: ${error.message}`);
+  }
+  const matchingClient = (firebaseConfig?.client || []).find((item) =>
+    item?.client_info?.android_client_info?.package_name === "com.bubt.marksportal"
   );
+  if (!matchingClient) throw new Error("FCM SETUP ERROR: google-services.json must match com.bubt.marksportal");
+  await copyFile(firebaseConfigSource, firebaseConfigTarget);
+  console.log("Applied Firebase Android config for background push support.");
+} else {
+  console.warn("Firebase google-services.json not provided. Native exam-duty alarms work without it; FCM will require a valid Firebase config.");
 }
-
-let firebaseConfig;
-try {
-  firebaseConfig = JSON.parse(await readFile(firebaseConfigSource, "utf8"));
-} catch (error) {
-  throw new Error(`FCM SETUP ERROR: google-services.json is not valid JSON: ${error.message}`);
-}
-
-const packageNames = (firebaseConfig?.client || [])
-  .map((client) => client?.client_info?.android_client_info?.package_name)
-  .filter(Boolean);
-const projectId = String(firebaseConfig?.project_info?.project_id || "").trim();
-const matchingClient = (firebaseConfig?.client || []).find(
-  (client) => client?.client_info?.android_client_info?.package_name === "com.bubt.marksportal"
-);
-const mobileSdkAppId = String(matchingClient?.client_info?.mobilesdk_app_id || "").trim();
-const apiKeys = (matchingClient?.api_key || []).map((entry) => entry?.current_key).filter(Boolean);
-
-if (!packageNames.includes("com.bubt.marksportal")) {
-  throw new Error(
-    `FCM SETUP ERROR: google-services.json is for the wrong Android package. ` +
-      `Expected com.bubt.marksportal; found ${packageNames.join(", ") || "none"}. ` +
-      `Register/download the Firebase Android app using exactly com.bubt.marksportal.`
-  );
-}
-if (!projectId || !mobileSdkAppId || !apiKeys.length) {
-  throw new Error(
-    "FCM SETUP ERROR: google-services.json is incomplete for com.bubt.marksportal. " +
-      "Download a fresh file from Firebase Project settings > Your apps > Android app."
-  );
-}
-
-await copyFile(firebaseConfigSource, firebaseConfigTarget);
-console.log(`Verified Firebase Android config: ${projectId} / com.bubt.marksportal.`);
-console.log("Applied Firebase google-services.json for FCM push notifications.");
-console.log("Android native configuration is ready.");
+console.log("Android notification configuration is ready.");

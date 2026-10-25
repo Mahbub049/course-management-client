@@ -1,3 +1,4 @@
+import { fetchMyExamDutyReminders } from "../services/examDutyNotificationService";
 import { academicCalendarService } from "../services/academicCalendarService";
 import { fetchStudentSubmissionAssessments } from "../services/labSubmissionService";
 import { fetchStudentPendingProjectSubmissions } from "../services/projectSubmissionService";
@@ -99,7 +100,7 @@ export async function loadPortalNotificationItems({ role, scheduleWindowDays = 7
   });
 
   if (role === "teacher") {
-    const [facultyData, academicData] = await Promise.all([
+    const [facultyData, academicData, examDuties] = await Promise.all([
       academicCalendarService
         .getFacultyEvents({ startDate, endDate })
         .catch((error) => {
@@ -107,9 +108,13 @@ export async function loadPortalNotificationItems({ role, scheduleWindowDays = 7
           return { events: [] };
         }),
       academicPromise,
+      fetchMyExamDutyReminders().catch((error) => {
+        console.error("Could not load exam duty reminders", error);
+        return [];
+      }),
     ]);
 
-    return buildUpcomingSchedule(
+    const scheduleItems = buildUpcomingSchedule(
       academicData?.calendar,
       facultyData?.events || [],
       startDate,
@@ -118,6 +123,21 @@ export async function loadPortalNotificationItems({ role, scheduleWindowDays = 7
     )
       .map(mapScheduleItem)
       .filter(Boolean);
+
+    const dutyItems = examDuties.map((duty) => ({
+      sourceKey: duty.sourceKey,
+      source: "exam-duty",
+      category: "exams",
+      title: "Today's Exam Duty",
+      body: `${duty.startTime} · Room ${duty.room}${duty.course ? ` · ${duty.course}` : ""}`,
+      dueAt: new Date(duty.startAt).toISOString(),
+      route: "/teacher/exam-duties",
+      canMarkDone: true,
+      metadata: { ...duty },
+    }));
+    return [...scheduleItems, ...dutyItems].sort(
+      (a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime()
+    );
   }
 
   if (role === "student") {

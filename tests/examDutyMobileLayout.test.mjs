@@ -1,0 +1,15 @@
+import { strict as assert } from 'node:assert';
+import { readFileSync } from 'node:fs';
+const src=readFileSync(new URL('../src/pages/TeacherExamDutiesPage.jsx', import.meta.url),'utf8');
+assert.match(src,/useState\('remaining'\)/,'Remaining is the default status');
+assert.match(src,/dutyProgress\(r,clock\)/,'Uses live Dhaka duty-status filtering');
+assert.match(src,/aria-label="Duty status"/,'Has status selector');
+assert.match(src,/value="completed"/);
+assert.match(src,/value="reassigned"/,'Reassignments remain accessible for revert');
+assert.match(src,/aria-expanded=\{mobileActionsOpen\}/,'Mobile actions are expandable');
+assert.match(src,/className="hidden sm:block"/,'Desktop title hidden only on mobile');
+assert.match(src,/className="hidden grid-cols-2 gap-2 sm:grid/,'Statistics hidden only on mobile');
+assert.match(src,/sm:flex sm:flex-col sm:gap-4 lg:flex-row/,'Keeps desktop/tablet header layout');
+assert.doesNotMatch(src,/Overlap: You \{/,'No abbreviated overlap message');
+assert.doesNotMatch(src,/Overlaps \{row.conflicts.length\} existing duty/,'No slash pluralization');
+console.log('PASS: mobile-only styles and status filter presence.');
